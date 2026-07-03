@@ -1,5 +1,6 @@
 export interface Client {
   id: string
+  code: string      // 업체번호
   name: string
   address: string
   created_at: string
