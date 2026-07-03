@@ -16,11 +16,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // 1) 보드 초기화: 아직 진행 중인 배달(대기/배정/취소)을 completed로 아카이브 → 화면에서 사라짐
+    // 0) 취소된 카드는 기록에서 제외 → 완전 삭제
+    await supabaseServer.from('deliveries').delete().eq('status', 'cancelled')
+
+    // 1) 보드 초기화: 진행 중인 배달(대기/배정)을 completed로 아카이브 → 화면에서 사라짐
     const { data: archived, error: archiveError } = await supabaseServer
       .from('deliveries')
       .update({ status: 'completed' })
-      .in('status', ['waiting', 'assigned', 'cancelled'])
+      .in('status', ['waiting', 'assigned'])
       .select('id')
     if (archiveError) throw archiveError
 

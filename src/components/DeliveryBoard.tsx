@@ -49,7 +49,6 @@ function RiderSection({
   onRiderClick,
   onSelect,
   onDelete,
-  onRestore,
   strategy = 'vertical',
 }: {
   rider: Rider
@@ -58,7 +57,6 @@ function RiderSection({
   onRiderClick: (riderId: string, e: React.MouseEvent) => void
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
-  onRestore: (id: string) => void
   strategy?: 'vertical' | 'horizontal'
 }) {
   const isClickable = selectedCardId !== null
@@ -76,7 +74,7 @@ function RiderSection({
           {rider.name}
         </span>
         <span className="ml-auto bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">
-          {deliveries.filter(d => d.status !== 'cancelled').length}
+          {deliveries.length}
         </span>
       </div>
 
@@ -92,7 +90,6 @@ function RiderSection({
               isSelected={selectedCardId === d.id}
               onSelect={onSelect}
               onDelete={onDelete}
-              onRestore={onRestore}
             />
           ))}
         </SortableContext>
@@ -190,22 +187,11 @@ export default function DeliveryBoard() {
       .then(({ error }) => { if (error) fetchAll() })
   }
 
-  // 삭제: 대기열 → hard delete / 배정된 → cancelled
+  // 삭제: 대기열·배정 구분 없이 완전 삭제
   function handleDelete(delivery: Delivery) {
     if (selectedCardId === delivery.id) setSelectedCardId(null)
-    if (delivery.status === 'waiting') {
-      setDeliveries(prev => prev.filter(d => d.id !== delivery.id))
-      supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
-    } else {
-      setDeliveries(prev => prev.map(d => (d.id === delivery.id ? { ...d, status: 'cancelled' } : d)))
-      supabase.from('deliveries').update({ status: 'cancelled' }).eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
-    }
-  }
-
-  // 복원: cancelled → assigned
-  function handleRestore(deliveryId: string) {
-    setDeliveries(prev => prev.map(d => (d.id === deliveryId ? { ...d, status: 'assigned' } : d)))
-    supabase.from('deliveries').update({ status: 'assigned' }).eq('id', deliveryId).then(({ error }) => { if (error) fetchAll() })
+    setDeliveries(prev => prev.filter(d => d.id !== delivery.id))
+    supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
   // 존(구역) 기반 이동 처리
@@ -290,7 +276,7 @@ export default function DeliveryBoard() {
   function getRiderDeliveries(riderId: string) {
     // sort_order 순 정렬 → 새로 배정된 카드(가장 큰 sort_order)는 항상 맨 아래에 표시
     return deliveries
-      .filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'cancelled'))
+      .filter(d => d.rider_id === riderId && d.status === 'assigned')
       .sort((a, b) => a.sort_order - b.sort_order)
   }
 
@@ -299,7 +285,6 @@ export default function DeliveryBoard() {
     onRiderClick: handleRiderClick,
     onSelect: handleCardClick,
     onDelete: handleDelete,
-    onRestore: handleRestore,
   }
 
   return (
@@ -341,7 +326,6 @@ export default function DeliveryBoard() {
                   isSelected={selectedCardId === d.id}
                   onSelect={handleCardClick}
                   onDelete={handleDelete}
-                  onRestore={handleRestore}
                 />
               ))}
             </SortableContext>
