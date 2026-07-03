@@ -46,8 +46,10 @@ export default function DeliveryCard({ delivery, isSelected, onSelect, onDelete,
       {...(isCancelled ? {} : attributes)}
       {...(isCancelled ? {} : listeners)}
       onClick={(e) => {
+        // 취소된 카드는 클릭을 상위 이름블록으로 전달(버블링)해서, 선택된 카드가 그 블록에 배정되도록 함
+        if (isCancelled) return
         e.stopPropagation()
-        if (!isCancelled) onSelect(delivery)
+        onSelect(delivery)
       }}
       className={`relative overflow-visible bg-white rounded-xl shadow-sm border p-3 w-48 select-none flex-shrink-0 transition-all ${
         isCancelled

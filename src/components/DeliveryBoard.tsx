@@ -279,16 +279,19 @@ export default function DeliveryBoard() {
     }
   }
 
-  const waitingDeliveries = deliveries.filter(d => d.status === 'waiting')
+  const waitingDeliveries = deliveries
+    .filter(d => d.status === 'waiting')
+    .sort((a, b) => a.sort_order - b.sort_order)
 
   // is_quick 필드가 없는 구버전 데이터도 안전하게 처리
   const regularRiders = riders.filter(r => !r.is_quick)
   const quickRiders = riders.filter(r => r.is_quick)
 
   function getRiderDeliveries(riderId: string) {
-    return deliveries.filter(
-      d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'cancelled')
-    )
+    // sort_order 순 정렬 → 새로 배정된 카드(가장 큰 sort_order)는 항상 맨 아래에 표시
+    return deliveries
+      .filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'cancelled'))
+      .sort((a, b) => a.sort_order - b.sort_order)
   }
 
   const cardProps = {
