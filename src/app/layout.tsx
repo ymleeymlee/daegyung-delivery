@@ -23,6 +23,7 @@ export default function RootLayout({
         <nav className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6 shadow-sm">
           <span className="text-lg font-bold text-slate-800">대경배달시스템</span>
           <a href="/" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">배달 보드</a>
+          <a href="/records" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">배달 내역</a>
           <a href="/clients" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">거래처 관리</a>
         </nav>
         {children}

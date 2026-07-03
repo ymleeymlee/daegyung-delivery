@@ -8,7 +8,7 @@ import ElapsedTimer from './ElapsedTimer'
 interface Props {
   delivery: Delivery
   isSelected: boolean
-  onSelect: (id: string) => void
+  onSelect: (delivery: Delivery) => void
   onDelete: (delivery: Delivery) => void
   onRestore: (deliveryId: string) => void
 }
@@ -47,7 +47,7 @@ export default function DeliveryCard({ delivery, isSelected, onSelect, onDelete,
       {...(isCancelled ? {} : listeners)}
       onClick={(e) => {
         e.stopPropagation()
-        if (!isCancelled) onSelect(delivery.id)
+        if (!isCancelled) onSelect(delivery)
       }}
       className={`relative overflow-visible bg-white rounded-xl shadow-sm border p-3 w-48 select-none flex-shrink-0 transition-all ${
         isCancelled

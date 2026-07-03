@@ -11,6 +11,7 @@ export interface Rider {
   name: string
   is_active: boolean
   is_quick: boolean   // true: 안산퀵·파워퀵 전용 구역
+  location: 'gn' | 'as'   // 지점: gn=강남, as=안산
   created_at: string
 }
 

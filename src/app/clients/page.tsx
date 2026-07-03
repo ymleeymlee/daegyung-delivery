@@ -26,8 +26,23 @@ export default function ClientsPage() {
     const { data } = await supabase
       .from('clients')
       .select('*')
-      .order('name')
-    setClients(data ?? [])
+    // 업체번호 순 정렬. 업체번호가 있으면 숫자(없으면 문자) 오름차순 우선,
+    // 업체번호가 없는 거래처는 뒤로 보내고 상호명 순으로 정렬
+    const sorted = (data ?? []).slice().sort((a, b) => {
+      const ca = (a.code ?? '').trim()
+      const cb = (b.code ?? '').trim()
+      if (ca && cb) {
+        const na = Number(ca)
+        const nb = Number(cb)
+        if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb
+        if (ca !== cb) return ca.localeCompare(cb, 'ko')
+        return a.name.localeCompare(b.name, 'ko')
+      }
+      if (ca && !cb) return -1
+      if (!ca && cb) return 1
+      return a.name.localeCompare(b.name, 'ko')
+    })
+    setClients(sorted)
   }, [])
 
   useEffect(() => { fetchClients() }, [fetchClients])
