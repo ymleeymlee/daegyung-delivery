@@ -98,10 +98,11 @@ export default function DeliveryBoard() {
     const todayStart = new Date(`${kstDate}T00:00:00+09:00`).toISOString()
     const [{ data: gClients }, { data: gItems }] = await Promise.all([
       supabase.from('gopoum_clients').select('*'),
-      supabase.from('gopoum_items').select('*').or(`picked_at.is.null,picked_at.gte.${todayStart}`),
+      supabase.from('gopoum_items').select('*'),
     ])
     setGopoumClients(gClients ?? [])
-    setGopoumItems(gItems ?? [])
+    const allItems = gItems ?? []
+    setGopoumItems(allItems.filter((i: { picked_at: string | null }) => !i.picked_at || i.picked_at >= todayStart))
   }, [])
 
   useEffect(() => {

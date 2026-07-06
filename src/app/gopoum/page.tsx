@@ -162,10 +162,12 @@ export default function GopoumPage() {
   const fetchData = useCallback(async () => {
     const [{ data: gClients }, { data: gItems }] = await Promise.all([
       supabase.from('gopoum_clients').select('*').order('created_at', { ascending: true }),
-      supabase.from('gopoum_items').select('*').or(`picked_at.is.null,picked_at.gte.${todayStart}`),
+      supabase.from('gopoum_items').select('*'),
     ])
     setGopoumClients(gClients ?? [])
-    setGopoumItems(gItems ?? [])
+    // 오늘 수거 or 미수거만 표시 (JS 필터)
+    const allItems = gItems ?? []
+    setGopoumItems(allItems.filter(i => !i.picked_at || i.picked_at >= todayStart))
   }, [todayStart])
 
   useEffect(() => {
@@ -212,15 +214,25 @@ export default function GopoumPage() {
   }
 
   async function handleAddItem(clientId: string, description: string) {
-    const { data } = await supabase.from('gopoum_items').insert({
+    // 낙관적 업데이트: DB 응답 전에 화면 먼저 반영
+    const tempId = crypto.randomUUID()
+    const now = new Date().toISOString()
+    const tempItem = { id: tempId, gopoum_client_id: clientId, description, rider_name: null, delivery_id: null, picked_at: null, created_at: now }
+    setGopoumItems(prev => [...prev, tempItem])
+
+    const { data, error } = await supabase.from('gopoum_items').insert({
       gopoum_client_id: clientId,
       description,
     }).select().single()
+
+    if (error) {
+      setGopoumItems(prev => prev.filter(i => i.id !== tempId))
+      alert('추가 실패: ' + error.message)
+      return
+    }
     if (data) {
-      setGopoumItems(prev => [...prev, data])
-      // total_quantity도 갱신
-      const newTotal = gopoumItems.filter(i => i.gopoum_client_id === clientId).length + 1
-      supabase.from('gopoum_clients').update({ total_quantity: newTotal }).eq('id', clientId)
+      // temp 항목을 실제 DB 항목으로 교체
+      setGopoumItems(prev => prev.map(i => i.id === tempId ? data : i))
     }
   }
 
