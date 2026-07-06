@@ -61,10 +61,16 @@ function GopoumHistoryCard({
 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex text-sm min-h-14 ${remaining > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
-      {/* 생성시간 */}
+      {/* 생성시간 (started_at 기준) */}
       <div className="w-16 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center text-center">
-        <span className="text-xs text-slate-400">{fmtDate(gc.created_at)}</span>
-        <span className="text-xs text-slate-500 font-medium">{fmtTime(gc.created_at)}</span>
+        {gc.started_at ? (
+          <>
+            <span className="text-xs text-slate-400">{fmtDate(gc.started_at)}</span>
+            <span className="text-xs text-slate-500 font-medium">{fmtTime(gc.started_at)}</span>
+          </>
+        ) : (
+          <span className="text-xs text-slate-300">-</span>
+        )}
       </div>
 
       {/* 업체번호 */}
@@ -151,7 +157,7 @@ export default function GopoumRecordsPage() {
         return { gc, pickups: gPickups }
       })
       .filter((d): d is DayData => d !== null)
-      .sort((a, b) => a.gc.created_at.localeCompare(b.gc.created_at))
+      .sort((a, b) => a.gc.created_at.localeCompare(b.gc.created_at)) // 추가 순 (ASC)
 
     setDayData(result)
     setLoading(false)

@@ -36,6 +36,7 @@ export interface GopoumClient {
   client_name: string
   total_quantity: number
   created_at: string
+  started_at: string | null
 }
 
 export interface GopoumPickup {

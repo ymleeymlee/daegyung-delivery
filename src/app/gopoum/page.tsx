@@ -25,7 +25,11 @@ function fmtTime(iso: string) {
   }).format(new Date(iso))
 }
 
-// 고품 카드 (가로 한 줄)
+function todayStartIso() {
+  const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
+  return new Date(`${kstDate}T00:00:00+09:00`).toISOString()
+}
+
 function GopoumCard({
   gc, pickups, onUpdateQty, onDelete,
 }: {
@@ -53,10 +57,16 @@ function GopoumCard({
 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex text-sm min-h-14 ${remaining > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
-      {/* 생성시간 */}
+      {/* 생성시간 (started_at 기준) */}
       <div className="w-16 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center text-center">
-        <span className="text-xs text-slate-400">{fmtDate(gc.created_at)}</span>
-        <span className="text-xs text-slate-500 font-medium">{fmtTime(gc.created_at)}</span>
+        {gc.started_at ? (
+          <>
+            <span className="text-xs text-slate-400">{fmtDate(gc.started_at)}</span>
+            <span className="text-xs text-slate-500 font-medium">{fmtTime(gc.started_at)}</span>
+          </>
+        ) : (
+          <span className="text-xs text-slate-300">-</span>
+        )}
       </div>
 
       {/* 업체번호 */}
@@ -78,10 +88,8 @@ function GopoumCard({
           <span className="text-slate-300 text-xs mx-0.5">/</span>
           {editingQty ? (
             <input
-              autoFocus
-              type="number"
+              autoFocus type="number" min={0}
               value={qtyInput}
-              min={0}
               onChange={e => setQtyInput(e.target.value)}
               onBlur={saveQty}
               onKeyDown={e => {
@@ -105,7 +113,7 @@ function GopoumCard({
         </span>
       </div>
 
-      {/* 수거 기록 */}
+      {/* 수거 기록 (오늘 기준) */}
       <div className="flex-1 min-w-0 divide-y divide-slate-100">
         {sortedPickups.length === 0 ? (
           <div className="px-4 py-3 text-xs text-slate-300 italic flex items-center h-full">수거 기록 없음</div>
@@ -135,19 +143,20 @@ export default function GopoumPage() {
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [pickups, setPickups] = useState<GopoumPickup[]>([])
 
-  // 항상 보이는 추가 폼 상태
   const [inputCode, setInputCode] = useState('')
   const [inputName, setInputName] = useState('')
-  const [inputQtyStr, setInputQtyStr] = useState('1')
+  const [inputQtyStr, setInputQtyStr] = useState('0')
   const [suggestions, setSuggestions] = useState<Client[]>([])
   const [showSugg, setShowSugg] = useState(false)
   const [adding, setAdding] = useState(false)
   const suggBoxRef = useRef<HTMLDivElement>(null)
 
   const fetchData = useCallback(async () => {
+    const startIso = todayStartIso()
     const [{ data: gClients }, { data: gPickups }] = await Promise.all([
-      supabase.from('gopoum_clients').select('*').order('created_at', { ascending: false }),
-      supabase.from('gopoum_pickups').select('*'),
+      supabase.from('gopoum_clients').select('*').order('created_at', { ascending: true }),
+      // 오늘 수거 기록만 표시
+      supabase.from('gopoum_pickups').select('*').gte('picked_at', startIso),
     ])
     setGopoumClients(gClients ?? [])
     setPickups(gPickups ?? [])
@@ -163,7 +172,6 @@ export default function GopoumPage() {
     return () => { supabase.removeChannel(channel) }
   }, [fetchData])
 
-  // 업체명/번호 자동완성
   useEffect(() => {
     const term = (inputCode || inputName).trim()
     if (!term) { setSuggestions([]); setShowSugg(false); return }
@@ -179,7 +187,6 @@ export default function GopoumPage() {
     return () => clearTimeout(timer)
   }, [inputCode, inputName])
 
-  // 바깥 클릭 시 드롭다운 닫기
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (suggBoxRef.current && !suggBoxRef.current.contains(e.target as Node)) setShowSugg(false)
@@ -198,47 +205,55 @@ export default function GopoumPage() {
   async function handleAdd() {
     if (!inputName.trim() || adding) return
     setAdding(true)
+    const qty = Math.max(0, parseInt(inputQtyStr) || 0)
     const { error } = await supabase.from('gopoum_clients').insert({
       client_id: null,
       client_code: inputCode.trim(),
       client_name: inputName.trim(),
-      total_quantity: Math.max(1, parseInt(inputQtyStr) || 1),
+      total_quantity: qty,
+      started_at: qty > 0 ? new Date().toISOString() : null,
     })
     setAdding(false)
     if (!error) {
-      // 추가 후 폼 초기화 → 바로 다시 추가 가능
       setInputCode('')
       setInputName('')
-      setInputQtyStr('1')
+      setInputQtyStr('0')
       setSuggestions([])
       setShowSugg(false)
     }
   }
 
   async function handleUpdateQty(id: string, qty: number) {
-    setGopoumClients(prev => prev.map(gc => gc.id === id ? { ...gc, total_quantity: qty } : gc))
-    const { error } = await supabase.from('gopoum_clients').update({ total_quantity: qty }).eq('id', id)
+    const gc = gopoumClients.find(g => g.id === id)
+    const prevQty = gc?.total_quantity ?? 0
+
+    // started_at 변경 여부 계산
+    let newStartedAt: string | null | undefined = undefined
+    if (prevQty === 0 && qty > 0) newStartedAt = new Date().toISOString()
+    if (qty === 0) newStartedAt = null
+
+    setGopoumClients(prev => prev.map(g =>
+      g.id === id
+        ? { ...g, total_quantity: qty, ...(newStartedAt !== undefined ? { started_at: newStartedAt } : {}) }
+        : g
+    ))
+
+    const update: Record<string, unknown> = { total_quantity: qty }
+    if (newStartedAt !== undefined) update.started_at = newStartedAt
+
+    const { error } = await supabase.from('gopoum_clients').update(update).eq('id', id)
     if (error) fetchData()
   }
 
   async function handleDelete(id: string) {
-    // 낙관적 업데이트
     setGopoumClients(prev => prev.filter(gc => gc.id !== id))
     setPickups(prev => prev.filter(p => p.gopoum_client_id !== id))
     const { error } = await supabase.from('gopoum_clients').delete().eq('id', id)
-    if (error) {
-      // 실패 시 복구
-      fetchData()
-    }
+    if (error) fetchData()
   }
 
-  const sorted = [...gopoumClients].sort((a, b) => {
-    const aRemaining = Math.max(0, a.total_quantity - pickups.filter(p => p.gopoum_client_id === a.id).reduce((s, p) => s + p.quantity, 0))
-    const bRemaining = Math.max(0, b.total_quantity - pickups.filter(p => p.gopoum_client_id === b.id).reduce((s, p) => s + p.quantity, 0))
-    if (aRemaining > 0 && bRemaining === 0) return -1
-    if (aRemaining === 0 && bRemaining > 0) return 1
-    return b.created_at.localeCompare(a.created_at)
-  })
+  // 추가 순 (created_at ASC) — fetchData에서 이미 정렬됨
+  const sorted = gopoumClients
 
   const inputCls = 'border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400'
 
@@ -264,12 +279,8 @@ export default function GopoumPage() {
             {showSugg && suggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden">
                 {suggestions.map(c => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => pickSuggestion(c)}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0"
-                  >
+                  <button key={c.id} type="button" onClick={() => pickSuggestion(c)}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0">
                     <div className="flex items-center gap-2">
                       {c.code && <span className="text-xs text-slate-400 font-mono">{c.code}</span>}
                       <span className="text-sm text-slate-800 font-medium truncate">{c.name}</span>
@@ -280,11 +291,10 @@ export default function GopoumPage() {
             )}
           </div>
           <input
-            type="number"
-            min={1}
+            type="number" min={0}
             value={inputQtyStr}
             onChange={e => setInputQtyStr(e.target.value)}
-            onBlur={() => setInputQtyStr(String(Math.max(1, parseInt(inputQtyStr) || 1)))}
+            onBlur={() => setInputQtyStr(String(Math.max(0, parseInt(inputQtyStr) || 0)))}
             className={`${inputCls} w-20 text-center`}
             placeholder="수량"
           />
@@ -300,7 +310,6 @@ export default function GopoumPage() {
 
       {/* 카드 목록 */}
       <div className="flex-1 overflow-y-auto p-6">
-        {/* 컬럼 헤더 */}
         {sorted.length > 0 && (
           <div className="flex text-xs text-slate-400 font-semibold mb-1.5 px-1">
             <div className="w-16 flex-shrink-0 text-center">생성시간</div>
