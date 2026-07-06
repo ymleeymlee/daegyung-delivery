@@ -25,6 +25,7 @@ export default function RootLayout({
           <a href="/" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">배달 보드</a>
           <a href="/records" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">배달 내역</a>
           <a href="/gopoum" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">고품관리</a>
+          <a href="/gopoum-records" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">고품 내역</a>
           <a href="/clients" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">거래처 관리</a>
         </nav>
         {children}
