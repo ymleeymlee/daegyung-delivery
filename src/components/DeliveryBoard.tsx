@@ -61,7 +61,7 @@ function RiderSection({
   onDelete: (d: Delivery) => void
   strategy?: 'vertical' | 'horizontal'
   getGopoumInfo: (d: Delivery) => { remaining: number; gopoumClientId: string } | null
-  onGopoumPickup: (gopoumClientId: string, deliveryId: string, qty: number) => void
+  onGopoumPickup: (gopoumClientId: string, deliveryId: string, qty: number, existingPickupId?: string) => Promise<string | undefined>
 }) {
   const isClickable = selectedCardId !== null
   const sortStrategy = strategy === 'vertical' ? verticalListSortingStrategy : horizontalListSortingStrategy
@@ -245,25 +245,48 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
-  function handleGopoumPickup(gopoumClientId: string, deliveryId: string, qty: number) {
+  async function handleGopoumPickup(
+    gopoumClientId: string,
+    deliveryId: string,
+    qty: number,
+    existingPickupId?: string
+  ): Promise<string | undefined> {
     const delivery = deliveries.find(d => d.id === deliveryId)
     const rider = riders.find(r => r.id === delivery?.rider_id)
     const riderName = rider?.name ?? '알 수 없음'
-    const newPickup: GopoumPickup = {
-      id: crypto.randomUUID(),
-      gopoum_client_id: gopoumClientId,
-      delivery_id: deliveryId,
-      rider_name: riderName,
-      quantity: qty,
-      picked_at: new Date().toISOString(),
+    const pickedAt = new Date().toISOString()
+
+    if (existingPickupId) {
+      // 기존 기록 갱신 (추가 행 생성 안 함)
+      setGopoumPickups(prev =>
+        prev.map(p =>
+          p.id === existingPickupId ? { ...p, quantity: qty, picked_at: pickedAt } : p
+        )
+      )
+      supabase
+        .from('gopoum_pickups')
+        .update({ quantity: qty, picked_at: pickedAt })
+        .eq('id', existingPickupId)
+        .then(({ error }) => { if (error) fetchGopoum() })
+      return existingPickupId
+    } else {
+      // 신규 기록
+      const newId = crypto.randomUUID()
+      const newPickup: GopoumPickup = {
+        id: newId,
+        gopoum_client_id: gopoumClientId,
+        delivery_id: deliveryId,
+        rider_name: riderName,
+        quantity: qty,
+        picked_at: pickedAt,
+      }
+      setGopoumPickups(prev => [...prev, newPickup])
+      supabase
+        .from('gopoum_pickups')
+        .insert(newPickup)
+        .then(({ error }) => { if (error) fetchGopoum() })
+      return newId
     }
-    setGopoumPickups(prev => [...prev, newPickup])
-    supabase.from('gopoum_pickups').insert({
-      gopoum_client_id: gopoumClientId,
-      delivery_id: deliveryId,
-      rider_name: riderName,
-      quantity: qty,
-    }).then(({ error }) => { if (error) fetchGopoum() })
   }
 
   // 존(구역) 기반 이동 처리
