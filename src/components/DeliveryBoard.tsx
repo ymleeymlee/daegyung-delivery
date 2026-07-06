@@ -169,8 +169,11 @@ export default function DeliveryBoard() {
   function handleCollectItem(itemId: string, deliveryId: string, riderName: string) {
     const pickedAt = new Date().toISOString()
     setGopoumItems(prev => prev.map(i => i.id === itemId ? { ...i, rider_name: riderName, delivery_id: deliveryId, picked_at: pickedAt } : i))
-    supabase.from('gopoum_items').update({ rider_name: riderName, delivery_id: deliveryId, picked_at: pickedAt }).eq('id', itemId)
-      .then(({ error }) => { if (error) fetchGopoum() })
+    fetch('/api/gopoum-items', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: itemId, rider_name: riderName, delivery_id: deliveryId, picked_at: pickedAt }),
+    }).then(res => { if (!res.ok) fetchGopoum() })
   }
 
   function moveSelectedTo(zone: 'waiting' | 'rider', riderId?: string) {

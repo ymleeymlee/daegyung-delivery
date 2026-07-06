@@ -220,20 +220,18 @@ export default function GopoumPage() {
     const tempItem = { id: tempId, gopoum_client_id: clientId, description, rider_name: null, delivery_id: null, picked_at: null, created_at: now }
     setGopoumItems(prev => [...prev, tempItem])
 
-    const { data, error } = await supabase.from('gopoum_items').insert({
-      gopoum_client_id: clientId,
-      description,
-    }).select().single()
-
-    if (error) {
+    const res = await fetch('/api/gopoum-items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gopoum_client_id: clientId, description }),
+    })
+    const json = await res.json()
+    if (!res.ok) {
       setGopoumItems(prev => prev.filter(i => i.id !== tempId))
-      alert('추가 실패: ' + error.message)
+      alert('추가 실패: ' + json.error)
       return
     }
-    if (data) {
-      // temp 항목을 실제 DB 항목으로 교체
-      setGopoumItems(prev => prev.map(i => i.id === tempId ? data : i))
-    }
+    setGopoumItems(prev => prev.map(i => i.id === tempId ? json : i))
   }
 
   async function handleUpdateStartedAt(clientId: string) {
