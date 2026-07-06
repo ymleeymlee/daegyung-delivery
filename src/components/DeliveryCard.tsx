@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Delivery } from '@/types'
+import { Delivery, GopoumPickup } from '@/types'
 import ElapsedTimer from './ElapsedTimer'
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
   onDelete: (delivery: Delivery) => void
   gopoumRemaining?: number
   gopoumClientId?: string
+  existingPickup?: GopoumPickup
   onGopoumPickup?: (
     gopoumClientId: string,
     deliveryId: string,
@@ -23,7 +24,7 @@ interface Props {
 
 export default function DeliveryCard({
   delivery, isSelected, onSelect, onDelete,
-  gopoumRemaining, gopoumClientId, onGopoumPickup,
+  gopoumRemaining, gopoumClientId, existingPickup, onGopoumPickup,
 }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: delivery.id,
@@ -36,17 +37,27 @@ export default function DeliveryCard({
   const [pickupId, setPickupId] = useState<string | undefined>()
   const [lastRecordedQty, setLastRecordedQty] = useState<number | null>(null)
   const initialized = useRef(false)
+  const gopoumRemainingRef = useRef(gopoumRemaining)
+  gopoumRemainingRef.current = gopoumRemaining
 
-  // 배정됐을 때 잔여 고품 수를 기본값으로 설정 (최초 1회)
+  // 우선순위 1: DB에 저장된 기록으로 복원 (탭 이동 후에도 상태 유지)
   useEffect(() => {
-    if (
-      delivery.status === 'assigned' &&
-      (gopoumRemaining ?? 0) > 0 &&
-      !initialized.current
-    ) {
+    if (!existingPickup) return
+    initialized.current = true
+    setPickupId(existingPickup.id)
+    setPickupQty(existingPickup.quantity)
+    setLastRecordedQty(existingPickup.quantity)
+    setMaxPickup((gopoumRemainingRef.current ?? 0) + existingPickup.quantity)
+    setRecorded(true)
+  }, [existingPickup?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 우선순위 2: 배정 시 잔여 수량을 기본값으로 (기록이 없을 때만)
+  useEffect(() => {
+    if (initialized.current) return
+    if (delivery.status === 'assigned' && (gopoumRemainingRef.current ?? 0) > 0) {
       initialized.current = true
-      setPickupQty(gopoumRemaining!)
-      setMaxPickup(gopoumRemaining!)
+      setPickupQty(gopoumRemainingRef.current!)
+      setMaxPickup(gopoumRemainingRef.current!)
     }
   }, [delivery.status, gopoumRemaining])
 
@@ -57,13 +68,12 @@ export default function DeliveryCard({
   }
 
   const hasGopoum = (gopoumRemaining ?? 0) > 0
-  const showGopoum = delivery.status === 'assigned' && !!gopoumClientId && !!onGopoumPickup && (hasGopoum || recorded)
-  const showBadge = hasGopoum || recorded
+  const isGopoumCard = hasGopoum || recorded
+  const showGopoum = delivery.status === 'assigned' && !!gopoumClientId && !!onGopoumPickup && isGopoumCard
 
-  // 갱신 시 최대치 = 남은 수량 + 내가 이미 기록한 수량 (교체 방식이므로)
+  // 최대 수거 가능 수량 = 잔여 + 내가 이미 기록한 수량 (교체 방식)
   const effectiveMax = (gopoumRemaining ?? 0) + (lastRecordedQty ?? 0)
-
-  // 기록 버튼 비활성 조건: 이미 기록했고 수량이 마지막 기록과 동일
+  // 기록 버튼: 이미 기록한 수량과 동일하면 비활성
   const recordDisabled = recorded && lastRecordedQty === pickupQty
 
   const orderTime = new Date(delivery.created_at).toLocaleTimeString('ko-KR', {
@@ -91,8 +101,6 @@ export default function DeliveryCard({
       return next
     })
   }
-
-  const isGopoumCard = hasGopoum || recorded
 
   return (
     <div
@@ -122,7 +130,7 @@ export default function DeliveryCard({
       >×</button>
 
       {/* 고품 배지 */}
-      {showBadge && (
+      {isGopoumCard && (
         <div className={`absolute -top-2 -left-2 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap ${
           recorded && !hasGopoum ? 'bg-green-500' : 'bg-amber-400'
         }`}>
@@ -155,7 +163,6 @@ export default function DeliveryCard({
         >
           <p className="text-xs text-amber-600 font-semibold mb-2">고품 수거</p>
 
-          {/* +/- 버튼 (크게) */}
           <div className="flex items-center gap-1 mb-2">
             <button
               onClick={(e) => { e.stopPropagation(); changeQty(-1) }}
@@ -172,7 +179,6 @@ export default function DeliveryCard({
             >+</button>
           </div>
 
-          {/* 기록 버튼 (아래, 크게) */}
           <button
             onClick={handleRecord}
             onPointerDown={(e) => e.stopPropagation()}

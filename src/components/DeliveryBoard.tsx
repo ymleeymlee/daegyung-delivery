@@ -51,6 +51,7 @@ function RiderSection({
   onDelete,
   strategy = 'vertical',
   getGopoumInfo,
+  getExistingPickup,
   onGopoumPickup,
 }: {
   rider: Rider
@@ -61,6 +62,7 @@ function RiderSection({
   onDelete: (d: Delivery) => void
   strategy?: 'vertical' | 'horizontal'
   getGopoumInfo: (d: Delivery) => { remaining: number; gopoumClientId: string } | null
+  getExistingPickup: (deliveryId: string) => GopoumPickup | undefined
   onGopoumPickup: (gopoumClientId: string, deliveryId: string, qty: number, existingPickupId?: string) => Promise<string | undefined>
 }) {
   const isClickable = selectedCardId !== null
@@ -98,6 +100,7 @@ function RiderSection({
                 onDelete={onDelete}
                 gopoumRemaining={gi?.remaining}
                 gopoumClientId={gi?.gopoumClientId}
+                existingPickup={getExistingPickup(d.id)}
                 onGopoumPickup={onGopoumPickup}
               />
             )
@@ -154,7 +157,7 @@ export default function DeliveryBoard() {
     return () => { supabase.removeChannel(channel) }
   }, [fetchAll, fetchGopoum])
 
-  // 업체별 잔여 고품 수 계산
+  // 업체별 잔여 고품 수 계산 (remaining=0이어도 포함 — 기록 섹션 유지용)
   const gopoumRemainingMap = useMemo(() => {
     const byId = new Map<string, { remaining: number; gopoumClientId: string }>()
     const byName = new Map<string, { remaining: number; gopoumClientId: string }>()
@@ -163,10 +166,8 @@ export default function DeliveryBoard() {
         .filter(p => p.gopoum_client_id === gc.id)
         .reduce((sum, p) => sum + p.quantity, 0)
       const remaining = Math.max(0, gc.total_quantity - picked)
-      if (remaining > 0) {
-        if (gc.client_id) byId.set(gc.client_id, { remaining, gopoumClientId: gc.id })
-        byName.set(gc.client_name, { remaining, gopoumClientId: gc.id })
-      }
+      if (gc.client_id) byId.set(gc.client_id, { remaining, gopoumClientId: gc.id })
+      byName.set(gc.client_name, { remaining, gopoumClientId: gc.id })
     }
     return { byId, byName }
   }, [gopoumClients, gopoumPickups])
@@ -179,6 +180,10 @@ export default function DeliveryBoard() {
       return gopoumRemainingMap.byName.get(d.client_name)!
     }
     return null
+  }
+
+  function getExistingPickup(deliveryId: string) {
+    return gopoumPickups.find(p => p.delivery_id === deliveryId)
   }
 
   // 낙관적 업데이트: 화면을 먼저 바꾸고 DB 저장은 백그라운드로. 실시간 구독이 이후 정합성 보정.
@@ -238,10 +243,12 @@ export default function DeliveryBoard() {
       .then(({ error }) => { if (error) fetchAll() })
   }
 
-  // 삭제: 대기열·배정 구분 없이 완전 삭제
+  // 삭제: 배달 카드 + 연결된 고품 수거 기록 함께 삭제
   function handleDelete(delivery: Delivery) {
     if (selectedCardId === delivery.id) setSelectedCardId(null)
     setDeliveries(prev => prev.filter(d => d.id !== delivery.id))
+    setGopoumPickups(prev => prev.filter(p => p.delivery_id !== delivery.id))
+    supabase.from('gopoum_pickups').delete().eq('delivery_id', delivery.id)
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
@@ -374,6 +381,7 @@ export default function DeliveryBoard() {
     onSelect: handleCardClick,
     onDelete: handleDelete,
     getGopoumInfo,
+    getExistingPickup,
     onGopoumPickup: handleGopoumPickup,
   }
 
@@ -420,6 +428,7 @@ export default function DeliveryBoard() {
                     onDelete={handleDelete}
                     gopoumRemaining={gi?.remaining}
                     gopoumClientId={gi?.gopoumClientId}
+                    existingPickup={getExistingPickup(d.id)}
                     onGopoumPickup={handleGopoumPickup}
                   />
                 )
