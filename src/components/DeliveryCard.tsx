@@ -56,7 +56,7 @@ export default function DeliveryCard({
     if (initialized.current) return
     if (delivery.status === 'assigned' && (gopoumRemainingRef.current ?? 0) > 0) {
       initialized.current = true
-      setPickupQty(gopoumRemainingRef.current!)
+      setPickupQty(0)
       setMaxPickup(gopoumRemainingRef.current!)
     }
   }, [delivery.status, gopoumRemaining])
