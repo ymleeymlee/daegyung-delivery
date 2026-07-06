@@ -93,7 +93,7 @@ function GopoumCard({
           ) : (
             <button
               onClick={() => setEditingQty(true)}
-              className="text-sm text-slate-700 hover:text-blue-600 hover:underline font-medium"
+              className="text-lg font-bold text-slate-700 hover:text-blue-600 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors min-w-[2.5rem] text-center"
               title="총 수량 수정"
             >
               {gc.total_quantity}
@@ -138,7 +138,7 @@ export default function GopoumPage() {
   // 항상 보이는 추가 폼 상태
   const [inputCode, setInputCode] = useState('')
   const [inputName, setInputName] = useState('')
-  const [inputQty, setInputQty] = useState(1)
+  const [inputQtyStr, setInputQtyStr] = useState('1')
   const [suggestions, setSuggestions] = useState<Client[]>([])
   const [showSugg, setShowSugg] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -202,14 +202,14 @@ export default function GopoumPage() {
       client_id: null,
       client_code: inputCode.trim(),
       client_name: inputName.trim(),
-      total_quantity: inputQty,
+      total_quantity: Math.max(1, parseInt(inputQtyStr) || 1),
     })
     setAdding(false)
     if (!error) {
       // 추가 후 폼 초기화 → 바로 다시 추가 가능
       setInputCode('')
       setInputName('')
-      setInputQty(1)
+      setInputQtyStr('1')
       setSuggestions([])
       setShowSugg(false)
     }
@@ -282,8 +282,9 @@ export default function GopoumPage() {
           <input
             type="number"
             min={1}
-            value={inputQty}
-            onChange={e => setInputQty(Math.max(1, parseInt(e.target.value) || 1))}
+            value={inputQtyStr}
+            onChange={e => setInputQtyStr(e.target.value)}
+            onBlur={() => setInputQtyStr(String(Math.max(1, parseInt(inputQtyStr) || 1)))}
             className={`${inputCls} w-20 text-center`}
             placeholder="수량"
           />
