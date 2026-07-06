@@ -47,3 +47,13 @@ export interface GopoumPickup {
   quantity: number
   picked_at: string
 }
+
+export interface GopoumItem {
+  id: string
+  gopoum_client_id: string
+  description: string
+  rider_name: string | null
+  delivery_id: string | null
+  picked_at: string | null
+  created_at: string
+}
