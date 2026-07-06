@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   DndContext,
   DragEndEvent,
@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable'
 import { useDroppable } from '@dnd-kit/core'
 import { supabase } from '@/lib/supabase'
-import { Delivery, Rider } from '@/types'
+import { Delivery, Rider, GopoumClient, GopoumPickup } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 
@@ -50,6 +50,8 @@ function RiderSection({
   onSelect,
   onDelete,
   strategy = 'vertical',
+  getGopoumInfo,
+  onGopoumPickup,
 }: {
   rider: Rider
   deliveries: Delivery[]
@@ -58,6 +60,8 @@ function RiderSection({
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
   strategy?: 'vertical' | 'horizontal'
+  getGopoumInfo: (d: Delivery) => { remaining: number; gopoumClientId: string } | null
+  onGopoumPickup: (gopoumClientId: string, deliveryId: string, qty: number) => void
 }) {
   const isClickable = selectedCardId !== null
   const sortStrategy = strategy === 'vertical' ? verticalListSortingStrategy : horizontalListSortingStrategy
@@ -83,15 +87,21 @@ function RiderSection({
           {deliveries.length === 0 && (
             <p className="text-xs text-slate-300 italic text-center py-4">배달 없음</p>
           )}
-          {deliveries.map(d => (
-            <DeliveryCard
-              key={d.id}
-              delivery={d}
-              isSelected={selectedCardId === d.id}
-              onSelect={onSelect}
-              onDelete={onDelete}
-            />
-          ))}
+          {deliveries.map(d => {
+            const gi = getGopoumInfo(d)
+            return (
+              <DeliveryCard
+                key={d.id}
+                delivery={d}
+                isSelected={selectedCardId === d.id}
+                onSelect={onSelect}
+                onDelete={onDelete}
+                gopoumRemaining={gi?.remaining}
+                gopoumClientId={gi?.gopoumClientId}
+                onGopoumPickup={onGopoumPickup}
+              />
+            )
+          })}
         </SortableContext>
       </DroppableZone>
     </div>
@@ -103,6 +113,8 @@ export default function DeliveryBoard() {
   const [riders, setRiders] = useState<Rider[]>([])
   const [activeDelivery, setActiveDelivery] = useState<Delivery | null>(null)
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
+  const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
+  const [gopoumPickups, setGopoumPickups] = useState<GopoumPickup[]>([])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -121,14 +133,53 @@ export default function DeliveryBoard() {
     setRiders(r ?? [])
   }, [])
 
+  const fetchGopoum = useCallback(async () => {
+    const [{ data: gClients }, { data: gPickups }] = await Promise.all([
+      supabase.from('gopoum_clients').select('*'),
+      supabase.from('gopoum_pickups').select('*'),
+    ])
+    setGopoumClients(gClients ?? [])
+    setGopoumPickups(gPickups ?? [])
+  }, [])
+
   useEffect(() => {
     fetchAll()
+    fetchGopoum()
     const channel = supabase
-      .channel('deliveries-realtime')
+      .channel('board-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, fetchGopoum)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_pickups' }, fetchGopoum)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fetchAll])
+  }, [fetchAll, fetchGopoum])
+
+  // 업체별 잔여 고품 수 계산
+  const gopoumRemainingMap = useMemo(() => {
+    const byId = new Map<string, { remaining: number; gopoumClientId: string }>()
+    const byName = new Map<string, { remaining: number; gopoumClientId: string }>()
+    for (const gc of gopoumClients) {
+      const picked = gopoumPickups
+        .filter(p => p.gopoum_client_id === gc.id)
+        .reduce((sum, p) => sum + p.quantity, 0)
+      const remaining = Math.max(0, gc.total_quantity - picked)
+      if (remaining > 0) {
+        if (gc.client_id) byId.set(gc.client_id, { remaining, gopoumClientId: gc.id })
+        byName.set(gc.client_name, { remaining, gopoumClientId: gc.id })
+      }
+    }
+    return { byId, byName }
+  }, [gopoumClients, gopoumPickups])
+
+  function getGopoumInfo(d: Delivery) {
+    if (d.client_id && gopoumRemainingMap.byId.has(d.client_id)) {
+      return gopoumRemainingMap.byId.get(d.client_id)!
+    }
+    if (gopoumRemainingMap.byName.has(d.client_name)) {
+      return gopoumRemainingMap.byName.get(d.client_name)!
+    }
+    return null
+  }
 
   // 낙관적 업데이트: 화면을 먼저 바꾸고 DB 저장은 백그라운드로. 실시간 구독이 이후 정합성 보정.
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {
@@ -194,10 +245,28 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
+  function handleGopoumPickup(gopoumClientId: string, deliveryId: string, qty: number) {
+    const delivery = deliveries.find(d => d.id === deliveryId)
+    const rider = riders.find(r => r.id === delivery?.rider_id)
+    const riderName = rider?.name ?? '알 수 없음'
+    const newPickup: GopoumPickup = {
+      id: crypto.randomUUID(),
+      gopoum_client_id: gopoumClientId,
+      delivery_id: deliveryId,
+      rider_name: riderName,
+      quantity: qty,
+      picked_at: new Date().toISOString(),
+    }
+    setGopoumPickups(prev => [...prev, newPickup])
+    supabase.from('gopoum_pickups').insert({
+      gopoum_client_id: gopoumClientId,
+      delivery_id: deliveryId,
+      rider_name: riderName,
+      quantity: qty,
+    }).then(({ error }) => { if (error) fetchGopoum() })
+  }
+
   // 존(구역) 기반 이동 처리
-  // - 선택된 카드가 없으면 아무 동작 안 함
-  // - rider 존: 선택 카드를 해당 라이더로 배정/이동 (이미 같은 라이더면 해제만)
-  // - waiting 존: 배정된 선택 카드를 대기열로 복귀
   function moveSelectedTo(zone: 'waiting' | 'rider', riderId?: string) {
     if (!selectedCardId) return
     const sel = deliveries.find(d => d.id === selectedCardId)
@@ -215,8 +284,6 @@ export default function DeliveryBoard() {
     setSelectedCardId(null)
   }
 
-  // 카드 클릭: 선택 카드가 없으면 선택, 같은 카드면 해제,
-  // 다른 카드가 선택된 상태면 클릭한 카드가 속한 구역으로 이동
   function handleCardClick(clicked: Delivery) {
     if (selectedCardId === clicked.id) {
       setSelectedCardId(null)
@@ -269,12 +336,10 @@ export default function DeliveryBoard() {
     .filter(d => d.status === 'waiting')
     .sort((a, b) => a.sort_order - b.sort_order)
 
-  // is_quick 필드가 없는 구버전 데이터도 안전하게 처리
   const regularRiders = riders.filter(r => !r.is_quick)
   const quickRiders = riders.filter(r => r.is_quick)
 
   function getRiderDeliveries(riderId: string) {
-    // sort_order 순 정렬 → 새로 배정된 카드(가장 큰 sort_order)는 항상 맨 아래에 표시
     return deliveries
       .filter(d => d.rider_id === riderId && d.status === 'assigned')
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -285,6 +350,8 @@ export default function DeliveryBoard() {
     onRiderClick: handleRiderClick,
     onSelect: handleCardClick,
     onDelete: handleDelete,
+    getGopoumInfo,
+    onGopoumPickup: handleGopoumPickup,
   }
 
   return (
@@ -319,15 +386,21 @@ export default function DeliveryBoard() {
                   배달 카드를 추가하거나 드래그해서 놓으세요
                 </p>
               )}
-              {waitingDeliveries.map(d => (
-                <DeliveryCard
-                  key={d.id}
-                  delivery={d}
-                  isSelected={selectedCardId === d.id}
-                  onSelect={handleCardClick}
-                  onDelete={handleDelete}
-                />
-              ))}
+              {waitingDeliveries.map(d => {
+                const gi = getGopoumInfo(d)
+                return (
+                  <DeliveryCard
+                    key={d.id}
+                    delivery={d}
+                    isSelected={selectedCardId === d.id}
+                    onSelect={handleCardClick}
+                    onDelete={handleDelete}
+                    gopoumRemaining={gi?.remaining}
+                    gopoumClientId={gi?.gopoumClientId}
+                    onGopoumPickup={handleGopoumPickup}
+                  />
+                )
+              })}
             </SortableContext>
           </DroppableZone>
         </section>

@@ -28,3 +28,21 @@ export interface Delivery {
   rider_id: string | null
   sort_order: number
 }
+
+export interface GopoumClient {
+  id: string
+  client_id: string | null
+  client_code: string
+  client_name: string
+  total_quantity: number
+  created_at: string
+}
+
+export interface GopoumPickup {
+  id: string
+  gopoum_client_id: string
+  delivery_id: string | null
+  rider_name: string
+  quantity: number
+  picked_at: string
+}
