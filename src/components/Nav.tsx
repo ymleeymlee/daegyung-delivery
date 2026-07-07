@@ -15,13 +15,19 @@ export default function Nav() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  const [maekamDone, setMaekamDone] = useState(false)
+
   async function handleMaekam() {
-    if (!confirm('고품 마감을 실행하시겠습니까?\n(잔여 수량이 내일 총수량으로 이월됩니다)')) return
+    if (!confirm('오늘 마감을 실행하시겠습니까?\n\n· 배달 현황이 초기화됩니다\n· 오늘 기록이 배달/고품 내역에 저장됩니다\n· 고품 잔여 수량이 내일로 이월됩니다')) return
     setMaekamLoading(true)
     try {
-      const res = await fetch('/api/gopoum-reset')
-      if (res.ok) alert('마감 완료')
-      else alert('마감 실패: ' + (await res.text()))
+      const res = await fetch('/api/close')
+      if (res.ok) {
+        setMaekamDone(true)
+        setTimeout(() => setMaekamDone(false), 4000)
+      } else {
+        alert('마감 실패: ' + (await res.text()))
+      }
     } catch {
       alert('마감 실패')
     }
@@ -55,13 +61,18 @@ export default function Nav() {
       </div>
 
       {/* 마감 버튼 */}
-      <button
-        onClick={handleMaekam}
-        disabled={maekamLoading}
-        className="ml-auto flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {maekamLoading ? '마감 중...' : '마감'}
-      </button>
+      <div className="ml-auto flex items-center gap-3">
+        {maekamDone && (
+          <span className="text-sm font-semibold text-green-600 animate-pulse">✓ 마감되었습니다</span>
+        )}
+        <button
+          onClick={handleMaekam}
+          disabled={maekamLoading}
+          className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {maekamLoading ? '마감 중...' : '마감'}
+        </button>
+      </div>
     </nav>
   )
 }

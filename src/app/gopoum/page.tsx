@@ -20,7 +20,7 @@ function fmtDateTime(iso: string) {
 }
 
 function GopoumCard({
-  gc, items, todayStart, onDelete, onAddItem, onUpdateStartedAt,
+  gc, items, todayStart, onDelete, onAddItem, onUpdateStartedAt, onDeleteItem,
 }: {
   gc: GopoumClient
   items: GopoumItem[]
@@ -28,6 +28,7 @@ function GopoumCard({
   onDelete: (id: string) => void
   onAddItem: (clientId: string, description: string) => void
   onUpdateStartedAt: (id: string) => void
+  onDeleteItem: (itemId: string) => void
 }) {
   const [showAddItem, setShowAddItem] = useState(false)
   const [newDesc, setNewDesc] = useState('')
@@ -100,7 +101,7 @@ function GopoumCard({
             <div className="px-4 py-3 text-xs text-slate-300 italic flex items-center h-full">품목 없음</div>
           ) : (
             sortedItems.map(item => (
-              <div key={item.id} className={`flex items-center gap-4 px-4 py-2 ${item.picked_at ? 'bg-green-50' : ''}`}>
+              <div key={item.id} className={`flex items-center gap-4 px-4 py-2 group ${item.picked_at ? 'bg-green-50' : ''}`}>
                 <span className={`w-40 flex-shrink-0 text-sm truncate ${item.picked_at ? 'text-green-700 line-through' : 'text-slate-700 font-medium'}`}>
                   {item.description}
                 </span>
@@ -113,6 +114,11 @@ function GopoumCard({
                 ) : (
                   <span className="text-sm text-amber-500 font-medium">미수거</span>
                 )}
+                <button
+                  onClick={() => { if (confirm(`'${item.description}' 품목을 삭제할까요?`)) onDeleteItem(item.id) }}
+                  className="ml-auto flex-shrink-0 text-slate-300 hover:text-red-400 text-lg leading-none px-1 transition-colors"
+                  title="품목 삭제"
+                >×</button>
               </div>
             ))
           )}
@@ -170,10 +176,10 @@ export default function GopoumPage() {
       supabase.from('gopoum_items').select('*'),
     ])
     setGopoumClients(gClients ?? [])
-    // 오늘 수거 or 미수거만 표시 (JS 필터)
+    // 마감 안 된 아이템만 표시 (미수거 + 오늘 수거했지만 아직 마감 전)
     const allItems = gItems ?? []
-    setGopoumItems(allItems.filter(i => !i.picked_at || i.picked_at >= todayStart))
-  }, [todayStart])
+    setGopoumItems(allItems.filter(i => !i.archived_at))
+  }, [])
 
   useEffect(() => {
     fetchData()
@@ -222,7 +228,7 @@ export default function GopoumPage() {
     // 낙관적 업데이트: DB 응답 전에 화면 먼저 반영
     const tempId = crypto.randomUUID()
     const now = new Date().toISOString()
-    const tempItem = { id: tempId, gopoum_client_id: clientId, description, rider_name: null, delivery_id: null, picked_at: null, created_at: now }
+    const tempItem = { id: tempId, gopoum_client_id: clientId, description, rider_name: null, delivery_id: null, picked_at: null, created_at: now, archived_at: null }
     setGopoumItems(prev => [...prev, tempItem])
 
     const res = await fetch('/api/gopoum-items', {
@@ -250,6 +256,16 @@ export default function GopoumPage() {
     setGopoumItems(prev => prev.filter(i => i.gopoum_client_id !== id))
     const { error } = await supabase.from('gopoum_clients').delete().eq('id', id)
     if (error) fetchData()
+  }
+
+  async function handleDeleteItem(itemId: string) {
+    setGopoumItems(prev => prev.filter(i => i.id !== itemId))
+    const res = await fetch('/api/gopoum-items', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: itemId }),
+    })
+    if (!res.ok) fetchData()
   }
 
   const inputCls = 'border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400'
@@ -309,6 +325,7 @@ export default function GopoumPage() {
               onDelete={handleDelete}
               onAddItem={handleAddItem}
               onUpdateStartedAt={handleUpdateStartedAt}
+              onDeleteItem={handleDeleteItem}
             />
           ))}
         </div>

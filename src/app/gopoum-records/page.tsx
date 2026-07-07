@@ -8,14 +8,6 @@ import { GopoumClient, GopoumItem } from '@/types'
 function todayKst() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 }
-function kstHour() {
-  return parseInt(new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: 'numeric', hour12: false }).format(new Date()))
-}
-function latestClosedDate() {
-  const now = new Date()
-  if (kstHour() >= 18) return todayKst()
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date(now.getTime() - 86400000))
-}
 function fmtDate(iso: string) {
   return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit' }).format(new Date(iso))
 }
@@ -33,7 +25,7 @@ function GopoumHistoryCard({ gc, items }: { gc: GopoumClient; items: GopoumItem[
   const collected = items.filter(i => i.picked_at)
   const uncollected = items.filter(i => !i.picked_at)
   const sorted = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at))
-  const displayTime = gc.started_at ?? (sorted[0]?.created_at ?? null)
+  const displayTime = sorted[0]?.created_at ?? gc.started_at ?? null
 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex text-sm min-h-14 ${uncollected.length > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
@@ -94,7 +86,7 @@ function GopoumHistoryCard({ gc, items }: { gc: GopoumClient; items: GopoumItem[
 }
 
 export default function GopoumRecordsPage() {
-  const [date, setDate] = useState(latestClosedDate)
+  const [date, setDate] = useState(todayKst)
   const [dayData, setDayData] = useState<DayData[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -102,10 +94,11 @@ export default function GopoumRecordsPage() {
     setLoading(true)
     const startMs = new Date(`${dateStr}T00:00:00+09:00`).getTime()
     const startIso = new Date(startMs).toISOString()
-    const cutoffIso = new Date(`${dateStr}T18:00:00+09:00`).toISOString()
+    const endIso = new Date(startMs + 24 * 60 * 60 * 1000).toISOString()
 
+    // 마감된(archived) 아이템을 마감일 기준으로 조회
     const [{ data: items }, { data: clients }] = await Promise.all([
-      supabase.from('gopoum_items').select('*').gte('picked_at', startIso).lt('picked_at', cutoffIso),
+      supabase.from('gopoum_items').select('*').gte('archived_at', startIso).lt('archived_at', endIso),
       supabase.from('gopoum_clients').select('*'),
     ])
 
@@ -162,7 +155,7 @@ export default function GopoumRecordsPage() {
   }
 
   const totalCollected = dayData.reduce((s, { items }) => s + items.filter(i => i.picked_at).length, 0)
-  const max = latestClosedDate()
+  const max = todayKst()
 
   return (
     <div className="p-6 max-w-full">

@@ -25,3 +25,11 @@ export async function PATCH(request: NextRequest) {
   if (error) return Response.json({ error: error.message }, { status: 400 })
   return Response.json(data)
 }
+
+// DELETE: 아이템 삭제
+export async function DELETE(request: NextRequest) {
+  const { id } = await request.json()
+  const { error } = await supabaseServer.from('gopoum_items').delete().eq('id', id)
+  if (error) return Response.json({ error: error.message }, { status: 400 })
+  return Response.json({ ok: true })
+}

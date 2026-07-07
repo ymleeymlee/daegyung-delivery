@@ -56,4 +56,5 @@ export interface GopoumItem {
   delivery_id: string | null
   picked_at: string | null
   created_at: string
+  archived_at: string | null
 }

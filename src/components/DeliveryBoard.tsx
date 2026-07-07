@@ -97,15 +97,14 @@ export default function DeliveryBoard() {
   }, [])
 
   const fetchGopoum = useCallback(async () => {
-    const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
-    const todayStart = new Date(`${kstDate}T00:00:00+09:00`).toISOString()
     const [{ data: gClients }, { data: gItems }] = await Promise.all([
       supabase.from('gopoum_clients').select('*'),
       supabase.from('gopoum_items').select('*'),
     ])
     setGopoumClients(gClients ?? [])
     const allItems = gItems ?? []
-    setGopoumItems(allItems.filter((i: { picked_at: string | null }) => !i.picked_at || i.picked_at >= todayStart))
+    // 마감 안 된 아이템만
+    setGopoumItems(allItems.filter((i: { archived_at: string | null }) => !i.archived_at))
   }, [])
 
   useEffect(() => {
