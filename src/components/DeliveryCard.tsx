@@ -45,7 +45,7 @@ function GopoumModal({
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
             <span className="font-bold text-slate-800">고품 수거</span>
-            <span className="ml-2 text-sm text-slate-500">{myItems.length}/{items.length}</span>
+            <span className="ml-2 text-sm text-slate-500">{myItems.length}/{myItems.length + availableItems.length}</span>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
@@ -116,11 +116,14 @@ export default function DeliveryCard({
 
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }
 
-  const totalCount = gopoumItems?.length ?? 0
   // 내가 이 배달에서 수거한 수
   const myCount = (gopoumItems ?? []).filter(i => i.picked_at && i.delivery_id === delivery.id).length
-  const hasGopoum = totalCount > 0
-  const allMineCollected = totalCount > 0 && myCount === totalCount
+  // 아직 아무도 수거 안 한 수
+  const availableCount = (gopoumItems ?? []).filter(i => !i.picked_at).length
+  // 분모 = 내가 가져올 수 있는 총량 (본인 수거 + 미수거). 타 배달자 수거분은 제외
+  const mineTotal = myCount + availableCount
+  const hasGopoum = mineTotal > 0
+  const allMineCollected = mineTotal > 0 && availableCount === 0
   const isGopoumCard = hasGopoum
 
   const orderTime = new Date(delivery.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
@@ -158,7 +161,7 @@ export default function DeliveryCard({
           <div className={`absolute -top-2 -left-2 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap ${
             allMineCollected ? 'bg-green-500' : 'bg-amber-400'
           }`}>
-            고품 {myCount}/{totalCount}
+            고품 {myCount}/{mineTotal}
           </div>
         )}
 
@@ -185,7 +188,7 @@ export default function DeliveryCard({
                 : 'bg-amber-400 hover:bg-amber-500 text-white'
             }`}
           >
-            고품 {myCount}/{totalCount}
+            고품 {myCount}/{mineTotal}
           </button>
         )}
       </div>
