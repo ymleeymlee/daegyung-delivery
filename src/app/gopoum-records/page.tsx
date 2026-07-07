@@ -33,15 +33,16 @@ function GopoumHistoryCard({ gc, items }: { gc: GopoumClient; items: GopoumItem[
   const collected = items.filter(i => i.picked_at)
   const uncollected = items.filter(i => !i.picked_at)
   const sorted = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at))
+  const displayTime = gc.started_at ?? (sorted[0]?.created_at ?? null)
 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex text-sm min-h-14 ${uncollected.length > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
       {/* 생성시간 */}
       <div className="w-16 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center text-center">
-        {gc.started_at ? (
+        {displayTime ? (
           <>
-            <span className="text-xs text-slate-400">{fmtDate(gc.started_at)}</span>
-            <span className="text-xs text-slate-500 font-medium">{fmtTime(gc.started_at)}</span>
+            <span className="text-xs text-slate-400">{fmtDate(displayTime)}</span>
+            <span className="text-xs text-slate-500 font-medium">{fmtTime(displayTime)}</span>
           </>
         ) : <span className="text-xs text-slate-300">-</span>}
       </div>
@@ -71,14 +72,18 @@ function GopoumHistoryCard({ gc, items }: { gc: GopoumClient; items: GopoumItem[
       {/* 품목 목록 */}
       <div className="flex-1 min-w-0 divide-y divide-slate-100">
         {sorted.map(item => (
-          <div key={item.id} className={`flex items-center gap-2 px-4 py-2 ${item.picked_at ? 'bg-green-50' : ''}`}>
-            <span className={`flex-1 text-sm truncate ${item.picked_at ? 'text-green-700 line-through' : 'text-slate-700 font-medium'}`}>
+          <div key={item.id} className={`flex items-center gap-4 px-4 py-2 ${item.picked_at ? 'bg-green-50' : ''}`}>
+            <span className={`w-40 flex-shrink-0 text-sm truncate ${item.picked_at ? 'text-green-700 line-through' : 'text-slate-700 font-medium'}`}>
               {item.description}
             </span>
             {item.picked_at ? (
-              <span className="text-xs text-green-600 whitespace-nowrap flex-shrink-0">✓ {item.rider_name} {fmtDateTime(item.picked_at)}</span>
+              <span className="flex items-center gap-2 whitespace-nowrap">
+                <span className="text-green-600 font-bold text-sm">✓</span>
+                <span className="text-sm font-bold text-slate-800">{item.rider_name}</span>
+                <span className="text-sm text-slate-500">{fmtDateTime(item.picked_at)}</span>
+              </span>
             ) : (
-              <span className="text-xs text-amber-400 flex-shrink-0">미수거</span>
+              <span className="text-sm text-amber-500 font-medium">미수거</span>
             )}
           </div>
         ))}

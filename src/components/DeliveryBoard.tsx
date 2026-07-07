@@ -25,7 +25,7 @@ function DroppableZone({ id, children, className }: { id: string; children: Reac
 
 function RiderSection({
   rider, deliveries, selectedCardId, onRiderClick, onSelect, onDelete,
-  strategy = 'vertical', getGopoumData, onCollectItem,
+  strategy = 'vertical', getGopoumData, onCollectItem, onUncollectItem,
 }: {
   rider: Rider
   deliveries: Delivery[]
@@ -36,6 +36,7 @@ function RiderSection({
   strategy?: 'vertical' | 'horizontal'
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onCollectItem: (itemId: string, deliveryId: string, riderName: string) => void
+  onUncollectItem: (itemId: string) => void
 }) {
   const isClickable = selectedCardId !== null
   const sortStrategy = strategy === 'vertical' ? verticalListSortingStrategy : horizontalListSortingStrategy
@@ -64,7 +65,9 @@ function RiderSection({
                 onDelete={onDelete}
                 gopoumItems={gd?.items}
                 gopoumClientId={gd?.clientId}
-                onCollectItem={(itemId, deliveryId) => onCollectItem(itemId, deliveryId, rider.name)}
+                riderName={rider.name}
+                onCollectItem={onCollectItem}
+                onUncollectItem={onUncollectItem}
               />
             )
           })}
@@ -176,6 +179,15 @@ export default function DeliveryBoard() {
     }).then(res => { if (!res.ok) fetchGopoum() })
   }
 
+  function handleUncollectItem(itemId: string) {
+    setGopoumItems(prev => prev.map(i => i.id === itemId ? { ...i, rider_name: null, delivery_id: null, picked_at: null } : i))
+    fetch('/api/gopoum-items', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: itemId, rider_name: null, delivery_id: null, picked_at: null }),
+    }).then(res => { if (!res.ok) fetchGopoum() })
+  }
+
   function moveSelectedTo(zone: 'waiting' | 'rider', riderId?: string) {
     if (!selectedCardId) return
     const sel = deliveries.find(d => d.id === selectedCardId)
@@ -239,6 +251,7 @@ export default function DeliveryBoard() {
     onDelete: handleDelete,
     getGopoumData,
     onCollectItem: handleCollectItem,
+    onUncollectItem: handleUncollectItem,
   }
 
   return (
@@ -264,10 +277,8 @@ export default function DeliveryBoard() {
                     isSelected={selectedCardId === d.id}
                     onSelect={handleCardClick} onDelete={handleDelete}
                     gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
-                    onCollectItem={(itemId, deliveryId) => {
-                      const rider = riders.find(r => r.id === d.rider_id)
-                      handleCollectItem(itemId, deliveryId, rider?.name ?? '배달자')
-                    }}
+                    onCollectItem={handleCollectItem}
+                    onUncollectItem={handleUncollectItem}
                   />
                 )
               })}
