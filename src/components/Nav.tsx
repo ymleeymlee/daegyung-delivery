@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 
-const sheetUrl = process.env.NEXT_PUBLIC_SHEET_URL ?? 'https://docs.google.com/spreadsheets/d/1Spm2W_66d2I5AbZk3XrA_1DZFHeDI-srGOZ03l2nTQw/edit'
+const sheetUrl = process.env.NEXT_PUBLIC_SHEET_URL ?? 'https://drive.google.com/drive/folders/1FFu4_whlCpr1YcOCaifBlwGi8h2S-z5K'
 
 export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
