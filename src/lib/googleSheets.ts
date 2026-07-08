@@ -1,53 +1,109 @@
-import { google, sheets_v4 } from 'googleapis'
+import { google, sheets_v4, drive_v3 } from 'googleapis'
 
-// 서비스 계정 인증 (키는 base64로 환경변수에 저장)
+// 서비스 계정 인증 (키는 base64 환경변수). Drive(문서 탐색) + Sheets(읽기/쓰기) 스코프
 function getAuth() {
   const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_B64
   if (!b64) throw new Error('GOOGLE_SERVICE_ACCOUNT_B64 미설정')
   const credentials = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
   return new google.auth.GoogleAuth({
     credentials,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    scopes: [
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/drive',
+    ],
   })
 }
 
-let _client: sheets_v4.Sheets | null = null
-export function sheetsClient(): sheets_v4.Sheets {
-  if (!_client) _client = google.sheets({ version: 'v4', auth: getAuth() })
-  return _client
+let _sheets: sheets_v4.Sheets | null = null
+let _drive: drive_v3.Drive | null = null
+function sheetsClient() { return (_sheets ??= google.sheets({ version: 'v4', auth: getAuth() })) }
+function driveClient() { return (_drive ??= google.drive({ version: 'v3', auth: getAuth() })) }
+
+const FOLDER_ID = () => process.env.DRIVE_FOLDER_ID ?? '1FFu4_whlCpr1YcOCaifBlwGi8h2S-z5K'
+
+// 정확한 이름의 스프레드시트 문서 찾기 (폴더 안 우선, 없으면 공유된 전체에서)
+const _docCache = new Map<string, string>()
+export async function findDoc(name: string): Promise<string | null> {
+  if (_docCache.has(name)) return _docCache.get(name)!
+  const drive = driveClient()
+  const base = `name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
+  // 1) 폴더 안에서 먼저
+  let res = await drive.files.list({
+    q: `'${FOLDER_ID()}' in parents and ${base}`,
+    fields: 'files(id,name)', pageSize: 1,
+  })
+  // 2) 없으면 서비스 계정이 접근 가능한 전체에서 (직접 공유된 경우)
+  if (!res.data.files?.length) {
+    res = await drive.files.list({ q: base, fields: 'files(id,name)', pageSize: 1 })
+  }
+  const id = res.data.files?.[0]?.id ?? null
+  if (id) _docCache.set(name, id)
+  return id
 }
 
-export const SHEET_ID = () => process.env.GOOGLE_SHEET_ID ?? ''
-export const SHEET_URL = () => `https://docs.google.com/spreadsheets/d/${SHEET_ID()}/edit`
-
-// 탭(시트)이 없으면 생성하고 sheetId 반환
-export async function ensureTab(title: string): Promise<number> {
+// 월 탭(예: '07')이 없으면 생성
+async function ensureMonthTab(docId: string, month: string) {
   const sheets = sheetsClient()
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID() })
-  const existing = meta.data.sheets?.find(s => s.properties?.title === title)
-  if (existing) return existing.properties!.sheetId!
-
-  const res = await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: SHEET_ID(),
-    requestBody: { requests: [{ addSheet: { properties: { title } } }] },
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: docId })
+  if (meta.data.sheets?.some(s => s.properties?.title === month)) return
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: docId,
+    requestBody: { requests: [{ addSheet: { properties: { title: month } } }] },
   })
-  return res.data.replies![0].addSheet!.properties!.sheetId!
 }
 
-// 탭 내용을 통째로 교체 (스냅샷 방식): 기존 값 클리어 후 새 값 쓰기
-export async function writeTab(title: string, values: (string | number)[][]) {
+const DATE_MARK = /^(\d{4}-\d{2}-\d{2})/
+
+// 월 탭에서 특정 날짜(dateKey) 블록만 교체/추가하고 나머지 날짜는 보존 (일별 누적)
+// block의 첫 행 첫 셀은 반드시 'YYYY-MM-DD ...' 로 시작해야 함 (날짜 마커)
+export async function upsertDayBlock(
+  docId: string, month: string, dateKey: string, block: (string | number)[][]
+) {
   const sheets = sheetsClient()
-  await ensureTab(title)
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: SHEET_ID(),
-    range: `${title}`,
-  })
-  if (values.length > 0) {
+  await ensureMonthTab(docId, month)
+
+  // 기존 값 읽어 날짜별 블록으로 분리
+  const cur = await sheets.spreadsheets.values.get({ spreadsheetId: docId, range: `${month}` })
+  const rows = cur.data.values ?? []
+  const blocks = new Map<string, (string | number)[][]>()
+  const order: string[] = []
+  let key: string | null = null
+  for (const row of rows) {
+    if (row.every(c => c === '' || c == null)) continue // 빈 줄 무시
+    const m = String(row[0] ?? '').match(DATE_MARK)
+    if (m) { key = m[1]; if (!blocks.has(key)) { blocks.set(key, []); order.push(key) } }
+    if (key) blocks.get(key)!.push(row)
+  }
+
+  // 오늘 블록 교체 (없으면 추가)
+  if (!blocks.has(dateKey)) order.push(dateKey)
+  blocks.set(dateKey, block)
+  order.sort() // 날짜 오름차순
+
+  // 재조립 (블록 사이 빈 줄 1개)
+  const out: (string | number)[][] = []
+  for (const k of order) {
+    for (const r of blocks.get(k)!) out.push(r)
+    out.push([])
+  }
+
+  await sheets.spreadsheets.values.clear({ spreadsheetId: docId, range: `${month}` })
+  if (out.length) {
     await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID(),
-      range: `${title}!A1`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
+      spreadsheetId: docId, range: `${month}!A1`,
+      valueInputOption: 'RAW', requestBody: { values: out },
     })
   }
+}
+
+// 배달/고품 문서에 하루치 블록 기록
+export async function writeDeliveryDay(year: string, month: string, dateKey: string, block: (string | number)[][]) {
+  const docId = await findDoc(`배달_${year}`)
+  if (!docId) throw new Error(`스프레드시트 '배달_${year}' 를 폴더에서 찾을 수 없습니다`)
+  await upsertDayBlock(docId, month, dateKey, block)
+}
+export async function writeGopoumDay(year: string, month: string, dateKey: string, block: (string | number)[][]) {
+  const docId = await findDoc(`고품_${year}`)
+  if (!docId) throw new Error(`스프레드시트 '고품_${year}' 를 폴더에서 찾을 수 없습니다`)
+  await upsertDayBlock(docId, month, dateKey, block)
 }

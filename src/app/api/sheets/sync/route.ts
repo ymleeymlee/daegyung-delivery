@@ -1,77 +1,97 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
-import { writeTab } from '@/lib/googleSheets'
-import { LOCATIONS, buildLocationReport, reportToGrid } from '@/lib/reportLayout'
+import { writeDeliveryDay, writeGopoumDay } from '@/lib/googleSheets'
 import type { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
 function kstDateStr(d = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(d)
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(d) // YYYY-MM-DD
 }
-function fmtDateTime(iso: string) {
+function kstTime(iso: string | null) {
+  if (!iso) return ''
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(iso))
+}
+function kstYMD(iso: string | null) {
+  if (!iso) return ''
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul', year: '2-digit', month: '2-digit', day: '2-digit',
+  }).format(new Date(iso)) // YY-MM-DD
+}
+function fmtDateTime(iso: string | null) {
+  if (!iso) return ''
   return new Intl.DateTimeFormat('ko-KR', {
     timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(iso))
 }
 
-// 오늘 배달 현황을 지점별로 배달 탭에 기록
-async function syncDelivery(dateStr: string, tabDate: string) {
-  const startIso = new Date(`${dateStr}T00:00:00+09:00`).toISOString()
-  const endIso = new Date(new Date(`${dateStr}T00:00:00+09:00`).getTime() + 86400000).toISOString()
-
-  const [{ data: riderRows }, { data: deliveryRows }] = await Promise.all([
-    supabaseServer.from('riders').select('*').eq('is_active', true).order('created_at'),
-    supabaseServer.from('deliveries').select('*')
-      .not('rider_id', 'is', null)
-      .in('status', ['assigned', 'completed'])
-      .gte('created_at', startIso).lt('created_at', endIso),
-  ])
-  const riders = (riderRows ?? []) as Rider[]
-  const deliveries = (deliveryRows ?? []) as Delivery[]
-  const stamp = dateStr.replace(/-/g, '_')
-
-  // 지점별 grid를 세로로 이어붙임
-  const grid: string[][] = []
-  for (const location of LOCATIONS) {
-    const locRiders = riders.filter(r => (r.location ?? 'gn') === location)
-    if (locRiders.length === 0) continue
-    const riderIds = new Set(locRiders.map(r => r.id))
-    const locDeliveries = deliveries.filter(d => d.rider_id && riderIds.has(d.rider_id))
-    const rep = buildLocationReport(location, stamp, locRiders, locDeliveries)
-    const sub = reportToGrid(rep)
-    for (const row of sub) grid.push(row)
-    grid.push([]) // 지점 사이 빈 줄
-  }
-  await writeTab(`${tabDate} 배달`, grid)
+// 라이더 정렬: 강남(비퀵) → 안산(비퀵) → 퀵. 안산퀵도 가로로 이어짐
+function orderRiders(riders: Rider[]): Rider[] {
+  const lp = (l?: string) => (l === 'gn' ? 0 : 1)
+  return [...riders].sort((a, b) => {
+    if (a.is_quick !== b.is_quick) return a.is_quick ? 1 : -1
+    if (lp(a.location) !== lp(b.location)) return lp(a.location) - lp(b.location)
+    return (a.created_at ?? '').localeCompare(b.created_at ?? '')
+  })
 }
 
-// 오늘 고품 현황을 고품 탭에 기록 (업체 1행 + 품목 세부)
-async function syncGopoum(dateStr: string, tabDate: string) {
-  const [{ data: clientRows }, { data: itemRows }] = await Promise.all([
-    supabaseServer.from('gopoum_clients').select('*').order('created_at'),
-    supabaseServer.from('gopoum_items').select('*'),
-  ])
-  const clients = (clientRows ?? []) as GopoumClient[]
-  // 마감(archived) 안 된 아이템만 — archived_at 컬럼이 없어도 안전
-  const items = ((itemRows ?? []) as GopoumItem[]).filter(i => !i.archived_at)
+const DCOLS = 5 // 라이더당 열: 상호|주소|주문시각|날짜|배정시각
 
-  const grid: string[][] = [['생성시간', '업체번호', '업체명', '찾아온', '총수량', '품목', '수거배달자', '수거시각']]
+// 하루 배달 블록 (전체 라이더 가로 배치)
+function buildDeliveryBlock(dateStr: string, riders: Rider[], deliveries: Delivery[]): string[][] {
+  const cols = Math.max(riders.length, 1) * DCOLS
+  const grid: string[][] = []
+  const set = (r: number, c: number, v: string) => {
+    if (!grid[r]) grid[r] = new Array(cols).fill('')
+    grid[r][c] = v
+  }
+  set(0, 0, `${dateStr} 배달`) // 날짜 마커
+  riders.forEach((rd, k) => set(1, k * DCOLS, rd.name))
+  riders.forEach((_, k) => {
+    const b = k * DCOLS
+    set(2, b, '상호'); set(2, b + 1, '주소'); set(2, b + 2, '주문시각'); set(2, b + 3, '날짜'); set(2, b + 4, '배정시각')
+  })
 
+  const byRider = new Map<string, Delivery[]>()
+  for (const rd of riders) {
+    byRider.set(rd.id, deliveries
+      .filter(d => d.rider_id === rd.id)
+      .sort((a, b) => (a.assigned_at ?? '').localeCompare(b.assigned_at ?? '')))
+  }
+  const maxRows = Math.max(0, ...riders.map(rd => byRider.get(rd.id)!.length))
+  for (let i = 0; i < maxRows; i++) {
+    riders.forEach((rd, k) => {
+      const d = byRider.get(rd.id)![i]
+      if (!d) return
+      const b = k * DCOLS
+      set(3 + i, b, d.client_name)
+      set(3 + i, b + 1, d.client_address)
+      set(3 + i, b + 2, kstTime(d.created_at))
+      set(3 + i, b + 3, kstYMD(d.created_at))
+      set(3 + i, b + 4, kstTime(d.assigned_at))
+    })
+  }
+  for (let r = 0; r <= 2 + maxRows; r++) if (!grid[r]) grid[r] = new Array(cols).fill('')
+  return grid
+}
+
+// 하루 고품 블록 (업체 1행 + 품목 세부)
+function buildGopoumBlock(dateStr: string, clients: GopoumClient[], items: GopoumItem[]): string[][] {
+  const grid: string[][] = [[`${dateStr} 고품`]] // 날짜 마커
+  grid.push(['생성시간', '업체번호', '업체명', '찾아온', '총수량', '품목', '수거배달자', '수거시각'])
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
     if (gcItems.length === 0) continue
     const collected = gcItems.filter(i => i.picked_at).length
-    const started = gcItems[0]?.created_at ?? gc.started_at
-    const startedStr = started ? fmtDateTime(started) : ''
-
     gcItems.forEach((item, i) => {
       const head = i === 0
       grid.push([
-        head ? startedStr : '',
+        head ? fmtDateTime(gcItems[0].created_at) : '',
         head ? (gc.client_code || '-') : '',
         head ? gc.client_name : '',
         head ? String(collected) : '',
@@ -82,32 +102,53 @@ async function syncGopoum(dateStr: string, tabDate: string) {
       ])
     })
   }
-  await writeTab(`${tabDate} 고품`, grid)
+  return grid
+}
+
+async function syncDelivery(dateStr: string) {
+  const startIso = new Date(`${dateStr}T00:00:00+09:00`).toISOString()
+  const endIso = new Date(new Date(`${dateStr}T00:00:00+09:00`).getTime() + 86400000).toISOString()
+  const [{ data: riderRows }, { data: deliveryRows }] = await Promise.all([
+    supabaseServer.from('riders').select('*').eq('is_active', true),
+    supabaseServer.from('deliveries').select('*')
+      .not('rider_id', 'is', null).in('status', ['assigned', 'completed'])
+      .gte('created_at', startIso).lt('created_at', endIso),
+  ])
+  const riders = orderRiders((riderRows ?? []) as Rider[])
+  const deliveries = (deliveryRows ?? []) as Delivery[]
+  const block = buildDeliveryBlock(dateStr, riders, deliveries)
+  await writeDeliveryDay(dateStr.slice(0, 4), dateStr.slice(5, 7), dateStr, block)
+}
+
+async function syncGopoum(dateStr: string) {
+  const [{ data: clientRows }, { data: itemRows }] = await Promise.all([
+    supabaseServer.from('gopoum_clients').select('*').order('created_at'),
+    supabaseServer.from('gopoum_items').select('*'),
+  ])
+  const clients = (clientRows ?? []) as GopoumClient[]
+  const items = ((itemRows ?? []) as GopoumItem[]).filter(i => !i.archived_at)
+  const block = buildGopoumBlock(dateStr, clients, items)
+  await writeGopoumDay(dateStr.slice(0, 4), dateStr.slice(5, 7), dateStr, block)
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
-    const type = body.type ?? 'both' // 'delivery' | 'gopoum' | 'both'
+    const type = body.type ?? 'both'
     const dateStr = kstDateStr()
-    const tabDate = dateStr.slice(5) // MM-DD
-
-    if (type === 'delivery' || type === 'both') await syncDelivery(dateStr, tabDate)
-    if (type === 'gopoum' || type === 'both') await syncGopoum(dateStr, tabDate)
-
+    if (type === 'delivery' || type === 'both') await syncDelivery(dateStr)
+    if (type === 'gopoum' || type === 'both') await syncGopoum(dateStr)
     return NextResponse.json({ ok: true, date: dateStr })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
   }
 }
 
-// GET으로도 수동 트리거 가능 (테스트용)
 export async function GET() {
   try {
     const dateStr = kstDateStr()
-    const tabDate = dateStr.slice(5)
-    await syncDelivery(dateStr, tabDate)
-    await syncGopoum(dateStr, tabDate)
+    await syncDelivery(dateStr)
+    await syncGopoum(dateStr)
     return NextResponse.json({ ok: true, date: dateStr })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
