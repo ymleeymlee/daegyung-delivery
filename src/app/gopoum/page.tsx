@@ -222,7 +222,7 @@ export default function GopoumPage() {
       started_at: null,
     })
     setAdding(false)
-    if (!error) { setInputCode(''); setInputName(''); setSuggestions([]); setShowSugg(false) }
+    if (!error) { setInputCode(''); setInputName(''); setSuggestions([]); setShowSugg(false); syncSheet('gopoum') }
   }
 
   async function handleAddItem(clientId: string, description: string) {
@@ -244,12 +244,14 @@ export default function GopoumPage() {
       return
     }
     setGopoumItems(prev => prev.map(i => i.id === tempId ? json : i))
+    syncSheet('gopoum')
   }
 
   async function handleUpdateStartedAt(clientId: string) {
     const now = new Date().toISOString()
     setGopoumClients(prev => prev.map(gc => gc.id === clientId ? { ...gc, started_at: now } : gc))
     supabase.from('gopoum_clients').update({ started_at: now }).eq('id', clientId)
+    syncSheet('gopoum')
   }
 
   async function handleDelete(id: string) {
@@ -257,6 +259,7 @@ export default function GopoumPage() {
     setGopoumItems(prev => prev.filter(i => i.gopoum_client_id !== id))
     const { error } = await supabase.from('gopoum_clients').delete().eq('id', id)
     if (error) fetchData()
+    else syncSheet('gopoum')
   }
 
   async function handleDeleteItem(itemId: string) {
@@ -267,6 +270,7 @@ export default function GopoumPage() {
       body: JSON.stringify({ id: itemId }),
     })
     if (!res.ok) fetchData()
+    else syncSheet('gopoum')
   }
 
   const inputCls = 'border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400'

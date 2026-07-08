@@ -147,6 +147,7 @@ export default function DeliveryBoard() {
     }
     setDeliveries(prev => [...prev, row])
     supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })
+    syncSheet('delivery')
   }
 
   function handleAssign(deliveryId: string, riderId: string) {
@@ -154,12 +155,14 @@ export default function DeliveryBoard() {
     const now = new Date().toISOString()
     setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, rider_id: riderId, status: 'assigned', assigned_at: now, sort_order: maxOrder + 1 } : d))
     supabase.from('deliveries').update({ rider_id: riderId, status: 'assigned', assigned_at: now, sort_order: maxOrder + 1 }).eq('id', deliveryId).then(({ error }) => { if (error) fetchAll() })
+    syncSheet('delivery')
   }
 
   function handleUnassign(deliveryId: string) {
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order))
     setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, rider_id: null, status: 'waiting', assigned_at: null, sort_order: maxOrder + 1 } : d))
     supabase.from('deliveries').update({ rider_id: null, status: 'waiting', assigned_at: null, sort_order: maxOrder + 1 }).eq('id', deliveryId).then(({ error }) => { if (error) fetchAll() })
+    syncSheet('delivery')
   }
 
   function handleDelete(delivery: Delivery) {
@@ -167,6 +170,7 @@ export default function DeliveryBoard() {
     setDeliveries(prev => prev.filter(d => d.id !== delivery.id))
     setGopoumItems(prev => prev.filter(i => i.delivery_id !== delivery.id))
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
+    syncSheet('delivery')
   }
 
   function handleCollectItem(itemId: string, deliveryId: string, riderName: string) {
@@ -177,6 +181,7 @@ export default function DeliveryBoard() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: itemId, rider_name: riderName, delivery_id: deliveryId, picked_at: pickedAt }),
     }).then(res => { if (!res.ok) fetchGopoum() })
+    syncSheet('gopoum')
   }
 
   function handleUncollectItem(itemId: string) {
@@ -186,6 +191,7 @@ export default function DeliveryBoard() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: itemId, rider_name: null, delivery_id: null, picked_at: null }),
     }).then(res => { if (!res.ok) fetchGopoum() })
+    syncSheet('gopoum')
   }
 
   function moveSelectedTo(zone: 'waiting' | 'rider', riderId?: string) {
