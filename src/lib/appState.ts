@@ -33,3 +33,8 @@ export async function fetchAppState(): Promise<AppState> {
 export async function setDateOffset(n: number) {
   await supabase.from('app_state').upsert({ key: 'date_offset', value: String(n) })
 }
+
+// 마감 강제 해제 (테스트용 다음날 이동 시)
+export async function clearClosed() {
+  await supabase.from('app_state').upsert({ key: 'closed_until', value: '' })
+}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AppState, fetchAppState, setDateOffset, effNow, isClosedNow } from '@/lib/appState'
+import { AppState, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow } from '@/lib/appState'
 
 const sheetUrl = process.env.NEXT_PUBLIC_SHEET_URL ?? 'https://drive.google.com/drive/folders/1FFu4_whlCpr1YcOCaifBlwGi8h2S-z5K'
 
@@ -63,7 +63,9 @@ export default function Nav() {
   }
 
   async function handleNextDay() {
+    // 테스트용: 하루 앞으로 이동하며 마감 강제 해제 (다음날 06시 넘긴 상태)
     await setDateOffset(state.offset + 1)
+    await clearClosed()
     await refresh()
   }
 
