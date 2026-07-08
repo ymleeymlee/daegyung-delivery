@@ -74,8 +74,8 @@ export function buildLocationReport(
   return { location, label: LOCATION_LABEL[location], dateStr, columns, grandTotal }
 }
 
-// 리포트 구조를 워크시트로 변환 (가로 = 라이더 이름, 아래 4열)
-export function reportToWorksheet(rep: LocationReport): XLSX.WorkSheet {
+// 리포트 구조를 2D 배열(grid)로 변환 — XLSX·Google Sheets 공용
+export function reportToGrid(rep: LocationReport): string[][] {
   const riderCount = Math.max(rep.columns.length, 1)
   const cols = riderCount * 4
   const maxRows = Math.max(0, ...rep.columns.map(c => c.rows.length))
@@ -89,10 +89,7 @@ export function reportToWorksheet(rep: LocationReport): XLSX.WorkSheet {
     if (!grid[row]) grid[row] = new Array(cols).fill('')
   }
 
-  const merges: XLSX.Range[] = []
-
   setCell(0, 0, `${rep.dateStr} ${rep.label} 배달 내역`)
-  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: cols - 1 } })
   ensureRow(1)
 
   const NAME_ROW = 2
@@ -102,7 +99,6 @@ export function reportToWorksheet(rep: LocationReport): XLSX.WorkSheet {
   rep.columns.forEach((c, k) => {
     const base = k * 4
     setCell(NAME_ROW, base, c.name)
-    merges.push({ s: { r: NAME_ROW, c: base }, e: { r: NAME_ROW, c: base + 3 } })
     setCell(HEAD_ROW, base + 0, '상호')
     setCell(HEAD_ROW, base + 1, '주소')
     setCell(HEAD_ROW, base + 2, '주문시각')
@@ -125,11 +121,35 @@ export function reportToWorksheet(rep: LocationReport): XLSX.WorkSheet {
   rep.columns.forEach((c, k) => {
     const base = k * 4
     setCell(TOTAL_ROW, base, `배달 ${c.count}건`)
-    merges.push({ s: { r: TOTAL_ROW, c: base }, e: { r: TOTAL_ROW, c: base + 3 } })
   })
 
   const GRAND_ROW = TOTAL_ROW + 1
   setCell(GRAND_ROW, 0, `총 ${rep.grandTotal}군데 배달`)
+  for (let r = 0; r <= GRAND_ROW; r++) ensureRow(r)
+  return grid
+}
+
+// 리포트 구조를 워크시트로 변환 (가로 = 라이더 이름, 아래 4열)
+export function reportToWorksheet(rep: LocationReport): XLSX.WorkSheet {
+  const riderCount = Math.max(rep.columns.length, 1)
+  const cols = riderCount * 4
+  const maxRows = Math.max(0, ...rep.columns.map(c => c.rows.length))
+  const grid = reportToGrid(rep)
+
+  const merges: XLSX.Range[] = []
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: cols - 1 } })
+  const NAME_ROW = 2
+  const DATA_START = 4
+  rep.columns.forEach((c, k) => {
+    const base = k * 4
+    merges.push({ s: { r: NAME_ROW, c: base }, e: { r: NAME_ROW, c: base + 3 } })
+  })
+  const TOTAL_ROW = DATA_START + maxRows + 1
+  rep.columns.forEach((c, k) => {
+    const base = k * 4
+    merges.push({ s: { r: TOTAL_ROW, c: base }, e: { r: TOTAL_ROW, c: base + 3 } })
+  })
+  const GRAND_ROW = TOTAL_ROW + 1
   merges.push({ s: { r: GRAND_ROW, c: 0 }, e: { r: GRAND_ROW, c: cols - 1 } })
 
   const ws = XLSX.utils.aoa_to_sheet(grid)

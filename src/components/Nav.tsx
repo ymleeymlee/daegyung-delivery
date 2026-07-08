@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 
+const sheetUrl = process.env.NEXT_PUBLIC_SHEET_URL ?? 'https://docs.google.com/spreadsheets/d/1Spm2W_66d2I5AbZk3XrA_1DZFHeDI-srGOZ03l2nTQw/edit'
+
 export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [maekamLoading, setMaekamLoading] = useState(false)
@@ -52,9 +54,10 @@ export default function Nav() {
           </svg>
         </button>
         {menuOpen && (
-          <div className="absolute top-full left-0 mt-2 w-36 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
-            <a href="/records" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">배달 내역</a>
-            <a href="/gopoum-records" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">고품 내역</a>
+          <div className="absolute top-full left-0 mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+            <a href={sheetUrl} target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)} className="flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+              배달·고품 내역 <span className="text-xs text-green-600">시트 ↗</span>
+            </a>
             <a href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">거래처 관리</a>
           </div>
         )}

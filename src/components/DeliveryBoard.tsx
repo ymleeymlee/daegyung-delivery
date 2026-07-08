@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase'
 import { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
+import { syncSheet } from '@/lib/syncSheet'
 
 function DroppableZone({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
   const { setNodeRef, isOver } = useDroppable({ id })
@@ -112,9 +113,9 @@ export default function DeliveryBoard() {
     fetchGopoum()
     const channel = supabase
       .channel('board-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, fetchGopoum)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, fetchGopoum)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, () => { fetchAll(); syncSheet('delivery') })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, () => { fetchGopoum(); syncSheet('gopoum') })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, () => { fetchGopoum(); syncSheet('gopoum') })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [fetchAll, fetchGopoum])

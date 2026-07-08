@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { GopoumClient, GopoumItem, Client } from '@/types'
+import { syncSheet } from '@/lib/syncSheet'
 
 function todayStartIso() {
   const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
@@ -185,8 +186,8 @@ export default function GopoumPage() {
     fetchData()
     const channel = supabase
       .channel('gopoum-page-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, fetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, () => { fetchData(); syncSheet('gopoum') })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, () => { fetchData(); syncSheet('gopoum') })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [fetchData])
