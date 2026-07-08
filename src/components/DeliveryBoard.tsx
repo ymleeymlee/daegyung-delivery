@@ -85,16 +85,24 @@ export default function DeliveryBoard() {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
+  const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const fetchAll = useCallback(async () => {
-    const [{ data: d }, { data: r }] = await Promise.all([
+    const [{ data: d }, { data: r }, { data: c }] = await Promise.all([
       supabase.from('deliveries').select('*').not('status', 'in', '("completed")').order('sort_order'),
       supabase.from('riders').select('*').eq('is_active', true).order('created_at'),
+      supabase.from('clients').select('id, code'),
     ])
     setDeliveries(d ?? [])
     setRiders(r ?? [])
+    // 거래처 id → 업체번호 매핑 (고품 매칭용)
+    const map = new Map<string, string>()
+    for (const cl of (c ?? []) as { id: string; code: string | null }[]) {
+      if (cl.code?.trim()) map.set(cl.id, cl.code.trim())
+    }
+    setCodeById(map)
   }, [])
 
   const fetchGopoum = useCallback(async () => {
@@ -121,32 +129,40 @@ export default function DeliveryBoard() {
   }, [fetchAll, fetchGopoum])
 
   const gopoumMap = useMemo(() => {
-    const byId = new Map<string, { clientId: string; items: GopoumItem[] }>()
-    const byName = new Map<string, { clientId: string; items: GopoumItem[] }>()
+    // 업체번호(코드) 기준으로 고품 품목을 묶음. 코드 없으면 상호명 폴백.
+    const byCode = new Map<string, GopoumItem[]>()
+    const byName = new Map<string, GopoumItem[]>()
     for (const gc of gopoumClients) {
       const items = gopoumItems.filter(i => i.gopoum_client_id === gc.id)
-      if (gc.client_id) byId.set(gc.client_id, { clientId: gc.id, items })
-      byName.set(gc.client_name, { clientId: gc.id, items })
+      const code = (gc.client_code ?? '').trim()
+      if (code) {
+        if (!byCode.has(code)) byCode.set(code, [])
+        byCode.get(code)!.push(...items)
+      }
+      if (!byName.has(gc.client_name)) byName.set(gc.client_name, [])
+      byName.get(gc.client_name)!.push(...items)
     }
-    return { byId, byName }
+    return { byCode, byName }
   }, [gopoumClients, gopoumItems])
 
   function getGopoumData(d: Delivery) {
-    const base = (d.client_id && gopoumMap.byId.has(d.client_id))
-      ? gopoumMap.byId.get(d.client_id)!
-      : gopoumMap.byName.has(d.client_name)
-        ? gopoumMap.byName.get(d.client_name)!
-        : null
-    if (!base) return null
-    // 배정 당시 스냅샷 고정: 배정 시각 이전에 생성된 품목 + 이 배달로 수거한 품목만
-    // (배정 후 새로 추가된 품목은 이 카드에 소급 반영하지 않음)
+    // 1) 업체번호 매칭 (배달 카드의 대표 거래처 → 코드 → 고품)
+    const code = d.client_id ? codeById.get(d.client_id) : undefined
+    let items: GopoumItem[] | null = null
+    if (code && gopoumMap.byCode.has(code)) {
+      items = gopoumMap.byCode.get(code)!
+    } else if (gopoumMap.byName.has(d.client_name)) {
+      // 2) 폴백: 상호명 정확 매칭
+      items = gopoumMap.byName.get(d.client_name)!
+    }
+    if (!items) return null
+
+    // 배정 당시 스냅샷 고정: 배정 시각 이전 생성 품목 + 이 배달로 수거한 품목만
     const cutoff = d.assigned_at
-    const items = base.items.filter(i =>
-      i.delivery_id === d.id ||        // 내가 이 배달로 수거한 품목
-      !cutoff ||                       // 아직 미배정(대기) → 최신 전체
-      i.created_at <= cutoff           // 배정 당시 존재하던 품목
+    const filtered = items.filter(i =>
+      i.delivery_id === d.id || !cutoff || i.created_at <= cutoff
     )
-    return { clientId: base.clientId, items }
+    return { clientId: '', items: filtered }
   }
 
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {
