@@ -105,9 +105,11 @@ function buildGopoumBlock(dateStr: string, clients: GopoumClient[], items: Gopou
   return grid
 }
 
-async function syncDelivery(dateStr: string) {
-  const startIso = new Date(`${dateStr}T00:00:00+09:00`).toISOString()
-  const endIso = new Date(new Date(`${dateStr}T00:00:00+09:00`).getTime() + 86400000).toISOString()
+async function syncDelivery(tabDate: string) {
+  // 조회는 실제 오늘 데이터, 기록 탭은 유효 날짜(tabDate)
+  const realDate = kstDateStr()
+  const startIso = new Date(`${realDate}T00:00:00+09:00`).toISOString()
+  const endIso = new Date(new Date(`${realDate}T00:00:00+09:00`).getTime() + 86400000).toISOString()
   const [{ data: riderRows }, { data: deliveryRows }] = await Promise.all([
     supabaseServer.from('riders').select('*').eq('is_active', true),
     supabaseServer.from('deliveries').select('*')
@@ -116,26 +118,40 @@ async function syncDelivery(dateStr: string) {
   ])
   const riders = orderRiders((riderRows ?? []) as Rider[])
   const deliveries = (deliveryRows ?? []) as Delivery[]
-  const block = buildDeliveryBlock(dateStr, riders, deliveries)
-  await writeDeliveryDay(dateStr.slice(0, 4), dateStr.slice(5, 7), dateStr, block)
+  const block = buildDeliveryBlock(tabDate, riders, deliveries)
+  await writeDeliveryDay(tabDate.slice(0, 4), tabDate.slice(5, 7), tabDate, block)
 }
 
-async function syncGopoum(dateStr: string) {
+async function syncGopoum(tabDate: string) {
   const [{ data: clientRows }, { data: itemRows }] = await Promise.all([
     supabaseServer.from('gopoum_clients').select('*').order('created_at'),
     supabaseServer.from('gopoum_items').select('*'),
   ])
   const clients = (clientRows ?? []) as GopoumClient[]
   const items = ((itemRows ?? []) as GopoumItem[]).filter(i => !i.archived_at)
-  const block = buildGopoumBlock(dateStr, clients, items)
-  await writeGopoumDay(dateStr.slice(0, 4), dateStr.slice(5, 7), dateStr, block)
+  const block = buildGopoumBlock(tabDate, clients, items)
+  await writeGopoumDay(tabDate.slice(0, 4), tabDate.slice(5, 7), tabDate, block)
+}
+
+// 유효 날짜/마감 상태 조회
+async function getEffective() {
+  const { data: st } = await supabaseServer.from('app_state').select('*')
+  const m: Record<string, string> = {}
+  for (const r of (st ?? []) as { key: string; value: string }[]) m[r.key] = r.value
+  const offset = parseInt(m.date_offset || '0') || 0
+  const effNow = new Date(Date.now() + offset * 86400000)
+  const closedUntil = m.closed_until || null
+  const closed = !!closedUntil && effNow.getTime() < new Date(closedUntil).getTime()
+  return { dateStr: kstDateStr(effNow), closed }
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const type = body.type ?? 'both'
-    const dateStr = kstDateStr()
+    const { dateStr, closed } = await getEffective()
+    // 마감된 날은 시트 업데이트 중지
+    if (closed) return NextResponse.json({ ok: true, skipped: true, reason: 'closed' })
     if (type === 'delivery' || type === 'both') await syncDelivery(dateStr)
     if (type === 'gopoum' || type === 'both') await syncGopoum(dateStr)
     return NextResponse.json({ ok: true, date: dateStr })
@@ -146,7 +162,8 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const dateStr = kstDateStr()
+    const { dateStr, closed } = await getEffective()
+    if (closed) return NextResponse.json({ ok: true, skipped: true, reason: 'closed' })
     await syncDelivery(dateStr)
     await syncGopoum(dateStr)
     return NextResponse.json({ ok: true, date: dateStr })

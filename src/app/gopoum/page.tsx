@@ -16,9 +16,6 @@ function fmtDate(iso: string) {
 function fmtTime(iso: string) {
   return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
 }
-function fmtDateTime(iso: string) {
-  return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
-}
 
 function GopoumCard({
   gc, items, todayStart, onDelete, onAddItem, onUpdateStartedAt, onDeleteItem,
@@ -110,7 +107,7 @@ function GopoumCard({
                   <span className="flex items-center gap-2 whitespace-nowrap">
                     <span className="text-green-600 font-bold text-sm">✓</span>
                     <span className="text-sm font-bold text-slate-800">{item.rider_name}</span>
-                    <span className="text-sm text-slate-500">{fmtDateTime(item.picked_at)}</span>
+                    <span className="text-sm text-slate-500">{fmtTime(item.picked_at)}</span>
                   </span>
                 ) : (
                   <span className="text-sm text-amber-500 font-medium">미수거</span>

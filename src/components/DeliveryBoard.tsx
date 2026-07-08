@@ -14,6 +14,7 @@ import { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 import { syncSheet } from '@/lib/syncSheet'
+import { AppState, fetchAppState, isClosedNow } from '@/lib/appState'
 
 function DroppableZone({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
   const { setNodeRef, isOver } = useDroppable({ id })
@@ -86,6 +87,7 @@ export default function DeliveryBoard() {
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
+  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -116,17 +118,21 @@ export default function DeliveryBoard() {
     setGopoumItems(allItems.filter((i: { archived_at: string | null }) => !i.archived_at))
   }, [])
 
+  const refreshAppState = useCallback(async () => { setAppState(await fetchAppState()) }, [])
+
   useEffect(() => {
     fetchAll()
     fetchGopoum()
+    refreshAppState()
     const channel = supabase
       .channel('board-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, () => { fetchAll(); syncSheet('delivery') })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, () => { fetchGopoum(); syncSheet('gopoum') })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, () => { fetchGopoum(); syncSheet('gopoum') })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state' }, refreshAppState)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fetchAll, fetchGopoum])
+  }, [fetchAll, fetchGopoum, refreshAppState])
 
   const gopoumMap = useMemo(() => {
     // 업체번호(코드) 기준으로 고품 품목을 묶음. 코드 없으면 상호명 폴백.
@@ -166,6 +172,7 @@ export default function DeliveryBoard() {
   }
 
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {
+    if (isClosedNow(appState)) { alert('마감된 상태입니다. 배달을 추가할 수 없습니다.'); return }
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order))
     const now = new Date().toISOString()
     const row: Delivery = {

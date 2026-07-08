@@ -1,13 +1,36 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { supabase } from '@/lib/supabase'
+import { AppState, fetchAppState, setDateOffset, effNow, isClosedNow } from '@/lib/appState'
 
 const sheetUrl = process.env.NEXT_PUBLIC_SHEET_URL ?? 'https://drive.google.com/drive/folders/1FFu4_whlCpr1YcOCaifBlwGi8h2S-z5K'
+
+function fmtKstDate(d: Date) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short',
+  }).format(d)
+}
 
 export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [maekamLoading, setMaekamLoading] = useState(false)
+  const [maekamDone, setMaekamDone] = useState(false)
+  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null })
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const refresh = useCallback(async () => { setState(await fetchAppState()) }, [])
+
+  useEffect(() => {
+    refresh()
+    const channel = supabase
+      .channel('app-state-nav')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state' }, refresh)
+      .subscribe()
+    // 자정 넘어가며 마감 자동 해제 반영용 (1분마다 상태 재평가)
+    const timer = setInterval(() => setState(s => ({ ...s })), 60000)
+    return () => { supabase.removeChannel(channel); clearInterval(timer) }
+  }, [refresh])
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -17,14 +40,17 @@ export default function Nav() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const [maekamDone, setMaekamDone] = useState(false)
+  const closed = isClosedNow(state)
+  const displayDate = fmtKstDate(effNow(state.offset))
 
   async function handleMaekam() {
-    if (!confirm('오늘 마감을 실행하시겠습니까?\n\n· 배달 현황이 초기화됩니다\n· 오늘 기록이 배달/고품 내역에 저장됩니다\n· 고품 잔여 수량이 내일로 이월됩니다')) return
+    if (closed) return
+    if (!confirm('오늘 마감을 실행하시겠습니까?\n\n· 배달 현황이 초기화됩니다\n· 수거한 고품은 정리되고 미수거만 남습니다\n· 오늘 기록이 시트에 확정됩니다')) return
     setMaekamLoading(true)
     try {
       const res = await fetch('/api/close')
       if (res.ok) {
+        await refresh()
         setMaekamDone(true)
         setTimeout(() => setMaekamDone(false), 4000)
       } else {
@@ -34,6 +60,11 @@ export default function Nav() {
       alert('마감 실패')
     }
     setMaekamLoading(false)
+  }
+
+  async function handleNextDay() {
+    await setDateOffset(state.offset + 1)
+    await refresh()
   }
 
   return (
@@ -63,17 +94,28 @@ export default function Nav() {
         )}
       </div>
 
-      {/* 마감 버튼 */}
+      {/* 우측: 날짜 + 마감 + 테스트 */}
       <div className="ml-auto flex items-center gap-3">
         {maekamDone && (
           <span className="text-sm font-semibold text-green-600 animate-pulse">✓ 마감되었습니다</span>
         )}
+        <span className={`text-sm font-medium ${state.offset > 0 ? 'text-purple-600' : 'text-slate-500'}`}>
+          {displayDate}{state.offset > 0 ? ` (+${state.offset})` : ''}
+        </span>
         <button
           onClick={handleMaekam}
-          disabled={maekamLoading}
-          className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={maekamLoading || closed}
+          className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {maekamLoading ? '마감 중...' : '마감'}
+          {maekamLoading ? '마감 중...' : closed ? '마감됨' : '마감'}
+        </button>
+        {/* 테스트용: 다음날로 강제 이동 */}
+        <button
+          onClick={handleNextDay}
+          className="text-xs border border-purple-300 text-purple-600 hover:bg-purple-50 px-2.5 py-1.5 rounded-xl transition-colors"
+          title="테스트용: 하루 앞으로"
+        >
+          다음날 →
         </button>
       </div>
     </nav>
