@@ -132,9 +132,21 @@ export default function DeliveryBoard() {
   }, [gopoumClients, gopoumItems])
 
   function getGopoumData(d: Delivery) {
-    if (d.client_id && gopoumMap.byId.has(d.client_id)) return gopoumMap.byId.get(d.client_id)!
-    if (gopoumMap.byName.has(d.client_name)) return gopoumMap.byName.get(d.client_name)!
-    return null
+    const base = (d.client_id && gopoumMap.byId.has(d.client_id))
+      ? gopoumMap.byId.get(d.client_id)!
+      : gopoumMap.byName.has(d.client_name)
+        ? gopoumMap.byName.get(d.client_name)!
+        : null
+    if (!base) return null
+    // 배정 당시 스냅샷 고정: 배정 시각 이전에 생성된 품목 + 이 배달로 수거한 품목만
+    // (배정 후 새로 추가된 품목은 이 카드에 소급 반영하지 않음)
+    const cutoff = d.assigned_at
+    const items = base.items.filter(i =>
+      i.delivery_id === d.id ||        // 내가 이 배달로 수거한 품목
+      !cutoff ||                       // 아직 미배정(대기) → 최신 전체
+      i.created_at <= cutoff           // 배정 당시 존재하던 품목
+    )
+    return { clientId: base.clientId, items }
   }
 
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {
