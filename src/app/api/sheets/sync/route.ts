@@ -52,10 +52,11 @@ async function syncDelivery(dateStr: string, tabDate: string) {
 async function syncGopoum(dateStr: string, tabDate: string) {
   const [{ data: clientRows }, { data: itemRows }] = await Promise.all([
     supabaseServer.from('gopoum_clients').select('*').order('created_at'),
-    supabaseServer.from('gopoum_items').select('*').is('archived_at', null),
+    supabaseServer.from('gopoum_items').select('*'),
   ])
   const clients = (clientRows ?? []) as GopoumClient[]
-  const items = (itemRows ?? []) as GopoumItem[]
+  // 마감(archived) 안 된 아이템만 — archived_at 컬럼이 없어도 안전
+  const items = ((itemRows ?? []) as GopoumItem[]).filter(i => !i.archived_at)
 
   const grid: string[][] = [['생성시간', '업체번호', '업체명', '찾아온', '총수량', '품목', '수거배달자', '수거시각']]
 
