@@ -71,7 +71,11 @@ export async function upsertDayBlock(
   for (const row of rows) {
     if (row.every(c => c === '' || c == null)) continue // 빈 줄 무시
     const m = String(row[0] ?? '').match(DATE_MARK)
-    if (m) { key = m[1]; if (!blocks.has(key)) { blocks.set(key, []); order.push(key) } }
+    if (m) {
+      key = m[1]
+      blocks.set(key, []) // 같은 날짜 마커가 또 나오면 이전 블록 버리고 마지막 것만 유지 (중복 방지)
+      if (!order.includes(key)) order.push(key)
+    }
     if (key) blocks.get(key)!.push(row)
   }
 
@@ -115,12 +119,17 @@ export async function writeGopoumRows(year: string, month: string, dateKey: stri
 
   const cur = await sheets.spreadsheets.values.get({ spreadsheetId: docId, range: `${month}` })
   const rows = cur.data.values ?? []
-  // 헤더 제외한 기존 데이터 행 중, 오늘(dateKey) 것은 제거하고 나머지 날짜는 보존
+  // 기존 행 중: 날짜열이 있고(옛 형식 배제) + 오늘이 아닌 것만 보존
   const kept = rows.slice(1)
     .filter(r => r.length && r.some(c => c !== '' && c != null))
-    .filter(r => String(r[GOPOUM_DATE_COL] ?? '') !== dateKey)
+    .filter(r => r[GOPOUM_DATE_COL] && String(r[GOPOUM_DATE_COL]) !== dateKey)
 
-  const all = [...kept, ...todayRows]
+  // 중복 제거: (업체번호|품목|날짜) 키로 최신(오늘 데이터) 우선
+  const map = new Map<string, string[]>()
+  for (const r of [...kept, ...todayRows]) {
+    map.set(`${r[0] ?? ''}|${r[4] ?? ''}|${r[GOPOUM_DATE_COL] ?? ''}`, r)
+  }
+  const all = [...map.values()]
   // 날짜 오름차순 → 업체명 순
   all.sort((a, b) => {
     const da = String(a[GOPOUM_DATE_COL] ?? ''), db = String(b[GOPOUM_DATE_COL] ?? '')
