@@ -83,16 +83,12 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[]
 // 마감 시점 현황을 그날 탭(MM-DD)에 저장. dateStr = 유효 날짜 YYYY-MM-DD
 export async function saveSnapshot(dateStr: string) {
   const year = dateStr.slice(0, 4), month = dateStr.slice(5, 7), day = dateStr.slice(8, 10)
-  // 실제 오늘 데이터로 스냅샷 (조회는 실제 날짜, 탭은 유효 날짜)
-  const realDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
-  const startIso = new Date(`${realDate}T00:00:00+09:00`).toISOString()
-  const endIso = new Date(new Date(`${realDate}T00:00:00+09:00`).getTime() + 86400000).toISOString()
 
   const [{ data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }] = await Promise.all([
     supabaseServer.from('riders').select('*').eq('is_active', true),
+    // 현재 보드에 배정된 것만 (이미 마감된 completed는 제외)
     supabaseServer.from('deliveries').select('*')
-      .not('rider_id', 'is', null).in('status', ['assigned', 'completed'])
-      .gte('created_at', startIso).lt('created_at', endIso),
+      .not('rider_id', 'is', null).eq('status', 'assigned'),
     supabaseServer.from('gopoum_clients').select('*').order('created_at'),
     supabaseServer.from('gopoum_items').select('*'),
   ])
