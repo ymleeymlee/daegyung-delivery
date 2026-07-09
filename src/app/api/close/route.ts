@@ -28,8 +28,8 @@ export async function GET(_req: NextRequest) {
     // 1) 마감 직전 현황을 그날 탭(MM-DD)에 스냅샷 저장 (정리 전에)
     await saveSnapshot(kstDate)
 
-    await supabaseServer.from('deliveries').delete().eq('status', 'cancelled')
-    await supabaseServer.from('deliveries').update({ status: 'completed' }).in('status', ['waiting', 'assigned'])
+    // 배달은 시트에 기록됐으므로 DB에서 전부 삭제 (아카이브/90일 관리 불필요)
+    await supabaseServer.from('deliveries').delete().not('id', 'is', null)
 
     // 수거된(미아카이브) 고품 → archived (현황에서 제거). 미수거는 그대로 유지.
     await supabaseServer.from('gopoum_items').update({ archived_at: nowIso })
@@ -49,10 +49,6 @@ export async function GET(_req: NextRequest) {
         .update({ total_quantity: rem, started_at: rem > 0 ? tomorrow8am : null })
         .eq('id', gc.id)
     }
-
-    // 90일 지난 배달 영구 삭제
-    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
-    await supabaseServer.from('deliveries').delete().eq('status', 'completed').lt('created_at', cutoff)
 
     // 마감 상태 저장
     await supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil })
