@@ -69,6 +69,13 @@ export default function Nav() {
     await refresh()
   }
 
+  async function handleResetToday() {
+    // 테스트용: 실제 오늘(offset 0)로 복구 + 마감 해제
+    await setDateOffset(0)
+    await clearClosed()
+    await refresh()
+  }
+
   return (
     <nav className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6 shadow-sm">
       <span className="text-lg font-bold text-slate-800">대경배달시스템</span>
@@ -119,6 +126,16 @@ export default function Nav() {
         >
           다음날 →
         </button>
+        {/* 테스트용: 실제 오늘로 리셋 (offset > 0일 때만) */}
+        {state.offset > 0 && (
+          <button
+            onClick={handleResetToday}
+            className="text-xs border border-slate-300 text-slate-500 hover:bg-slate-50 px-2.5 py-1.5 rounded-xl transition-colors"
+            title="테스트용: 실제 오늘로 복구"
+          >
+            오늘로 리셋
+          </button>
+        )}
       </div>
     </nav>
   )
