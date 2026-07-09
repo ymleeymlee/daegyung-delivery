@@ -87,6 +87,7 @@ export default function DeliveryBoard() {
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
   const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
+  const [loading, setLoading] = useState(true)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -120,9 +121,7 @@ export default function DeliveryBoard() {
   const refreshAppState = useCallback(async () => { setAppState(await fetchAppState()) }, [])
 
   useEffect(() => {
-    fetchAll()
-    fetchGopoum()
-    refreshAppState()
+    Promise.all([fetchAll(), fetchGopoum(), refreshAppState()]).finally(() => setLoading(false))
     const channel = supabase
       .channel('board-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, fetchAll)
@@ -286,6 +285,10 @@ export default function DeliveryBoard() {
     getGopoumData,
     onCollectItem: handleCollectItem,
     onUncollectItem: handleUncollectItem,
+  }
+
+  if (loading) {
+    return <div className="p-8 text-center text-slate-400 text-sm">불러오는 중...</div>
   }
 
   return (

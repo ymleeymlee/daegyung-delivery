@@ -107,6 +107,9 @@ export async function saveSnapshot(dateStr: string) {
   const clients = (clientRows ?? []) as GopoumClient[]
   const items = ((itemRows ?? []) as GopoumItem[]).filter(i => !i.archived_at)
 
-  await writeDeliveryTab(year, month, day, buildDeliveryGrid(riders, deliveries))
-  await writeGopoumTab(year, month, day, buildGopoumGrid(clients, items))
+  // 배달·고품 시트 쓰기를 병렬로
+  await Promise.all([
+    writeDeliveryTab(year, month, day, buildDeliveryGrid(riders, deliveries)),
+    writeGopoumTab(year, month, day, buildGopoumGrid(clients, items)),
+  ])
 }

@@ -40,15 +40,15 @@ export async function GET(_req: NextRequest) {
       supabaseServer.from('gopoum_clients').select('id'),
       supabaseServer.from('gopoum_items').select('id, gopoum_client_id, picked_at, archived_at'),
     ])
-    for (const gc of clients ?? []) {
+    await Promise.all((clients ?? []).map(gc => {
       const rem = (items ?? []).filter(
         (i: { gopoum_client_id: string; picked_at: string | null; archived_at: string | null }) =>
           i.gopoum_client_id === gc.id && !i.picked_at && !i.archived_at
       ).length
-      await supabaseServer.from('gopoum_clients')
+      return supabaseServer.from('gopoum_clients')
         .update({ total_quantity: rem, started_at: rem > 0 ? tomorrow8am : null })
         .eq('id', gc.id)
-    }
+    }))
 
     // 마감 상태 저장
     await supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil })

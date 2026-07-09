@@ -151,6 +151,7 @@ export default function GopoumPage() {
   const [suggestions, setSuggestions] = useState<Client[]>([])
   const [showSugg, setShowSugg] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [loading, setLoading] = useState(true)
   const suggBoxRef = useRef<HTMLDivElement>(null)
 
   const fetchData = useCallback(async () => {
@@ -165,7 +166,7 @@ export default function GopoumPage() {
   }, [])
 
   useEffect(() => {
-    fetchData()
+    fetchData().finally(() => setLoading(false))
     const channel = supabase
       .channel('gopoum-page-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, fetchData)
@@ -291,7 +292,9 @@ export default function GopoumPage() {
         )}
 
         <div className="flex flex-col gap-2">
-          {gopoumClients.length === 0 && (
+          {loading ? (
+            <div className="text-center text-slate-400 text-sm py-16">불러오는 중...</div>
+          ) : gopoumClients.length === 0 && (
             <div className="text-center text-slate-400 text-sm py-16">등록된 고품 업체가 없습니다.</div>
           )}
           {gopoumClients.map(gc => (
