@@ -12,6 +12,9 @@ function todayStartIso() {
 function fmtTime(iso: string) {
   return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
 }
+function fmtYMD(iso: string) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: '2-digit', month: '2-digit', day: '2-digit' }).format(new Date(iso))
+}
 
 function GopoumCard({
   gc, items, todayStart, onDelete, onAddItem, onDeleteItem,
@@ -79,7 +82,8 @@ function GopoumCard({
           ) : (
             sortedItems.map(item => (
               <div key={item.id} className={`flex items-center gap-3 px-4 py-2 group ${item.picked_at ? 'bg-green-50' : ''}`}>
-                {/* 생성시간 */}
+                {/* 생성날짜 + 생성시간 */}
+                <span className="w-16 flex-shrink-0 text-xs text-slate-400">{fmtYMD(item.created_at)}</span>
                 <span className="w-12 flex-shrink-0 text-xs text-slate-400">{fmtTime(item.created_at)}</span>
                 {/* 수거 아이템명 */}
                 <span className={`w-40 flex-shrink-0 text-sm truncate ${item.picked_at ? 'text-green-700' : 'text-slate-700 font-medium'}`}>

@@ -8,6 +8,12 @@ function kstTime(iso: string | null) {
     timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(iso))
 }
+function kstYMD(iso: string | null) {
+  if (!iso) return ''
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul', year: '2-digit', month: '2-digit', day: '2-digit',
+  }).format(new Date(iso))
+}
 
 // 라이더 정렬: 강남(비퀵) → 안산(비퀵) → 퀵 (안산퀵 포함 가로로 이어짐)
 function orderRiders(riders: Rider[]): Rider[] {
@@ -59,7 +65,7 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
 // 고품 현황 그리드 (업체 정보는 첫 행만, 품목부터 행 추가)
 // 아이템 열 순서: 생성시간 | 품목 | 수거시각(또는 -) | 수거자(또는 미수거)
 function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[][] {
-  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성시간', '품목', '수거시각', '수거자']]
+  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성날짜', '생성시간', '품목', '수거시각', '수거자']]
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
@@ -72,6 +78,7 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[]
         head ? gc.client_name : '',
         head ? String(collected) : '',
         head ? String(gcItems.length) : '',
+        kstYMD(item.created_at),
         kstTime(item.created_at),
         item.description,
         item.picked_at ? kstTime(item.picked_at) : '-',
