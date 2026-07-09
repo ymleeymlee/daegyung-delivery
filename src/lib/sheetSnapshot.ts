@@ -89,27 +89,24 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[]
   return grid
 }
 
-// 마감 시점 현황을 그날 탭(MM-DD)에 저장. dateStr = 유효 날짜 YYYY-MM-DD
-export async function saveSnapshot(dateStr: string) {
+export interface SnapshotData {
+  deliveryGrid: string[][]
+  gopoumGrid: string[][]
+}
+
+// 조회한 데이터로 시트 그리드 생성 (동기). close에서 조회를 공유해 왕복 최소화
+export function buildGrids(riders: Rider[], deliveries: Delivery[], clients: GopoumClient[], activeItems: GopoumItem[]): SnapshotData {
+  return {
+    deliveryGrid: buildDeliveryGrid(orderRiders(riders), deliveries),
+    gopoumGrid: buildGopoumGrid(clients, activeItems),
+  }
+}
+
+// 그리드를 그날 탭(MM-DD)에 저장 (느림 — Google Sheets API). 백그라운드 실행용
+export async function writeSnapshot(dateStr: string, data: SnapshotData) {
   const year = dateStr.slice(0, 4), month = dateStr.slice(5, 7), day = dateStr.slice(8, 10)
-
-  const [{ data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }] = await Promise.all([
-    supabaseServer.from('riders').select('*').eq('is_active', true),
-    // 현재 보드에 배정된 것만 (이미 마감된 completed는 제외)
-    supabaseServer.from('deliveries').select('*')
-      .not('rider_id', 'is', null).eq('status', 'assigned'),
-    supabaseServer.from('gopoum_clients').select('*').order('created_at'),
-    supabaseServer.from('gopoum_items').select('*'),
-  ])
-
-  const riders = orderRiders((riderRows ?? []) as Rider[])
-  const deliveries = (deliveryRows ?? []) as Delivery[]
-  const clients = (clientRows ?? []) as GopoumClient[]
-  const items = ((itemRows ?? []) as GopoumItem[]).filter(i => !i.archived_at)
-
-  // 배달·고품 시트 쓰기를 병렬로
   await Promise.all([
-    writeDeliveryTab(year, month, day, buildDeliveryGrid(riders, deliveries)),
-    writeGopoumTab(year, month, day, buildGopoumGrid(clients, items)),
+    writeDeliveryTab(year, month, day, data.deliveryGrid),
+    writeGopoumTab(year, month, day, data.gopoumGrid),
   ])
 }
