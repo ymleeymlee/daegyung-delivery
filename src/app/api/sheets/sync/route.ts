@@ -120,10 +120,10 @@ async function syncGopoum(tabDate: string) {
   ])
   const clients = (clientRows ?? []) as GopoumClient[]
   const items = ((itemRows ?? []) as GopoumItem[]).filter(i => !i.archived_at)
-  // 날짜 열은 YY-MM-DD
+  // 날짜 열은 YY-MM-DD (행 데이터와 upsert 필터 키를 동일하게)
   const dateKey = kstYMD(new Date(`${tabDate}T00:00:00+09:00`).toISOString())
   const rows = buildGopoumRows(dateKey, clients, items)
-  await writeGopoumRows(tabDate.slice(0, 4), tabDate.slice(5, 7), tabDate, rows)
+  await writeGopoumRows(tabDate.slice(0, 4), tabDate.slice(5, 7), dateKey, rows)
 }
 
 // 유효 날짜/마감 상태 조회

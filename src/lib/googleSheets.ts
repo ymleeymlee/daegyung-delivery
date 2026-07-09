@@ -108,7 +108,7 @@ export async function writeDeliveryDay(year: string, month: string, dateKey: str
 }
 
 // 고품: 업체별 행을 계속 누적(하루 블록으로 끊지 않음). 마지막 열이 날짜(YY-MM-DD).
-const GOPOUM_HEADER = ['업체번호', '업체명', '찾아온', '총수량', '품목', '수거배달자', '수거시각', '날짜']
+const GOPOUM_HEADER = ['업체번호', '업체명', '수거', '총수량', '품목', '수거배달자', '수거시각', '날짜']
 const GOPOUM_DATE_COL = 7 // 날짜 열 인덱스(0-based)
 
 export async function writeGopoumRows(year: string, month: string, dateKey: string, todayRows: string[][]) {
@@ -119,25 +119,33 @@ export async function writeGopoumRows(year: string, month: string, dateKey: stri
 
   const cur = await sheets.spreadsheets.values.get({ spreadsheetId: docId, range: `${month}` })
   const rows = cur.data.values ?? []
-  // 기존 행 중: 날짜열이 있고(옛 형식 배제) + 오늘이 아닌 것만 보존
-  const kept = rows.slice(1)
+  // 과거 날짜 행은 그대로 보존 (날짜열 있고 오늘 아닌 것). 옛 형식(날짜열 없음)은 버림.
+  const keptRaw = rows.slice(1)
     .filter(r => r.length && r.some(c => c !== '' && c != null))
     .filter(r => r[GOPOUM_DATE_COL] && String(r[GOPOUM_DATE_COL]) !== dateKey)
 
-  // 중복 제거: (업체번호|품목|날짜) 키로 최신(오늘 데이터) 우선
-  const map = new Map<string, string[]>()
-  for (const r of [...kept, ...todayRows]) {
-    map.set(`${r[0] ?? ''}|${r[4] ?? ''}|${r[GOPOUM_DATE_COL] ?? ''}`, r)
-  }
-  const all = [...map.values()]
-  // 날짜 오름차순 → 업체명 순
-  all.sort((a, b) => {
-    const da = String(a[GOPOUM_DATE_COL] ?? ''), db = String(b[GOPOUM_DATE_COL] ?? '')
-    if (da !== db) return da < db ? -1 : 1
-    return String(a[1] ?? '').localeCompare(String(b[1] ?? ''), 'ko')
+  // 오늘 데이터: (업체번호|품목) 중복 제거 → 업체번호 순 정렬
+  const todayMap = new Map<string, string[]>()
+  for (const r of todayRows) todayMap.set(`${r[0] ?? ''}|${r[4] ?? ''}`, r)
+  const todaySorted = [...todayMap.values()].sort((a, b) => {
+    const ca = String(a[0] ?? ''), cb = String(b[0] ?? '')
+    return ca < cb ? -1 : ca > cb ? 1 : 0
   })
 
-  const out = [GOPOUM_HEADER, ...all]
+  // 같은 업체 그룹의 첫 행만 업체번호·업체명·수거·총수량, 나머지는 품목부터
+  const todayOut: string[][] = []
+  let prev: string | null = null
+  for (const r of todaySorted) {
+    const k = String(r[0] ?? '')
+    if (k === prev) {
+      todayOut.push(['', '', '', '', r[4] ?? '', r[5] ?? '', r[6] ?? '', r[GOPOUM_DATE_COL] ?? ''])
+    } else {
+      todayOut.push(r)
+      prev = k
+    }
+  }
+
+  const out: string[][] = [GOPOUM_HEADER, ...keptRaw, ...todayOut]
   await sheets.spreadsheets.values.clear({ spreadsheetId: docId, range: `${month}` })
   await sheets.spreadsheets.values.update({
     spreadsheetId: docId, range: `${month}!A1`,
