@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
+import { saveSnapshot } from '@/lib/sheetSnapshot'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -24,6 +25,9 @@ export async function GET(_req: NextRequest) {
   const tomorrow8am = new Date(`${tomorrow}T08:00:00+09:00`).toISOString()
 
   try {
+    // 1) 마감 직전 현황을 그날 탭(MM-DD)에 스냅샷 저장 (정리 전에)
+    await saveSnapshot(kstDate)
+
     await supabaseServer.from('deliveries').delete().eq('status', 'cancelled')
     await supabaseServer.from('deliveries').update({ status: 'completed' }).in('status', ['waiting', 'assigned'])
 
