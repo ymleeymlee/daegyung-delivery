@@ -78,19 +78,21 @@ function GopoumCard({
             <div className="px-4 py-3 text-xs text-slate-300 italic flex items-center h-full">품목 없음</div>
           ) : (
             sortedItems.map(item => (
-              <div key={item.id} className={`flex items-center gap-4 px-4 py-2 group ${item.picked_at ? 'bg-green-50' : ''}`}>
-                <span className={`w-40 flex-shrink-0 text-sm truncate ${item.picked_at ? 'text-green-700 line-through' : 'text-slate-700 font-medium'}`}>
+              <div key={item.id} className={`flex items-center gap-3 px-4 py-2 group ${item.picked_at ? 'bg-green-50' : ''}`}>
+                {/* 생성시간 */}
+                <span className="w-12 flex-shrink-0 text-xs text-slate-400">{fmtTime(item.created_at)}</span>
+                {/* 수거 아이템명 */}
+                <span className={`w-40 flex-shrink-0 text-sm truncate ${item.picked_at ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
                   {item.description}
                 </span>
-                {item.picked_at ? (
-                  <span className="flex items-center gap-2 whitespace-nowrap">
-                    <span className="text-green-600 font-bold text-sm">✓</span>
-                    <span className="text-sm font-bold text-slate-800">{item.rider_name}</span>
-                    <span className="text-sm text-slate-500">{fmtTime(item.picked_at)}</span>
-                  </span>
-                ) : (
-                  <span className="text-sm text-amber-500 font-medium">미수거</span>
-                )}
+                {/* 수거시간 (또는 -) */}
+                <span className={`w-12 flex-shrink-0 text-sm ${item.picked_at ? 'text-slate-600' : 'text-slate-300'}`}>
+                  {item.picked_at ? fmtTime(item.picked_at) : '-'}
+                </span>
+                {/* 수거자 (또는 미수거) */}
+                <span className={`text-sm whitespace-nowrap ${item.picked_at ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>
+                  {item.picked_at ? item.rider_name : '미수거'}
+                </span>
                 <button
                   onClick={() => { if (confirm(`'${item.description}' 품목을 삭제할까요?`)) onDeleteItem(item.id) }}
                   className="ml-auto flex-shrink-0 text-slate-300 hover:text-red-400 text-lg leading-none px-1 transition-colors"
@@ -280,7 +282,7 @@ export default function GopoumPage() {
             <div className="w-20 flex-shrink-0 pl-2">업체번호</div>
             <div className="w-40 flex-shrink-0 pl-2">업체명</div>
             <div className="w-32 flex-shrink-0 text-center">찾아온/총수량</div>
-            <div className="flex-1 pl-4">품목 목록</div>
+            <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 수거시간 · 수거자)</div>
           </div>
         )}
 

@@ -57,8 +57,9 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
 }
 
 // 고품 현황 그리드 (업체 정보는 첫 행만, 품목부터 행 추가)
+// 아이템 열 순서: 생성시간 | 품목 | 수거시각(또는 -) | 수거자(또는 미수거)
 function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[][] {
-  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '품목', '수거배달자', '수거시각']]
+  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성시간', '품목', '수거시각', '수거자']]
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
@@ -71,9 +72,10 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[]
         head ? gc.client_name : '',
         head ? String(collected) : '',
         head ? String(gcItems.length) : '',
+        kstTime(item.created_at),
         item.description,
-        item.rider_name ?? '',
-        item.picked_at ? kstTime(item.picked_at) : '미수거',
+        item.picked_at ? kstTime(item.picked_at) : '-',
+        item.picked_at ? (item.rider_name ?? '') : '미수거',
       ])
     })
   }
