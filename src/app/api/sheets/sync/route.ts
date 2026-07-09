@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
-import { writeDeliveryDay, writeGopoumDay } from '@/lib/googleSheets'
+import { writeDeliveryDay, writeGopoumRows } from '@/lib/googleSheets'
 import type { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -20,13 +20,6 @@ function kstYMD(iso: string | null) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul', year: '2-digit', month: '2-digit', day: '2-digit',
   }).format(new Date(iso)) // YY-MM-DD
-}
-function fmtDateTime(iso: string | null) {
-  if (!iso) return ''
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date(iso))
 }
 
 // 라이더 정렬: 강남(비퀵) → 안산(비퀵) → 퀵. 안산퀵도 가로로 이어짐
@@ -79,30 +72,28 @@ function buildDeliveryBlock(dateStr: string, riders: Rider[], deliveries: Delive
   return grid
 }
 
-// 하루 고품 블록 (업체 1행 + 품목 세부)
-function buildGopoumBlock(dateStr: string, clients: GopoumClient[], items: GopoumItem[]): string[][] {
-  const grid: string[][] = [[`${dateStr} 고품`]] // 날짜 마커
-  grid.push(['생성시간', '업체번호', '업체명', '찾아온', '총수량', '품목', '수거배달자', '수거시각'])
+// 고품 행 (업체별 품목, 생성시간 없음, 마지막 열=날짜). 업체 정보는 각 행에 반복
+function buildGopoumRows(dateKey: string, clients: GopoumClient[], items: GopoumItem[]): string[][] {
+  const rows: string[][] = []
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
     if (gcItems.length === 0) continue
     const collected = gcItems.filter(i => i.picked_at).length
-    gcItems.forEach((item, i) => {
-      const head = i === 0
-      grid.push([
-        head ? fmtDateTime(gcItems[0].created_at) : '',
-        head ? (gc.client_code || '-') : '',
-        head ? gc.client_name : '',
-        head ? String(collected) : '',
-        head ? String(gcItems.length) : '',
+    for (const item of gcItems) {
+      rows.push([
+        gc.client_code || '-',
+        gc.client_name,
+        String(collected),
+        String(gcItems.length),
         item.description,
         item.rider_name ?? '',
-        item.picked_at ? fmtDateTime(item.picked_at) : '미수거',
+        item.picked_at ? kstTime(item.picked_at) : '미수거',
+        dateKey,
       ])
-    })
+    }
   }
-  return grid
+  return rows
 }
 
 async function syncDelivery(tabDate: string) {
@@ -129,8 +120,10 @@ async function syncGopoum(tabDate: string) {
   ])
   const clients = (clientRows ?? []) as GopoumClient[]
   const items = ((itemRows ?? []) as GopoumItem[]).filter(i => !i.archived_at)
-  const block = buildGopoumBlock(tabDate, clients, items)
-  await writeGopoumDay(tabDate.slice(0, 4), tabDate.slice(5, 7), tabDate, block)
+  // 날짜 열은 YY-MM-DD
+  const dateKey = kstYMD(new Date(`${tabDate}T00:00:00+09:00`).toISOString())
+  const rows = buildGopoumRows(dateKey, clients, items)
+  await writeGopoumRows(tabDate.slice(0, 4), tabDate.slice(5, 7), tabDate, rows)
 }
 
 // 유효 날짜/마감 상태 조회

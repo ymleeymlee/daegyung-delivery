@@ -96,14 +96,42 @@ export async function upsertDayBlock(
   }
 }
 
-// 배달/고품 문서에 하루치 블록 기록
+// 배달: 하루치 블록(라이더 가로표)을 날짜별로 누적
 export async function writeDeliveryDay(year: string, month: string, dateKey: string, block: (string | number)[][]) {
   const docId = await findDoc(`배달_${year}`)
   if (!docId) throw new Error(`스프레드시트 '배달_${year}' 를 폴더에서 찾을 수 없습니다`)
   await upsertDayBlock(docId, month, dateKey, block)
 }
-export async function writeGopoumDay(year: string, month: string, dateKey: string, block: (string | number)[][]) {
+
+// 고품: 업체별 행을 계속 누적(하루 블록으로 끊지 않음). 마지막 열이 날짜(YY-MM-DD).
+const GOPOUM_HEADER = ['업체번호', '업체명', '찾아온', '총수량', '품목', '수거배달자', '수거시각', '날짜']
+const GOPOUM_DATE_COL = 7 // 날짜 열 인덱스(0-based)
+
+export async function writeGopoumRows(year: string, month: string, dateKey: string, todayRows: string[][]) {
   const docId = await findDoc(`고품_${year}`)
   if (!docId) throw new Error(`스프레드시트 '고품_${year}' 를 폴더에서 찾을 수 없습니다`)
-  await upsertDayBlock(docId, month, dateKey, block)
+  const sheets = sheetsClient()
+  await ensureMonthTab(docId, month)
+
+  const cur = await sheets.spreadsheets.values.get({ spreadsheetId: docId, range: `${month}` })
+  const rows = cur.data.values ?? []
+  // 헤더 제외한 기존 데이터 행 중, 오늘(dateKey) 것은 제거하고 나머지 날짜는 보존
+  const kept = rows.slice(1)
+    .filter(r => r.length && r.some(c => c !== '' && c != null))
+    .filter(r => String(r[GOPOUM_DATE_COL] ?? '') !== dateKey)
+
+  const all = [...kept, ...todayRows]
+  // 날짜 오름차순 → 업체명 순
+  all.sort((a, b) => {
+    const da = String(a[GOPOUM_DATE_COL] ?? ''), db = String(b[GOPOUM_DATE_COL] ?? '')
+    if (da !== db) return da < db ? -1 : 1
+    return String(a[1] ?? '').localeCompare(String(b[1] ?? ''), 'ko')
+  })
+
+  const out = [GOPOUM_HEADER, ...all]
+  await sheets.spreadsheets.values.clear({ spreadsheetId: docId, range: `${month}` })
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: docId, range: `${month}!A1`,
+    valueInputOption: 'RAW', requestBody: { values: out },
+  })
 }

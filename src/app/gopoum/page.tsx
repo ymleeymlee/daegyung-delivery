@@ -10,22 +10,18 @@ function todayStartIso() {
   return new Date(`${d}T00:00:00+09:00`).toISOString()
 }
 
-function fmtDate(iso: string) {
-  return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit' }).format(new Date(iso))
-}
 function fmtTime(iso: string) {
   return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
 }
 
 function GopoumCard({
-  gc, items, todayStart, onDelete, onAddItem, onUpdateStartedAt, onDeleteItem,
+  gc, items, todayStart, onDelete, onAddItem, onDeleteItem,
 }: {
   gc: GopoumClient
   items: GopoumItem[]
   todayStart: string
   onDelete: (id: string) => void
   onAddItem: (clientId: string, description: string) => void
-  onUpdateStartedAt: (id: string) => void
   onDeleteItem: (itemId: string) => void
 }) {
   const [showAddItem, setShowAddItem] = useState(false)
@@ -38,33 +34,17 @@ function GopoumCard({
   const todayCollected = items.filter(i => i.picked_at && i.picked_at >= todayStart).length
   const total = items.length
   const remaining = items.filter(i => !i.picked_at).length
-  // 생성시간: started_at 우선, 없으면 첫 아이템 생성시각 (아이템 1개 이상이면 항상 표시)
-  const displayTime = gc.started_at ?? (sortedItems[0]?.created_at ?? null)
 
   function submitItem() {
     if (!newDesc.trim()) return
     onAddItem(gc.id, newDesc.trim())
     setNewDesc('')
     setShowAddItem(false)
-    // started_at 최초 아이템 추가 시 설정
-    if (items.length === 0) onUpdateStartedAt(gc.id)
   }
 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden text-sm ${remaining > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
       <div className="flex min-h-14">
-        {/* 생성시간 */}
-        <div className="w-16 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center text-center">
-          {displayTime ? (
-            <>
-              <span className="text-xs text-slate-400">{fmtDate(displayTime)}</span>
-              <span className="text-xs text-slate-500 font-medium">{fmtTime(displayTime)}</span>
-            </>
-          ) : (
-            <span className="text-xs text-slate-300">-</span>
-          )}
-        </div>
-
         {/* 업체번호 */}
         <div className="w-20 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center">
           <span className="text-xs text-slate-500">{gc.client_code || '-'}</span>
@@ -244,13 +224,6 @@ export default function GopoumPage() {
     syncSheet('gopoum')
   }
 
-  async function handleUpdateStartedAt(clientId: string) {
-    const now = new Date().toISOString()
-    setGopoumClients(prev => prev.map(gc => gc.id === clientId ? { ...gc, started_at: now } : gc))
-    supabase.from('gopoum_clients').update({ started_at: now }).eq('id', clientId)
-    syncSheet('gopoum')
-  }
-
   async function handleDelete(id: string) {
     setGopoumClients(prev => prev.filter(gc => gc.id !== id))
     setGopoumItems(prev => prev.filter(i => i.gopoum_client_id !== id))
@@ -306,7 +279,6 @@ export default function GopoumPage() {
       <div className="flex-1 overflow-y-auto p-6">
         {gopoumClients.length > 0 && (
           <div className="flex text-xs text-slate-400 font-semibold mb-1.5 px-1">
-            <div className="w-16 flex-shrink-0 text-center">생성시간</div>
             <div className="w-20 flex-shrink-0 pl-2">업체번호</div>
             <div className="w-40 flex-shrink-0 pl-2">업체명</div>
             <div className="w-32 flex-shrink-0 text-center">찾아온/총수량</div>
@@ -326,7 +298,6 @@ export default function GopoumPage() {
               todayStart={todayStart}
               onDelete={handleDelete}
               onAddItem={handleAddItem}
-              onUpdateStartedAt={handleUpdateStartedAt}
               onDeleteItem={handleDeleteItem}
             />
           ))}
