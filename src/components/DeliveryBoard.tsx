@@ -167,13 +167,8 @@ export default function DeliveryBoard() {
       items = gopoumMap.byName.get(d.client_name)!
     }
     if (!items) return null
-
-    // 배정 당시 스냅샷 고정: 배정 시각 이전 생성 품목 + 이 배달로 수거한 품목만
-    const cutoff = d.assigned_at
-    const filtered = items.filter(i =>
-      i.delivery_id === d.id || !cutoff || i.created_at <= cutoff
-    )
-    return { clientId: '', items: filtered }
+    // 고품현황 기준으로 항상 최신 전체 품목을 반영 (배정 시각 스냅샷 고정 없음)
+    return { clientId: '', items }
   }
 
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {

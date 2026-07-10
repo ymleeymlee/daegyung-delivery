@@ -49,8 +49,9 @@ function GopoumModal({
   // 타 배달자가 수거한 아이템은 선택 불가(자리만 유지)
   const isOthers = (i: GopoumItem) => !!i.picked_at && i.delivery_id !== deliveryId
 
-  const myCount = sorted.filter(i => !isOthers(i) && picks[i.id]).length
-  const availableCount = sorted.filter(i => !isOthers(i) && !picks[i.id]).length
+  // 헤더 카운트 = 고품현황 기준 (수거한 갯수 / 총수량). 타 배달자 수거 + 내 로컬 선택 포함
+  const total = sorted.length
+  const collectedNow = sorted.filter(i => isOthers(i) || picks[i.id]).length
 
   function toggle(id: string) {
     setPicks(p => ({ ...p, [id]: !p[id] }))
@@ -74,7 +75,7 @@ function GopoumModal({
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
             <span className="font-bold text-slate-800">고품 수거</span>
-            <span className="ml-2 text-sm text-slate-500">{myCount}/{myCount + availableCount}</span>
+            <span className="ml-2 text-sm text-slate-500">{collectedNow}/{total}</span>
           </div>
           <button onClick={commitAndClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
@@ -135,15 +136,14 @@ export default function DeliveryCard({
 
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }
 
-  // 내가 이 배달에서 수거한 수
-  const myCount = (gopoumItems ?? []).filter(i => i.picked_at && i.delivery_id === delivery.id).length
-  // 아직 아무도 수거 안 한 수
-  const availableCount = (gopoumItems ?? []).filter(i => !i.picked_at).length
-  // 분모 = 내가 가져올 수 있는 총량 (본인 수거 + 미수거). 타 배달자 수거분은 제외
-  const mineTotal = myCount + availableCount
-  const hasGopoum = mineTotal > 0
-  const allMineCollected = mineTotal > 0 && availableCount === 0
+  // 고품현황 기준 전체 품목 (스냅샷 아님)
+  const gItems = gopoumItems ?? []
+  const total = gItems.length                                    // 총수량
+  const collectedCount = gItems.filter(i => i.picked_at).length  // 현재까지 수거한 갯수 (누구든)
+  const myCount = gItems.filter(i => i.picked_at && i.delivery_id === delivery.id).length // 내가 수거한 수
+  const hasGopoum = total > 0
   const isGopoumCard = hasGopoum
+  const collectedByMe = myCount > 0                              // 내가 하나라도 수거했으면 초록
 
   const orderTime = new Date(delivery.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
   const assignedTime = delivery.assigned_at
@@ -178,9 +178,9 @@ export default function DeliveryCard({
         {/* 고품 배지 */}
         {isGopoumCard && (
           <div className={`absolute -top-2 -left-2 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap ${
-            allMineCollected ? 'bg-green-500' : 'bg-amber-400'
+            collectedByMe ? 'bg-green-500' : 'bg-amber-400'
           }`}>
-            고품 {myCount}/{mineTotal}
+            고품 {collectedCount}/{total}
           </div>
         )}
 
@@ -202,12 +202,12 @@ export default function DeliveryCard({
             onClick={(e) => { e.stopPropagation(); setShowModal(true) }}
             onPointerDown={(e) => e.stopPropagation()}
             className={`mt-2 w-full py-2 rounded-xl text-sm font-bold transition-colors ${
-              allMineCollected
+              collectedByMe
                 ? 'bg-green-100 hover:bg-green-200 text-green-700'
                 : 'bg-amber-400 hover:bg-amber-500 text-white'
             }`}
           >
-            고품 {myCount}/{mineTotal}
+            고품 {collectedCount}/{total}
           </button>
         )}
       </div>
