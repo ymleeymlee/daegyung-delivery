@@ -1,32 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import {
-  DndContext, DragEndEvent, DragOverlay, DragStartEvent,
-  PointerSensor, useSensor, useSensors,
-} from '@dnd-kit/core'
-import {
-  SortableContext, horizontalListSortingStrategy, verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { useDroppable } from '@dnd-kit/core'
 import { supabase } from '@/lib/supabase'
 import { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 import { AppState, fetchAppState, isClosedNow } from '@/lib/appState'
 
-function DroppableZone({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
-  const { setNodeRef, isOver } = useDroppable({ id })
-  return (
-    <div ref={setNodeRef} className={`${className} transition-colors ${isOver ? 'ring-2 ring-blue-400 ring-inset rounded-xl' : ''}`}>
-      {children}
-    </div>
-  )
-}
-
 function RiderSection({
   rider, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
-  strategy = 'vertical', getGopoumData, onCollectItem, onUncollectItem,
+  getGopoumData, onCollectItem, onUncollectItem,
 }: {
   rider: Rider
   deliveries: Delivery[]
@@ -34,13 +17,11 @@ function RiderSection({
   onRiderClick: (riderId: string, e: React.MouseEvent) => void
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
-  strategy?: 'vertical' | 'horizontal'
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onCollectItem: (itemId: string, deliveryId: string, riderName: string) => void
   onUncollectItem: (itemId: string) => void
 }) {
   const isClickable = selectedIds.length > 0
-  const sortStrategy = strategy === 'vertical' ? verticalListSortingStrategy : horizontalListSortingStrategy
 
   return (
     <div
@@ -52,28 +33,26 @@ function RiderSection({
         <span className="ml-auto bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">{deliveries.length}</span>
       </div>
 
-      <DroppableZone id={`rider-${rider.id}`} className="min-h-20 flex flex-col gap-2">
-        <SortableContext items={deliveries.map(d => d.id)} strategy={sortStrategy}>
-          {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-4">배송 없음</p>}
-          {deliveries.map(d => {
-            const gd = getGopoumData(d)
-            return (
-              <DeliveryCard
-                key={d.id}
-                delivery={d}
-                isSelected={selectedIds.includes(d.id)}
-                onSelect={onSelect}
-                onDelete={onDelete}
-                gopoumItems={gd?.items}
-                gopoumClientId={gd?.clientId}
-                riderName={rider.name}
-                onCollectItem={onCollectItem}
-                onUncollectItem={onUncollectItem}
-              />
-            )
-          })}
-        </SortableContext>
-      </DroppableZone>
+      <div className="min-h-20 flex flex-col gap-2">
+        {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-4">배송 없음</p>}
+        {deliveries.map(d => {
+          const gd = getGopoumData(d)
+          return (
+            <DeliveryCard
+              key={d.id}
+              delivery={d}
+              isSelected={selectedIds.includes(d.id)}
+              onSelect={onSelect}
+              onDelete={onDelete}
+              gopoumItems={gd?.items}
+              gopoumClientId={gd?.clientId}
+              riderName={rider.name}
+              onCollectItem={onCollectItem}
+              onUncollectItem={onUncollectItem}
+            />
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -81,15 +60,12 @@ function RiderSection({
 export default function DeliveryBoard() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
   const [riders, setRiders] = useState<Rider[]>([])
-  const [activeDelivery, setActiveDelivery] = useState<Delivery | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
   const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
   const [loading, setLoading] = useState(true)
-
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   const fetchAll = useCallback(async () => {
     const [{ data: d }, { data: r }, { data: c }] = await Promise.all([
@@ -187,19 +163,6 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })
   }
 
-  function handleAssign(deliveryId: string, riderId: string) {
-    const maxOrder = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && d.status === 'assigned').map(d => d.sort_order))
-    const now = new Date().toISOString()
-    setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, rider_id: riderId, status: 'assigned', assigned_at: now, sort_order: maxOrder + 1 } : d))
-    supabase.from('deliveries').update({ rider_id: riderId, status: 'assigned', assigned_at: now, sort_order: maxOrder + 1 }).eq('id', deliveryId).then(({ error }) => { if (error) fetchAll() })
-  }
-
-  function handleUnassign(deliveryId: string) {
-    const maxOrder = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order))
-    setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, rider_id: null, status: 'waiting', assigned_at: null, sort_order: maxOrder + 1 } : d))
-    supabase.from('deliveries').update({ rider_id: null, status: 'waiting', assigned_at: null, sort_order: maxOrder + 1 }).eq('id', deliveryId).then(({ error }) => { if (error) fetchAll() })
-  }
-
   function handleDelete(delivery: Delivery) {
     setSelectedIds(prev => prev.filter(id => id !== delivery.id))
     setDeliveries(prev => prev.filter(d => d.id !== delivery.id))
@@ -291,20 +254,6 @@ export default function DeliveryBoard() {
     requeueSelected()
   }
 
-  function handleDragStart(event: DragStartEvent) {
-    setActiveDelivery(deliveries.find(d => d.id === event.active.id) ?? null)
-    setSelectedIds([])
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    setActiveDelivery(null)
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const overId = String(over.id)
-    if (overId.startsWith('rider-')) handleAssign(String(active.id), overId.replace('rider-', ''))
-    else if (overId === 'waiting-zone') handleUnassign(String(active.id))
-  }
-
   const waitingDeliveries = deliveries.filter(d => d.status === 'waiting').sort((a, b) => a.sort_order - b.sort_order)
   const regularRiders = riders.filter(r => !r.is_quick)
   const quickRiders = riders.filter(r => r.is_quick)
@@ -328,68 +277,55 @@ export default function DeliveryBoard() {
   }
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="p-4 flex flex-col gap-4 min-h-[calc(100vh-56px)]" onClick={() => setSelectedIds([])}>
-        {/* 대기열 */}
-        <section onClick={handleWaitingZoneClick} className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 transition-colors ${selectedIds.length > 0 ? 'cursor-pointer hover:border-amber-300 hover:bg-amber-50/30' : ''}`}>
-          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-slate-700">대기열</span>
-              <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{waitingDeliveries.length}</span>
-            </div>
-            <QuickAddBar onAdd={handleAdd} />
+    <div className="p-4 flex flex-col gap-4 min-h-[calc(100vh-56px)]" onClick={() => setSelectedIds([])}>
+      {/* 대기열 */}
+      <section onClick={handleWaitingZoneClick} className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 transition-colors ${selectedIds.length > 0 ? 'cursor-pointer hover:border-amber-300 hover:bg-amber-50/30' : ''}`}>
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-700">대기열</span>
+            <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{waitingDeliveries.length}</span>
           </div>
-          <DroppableZone id="waiting-zone" className="min-h-16 flex gap-3 flex-wrap">
-            <SortableContext items={waitingDeliveries.map(d => d.id)} strategy={horizontalListSortingStrategy}>
-              {waitingDeliveries.length === 0 && <p className="text-sm text-slate-300 italic self-center">배송 카드를 추가하거나 드래그해서 놓으세요</p>}
-              {waitingDeliveries.map(d => {
-                const gd = getGopoumData(d)
-                return (
-                  <DeliveryCard
-                    key={d.id} delivery={d}
-                    isSelected={selectedIds.includes(d.id)}
-                    onSelect={handleCardClick} onDelete={handleDelete}
-                    gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
-                    onCollectItem={handleCollectItem}
-                    onUncollectItem={handleUncollectItem}
-                  />
-                )
-              })}
-            </SortableContext>
-          </DroppableZone>
-        </section>
+          <QuickAddBar onAdd={handleAdd} />
+        </div>
+        <div className="min-h-16 flex gap-3 flex-wrap">
+          {waitingDeliveries.length === 0 && <p className="text-sm text-slate-300 italic self-center">배송 카드를 추가하세요</p>}
+          {waitingDeliveries.map(d => {
+            const gd = getGopoumData(d)
+            return (
+              <DeliveryCard
+                key={d.id} delivery={d}
+                isSelected={selectedIds.includes(d.id)}
+                onSelect={handleCardClick} onDelete={handleDelete}
+                gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
+                onCollectItem={handleCollectItem}
+                onUncollectItem={handleUncollectItem}
+              />
+            )
+          })}
+        </div>
+      </section>
 
-        {/* 라이더 구역 */}
-        <section className="flex gap-4 overflow-x-auto pb-2 items-start">
-          {regularRiders.map(rider => (
-            <RiderSection key={rider.id} rider={rider} deliveries={getRiderDeliveries(rider.id)} {...cardProps} />
-          ))}
-          {quickRiders.length > 0 && (
-            <>
-              <div className="self-stretch w-px bg-slate-200 flex-shrink-0 mx-1" />
-              <div className="flex flex-col gap-3 flex-shrink-0">
-                {quickRiders.map(rider => (
-                  <RiderSection key={rider.id} rider={rider} deliveries={getRiderDeliveries(rider.id)} {...cardProps} />
-                ))}
-              </div>
-            </>
-          )}
-          {riders.length === 0 && (
-            <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-              라이더가 없습니다. Supabase에서 riders 테이블에 데이터를 추가하세요.
+      {/* 라이더 구역 */}
+      <section className="flex gap-4 overflow-x-auto pb-2 items-start">
+        {regularRiders.map(rider => (
+          <RiderSection key={rider.id} rider={rider} deliveries={getRiderDeliveries(rider.id)} {...cardProps} />
+        ))}
+        {quickRiders.length > 0 && (
+          <>
+            <div className="self-stretch w-px bg-slate-200 flex-shrink-0 mx-1" />
+            <div className="flex flex-col gap-3 flex-shrink-0">
+              {quickRiders.map(rider => (
+                <RiderSection key={rider.id} rider={rider} deliveries={getRiderDeliveries(rider.id)} {...cardProps} />
+              ))}
             </div>
-          )}
-        </section>
-      </div>
-
-      <DragOverlay>
-        {activeDelivery && (
-          <div className="bg-white rounded-xl shadow-lg border-2 border-blue-400 p-3 w-48 rotate-2">
-            <p className="font-semibold text-sm text-slate-800 truncate">{activeDelivery.client_name}</p>
-            <p className="text-xs text-slate-400 truncate">{activeDelivery.client_address}</p>
+          </>
+        )}
+        {riders.length === 0 && (
+          <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+            라이더가 없습니다. Supabase에서 riders 테이블에 데이터를 추가하세요.
           </div>
         )}
-      </DragOverlay>
-    </DndContext>
+      </section>
+    </div>
   )
 }

@@ -2,8 +2,6 @@
 
 import { useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { Delivery, GopoumItem } from '@/types'
 import ElapsedTimer from './ElapsedTimer'
 
@@ -129,12 +127,7 @@ export default function DeliveryCard({
   delivery, isSelected, onSelect, onDelete,
   gopoumItems, gopoumClientId, riderName, onCollectItem, onUncollectItem,
 }: Props) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: delivery.id, data: { delivery },
-  })
   const [showModal, setShowModal] = useState(false)
-
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌)
   const gItems = gopoumItems ?? []
@@ -164,7 +157,6 @@ export default function DeliveryCard({
   return (
     <>
       <div
-        ref={setNodeRef} style={style} {...attributes} {...listeners}
         onClick={(e) => { e.stopPropagation(); onSelect(delivery) }}
         className={`relative overflow-visible rounded-xl shadow-sm border p-3 w-48 select-none flex-shrink-0 transition-all cursor-pointer ${
           isGopoumCard
