@@ -167,8 +167,11 @@ export default function DeliveryBoard() {
       items = gopoumMap.byName.get(d.client_name)!
     }
     if (!items) return null
-    // 고품현황 기준으로 항상 최신 전체 품목을 반영 (배정 시각 스냅샷 고정 없음)
-    return { clientId: '', items }
+    // 카드 생성 당시 기준 스냅샷: 생성 시점에 존재하던 품목만.
+    // (이후 추가된 품목은 이 카드에 소급되지 않음)
+    const createdCut = d.created_at
+    const snapshot = items.filter(i => i.created_at <= createdCut)
+    return { clientId: '', items: snapshot }
   }
 
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {

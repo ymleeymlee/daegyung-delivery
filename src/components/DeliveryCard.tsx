@@ -136,12 +136,15 @@ export default function DeliveryCard({
 
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }
 
-  // 고품현황 기준 전체 품목 (스냅샷 아님)
+  // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌)
   const gItems = gopoumItems ?? []
   const total = gItems.length                                    // 총수량
   const collectedCount = gItems.filter(i => i.picked_at).length  // 현재까지 수거한 갯수 (누구든)
   const myCount = gItems.filter(i => i.picked_at && i.delivery_id === delivery.id).length // 내가 수거한 수
-  const hasGopoum = total > 0
+  // 카드 생성 당시 "찾을 고품"이 있었는지 = 생성 시점에 미수거였던 품목이 하나라도 있었는지.
+  // 없으면(전부 이미 수거됐거나 품목 자체가 없음) 이 카드엔 고품 표시 안 함.
+  const hadGopoumAtCreation = gItems.some(i => !i.picked_at || i.picked_at > delivery.created_at)
+  const hasGopoum = hadGopoumAtCreation
   const isGopoumCard = hasGopoum
   const collectedByMe = myCount > 0                              // 내가 하나라도 수거했으면 초록
 
