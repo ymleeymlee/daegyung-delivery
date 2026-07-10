@@ -226,11 +226,18 @@ export default function DeliveryBoard() {
     }).then(res => { if (!res.ok) fetchGopoum() })
   }
 
-  // 카드 클릭: 다중 선택 토글 (여러 장을 골라 한 번에 이동)
+  // 카드 클릭
   function handleCardClick(clicked: Delivery) {
-    setSelectedIds(prev =>
-      prev.includes(clicked.id) ? prev.filter(id => id !== clicked.id) : [...prev, clicked.id]
-    )
+    if (clicked.status === 'waiting') {
+      // 대기열 카드: 다중 선택 토글
+      setSelectedIds(prev =>
+        prev.includes(clicked.id) ? prev.filter(id => id !== clicked.id) : [...prev, clicked.id]
+      )
+      return
+    }
+    // 이름 블럭 안(배정된) 카드: 선택에 넣지 않음.
+    // 대기열에서 선택한 카드가 있으면, 이 카드가 속한 라이더에게 일괄 배정.
+    if (selectedIds.length > 0 && clicked.rider_id) assignSelectedToRider(clicked.rider_id)
   }
 
   // 선택된 카드들을 클릭 순서대로 한 라이더에 일괄 배정
