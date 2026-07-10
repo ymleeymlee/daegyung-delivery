@@ -32,12 +32,10 @@ function GopoumModal({
   onUncollect: (itemId: string) => void
   onClose: () => void
 }) {
-  // 내가 이 배달에서 수거한 아이템
-  const myItems = items.filter(i => i.picked_at && i.delivery_id === deliveryId)
-  // 타 배달자가 수거한 아이템
-  const othersItems = items.filter(i => i.picked_at && i.delivery_id !== deliveryId)
-  // 아직 수거 안 된 아이템
-  const availableItems = items.filter(i => !i.picked_at)
+  // 생성 순서(고품현황 추가 순)로 고정 — 수거/취소해도 위치가 바뀌지 않음
+  const sorted = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at))
+  const myCount = items.filter(i => i.picked_at && i.delivery_id === deliveryId).length
+  const availableCount = items.filter(i => !i.picked_at).length
 
   return createPortal(
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4" onClick={onClose}>
@@ -45,51 +43,43 @@ function GopoumModal({
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
             <span className="font-bold text-slate-800">고품 수거</span>
-            <span className="ml-2 text-sm text-slate-500">{myItems.length}/{myItems.length + availableItems.length}</span>
+            <span className="ml-2 text-sm text-slate-500">{myCount}/{myCount + availableCount}</span>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-          {/* 내가 수거한 아이템 — 탭하면 취소 */}
-          {myItems.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs text-slate-400 font-semibold px-1">내가 수거 ({myItems.length}개) — 탭하면 취소</p>
-              {myItems.map(item => (
-                <button key={item.id} onClick={() => onUncollect(item.id)}
-                  className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 border border-green-300 rounded-xl transition-colors">
-                  <span className="text-sm font-medium text-green-700 line-through">{item.description}</span>
-                  <span className="text-xs text-green-500 ml-2">✓ 수거완료 (취소 가능)</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* 수거 가능한 아이템 */}
-          {availableItems.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs text-slate-400 font-semibold px-1">수거 가능 ({availableItems.length}개)</p>
-              {availableItems.map(item => (
-                <button key={item.id} onClick={() => onCollect(item.id)}
-                  className="w-full text-left px-4 py-3 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-amber-200 rounded-xl text-sm font-medium text-amber-800 transition-colors">
-                  {item.description}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* 타 배달자 수거 — 비활성 */}
-          {othersItems.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs text-slate-400 font-semibold px-1">타 배달자 수거 ({othersItems.length}개)</p>
-              {othersItems.map(item => (
+          {/* 하나의 리스트 — 추가 순서 고정. 탭하면 수거(초록)/취소 토글 */}
+          {sorted.map(item => {
+            const mine = !!item.picked_at && item.delivery_id === deliveryId
+            const others = !!item.picked_at && item.delivery_id !== deliveryId
+            if (others) {
+              // 타 배달자 수거 — 비활성(자리 유지)
+              return (
                 <div key={item.id} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl opacity-50">
                   <span className="text-sm text-slate-400 line-through">{item.description}</span>
                   <span className="text-xs text-slate-400 ml-2">— {item.rider_name}</span>
                 </div>
-              ))}
-            </div>
-          )}
+              )
+            }
+            if (mine) {
+              // 수거됨 — 탭하면 취소
+              return (
+                <button key={item.id} onClick={() => onUncollect(item.id)}
+                  className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 border border-green-300 rounded-xl transition-colors">
+                  <span className="text-sm font-medium text-green-700 line-through">{item.description}</span>
+                  <span className="text-xs text-green-500 ml-2">✓ 수거완료</span>
+                </button>
+              )
+            }
+            // 미수거 — 탭하면 수거
+            return (
+              <button key={item.id} onClick={() => onCollect(item.id)}
+                className="w-full text-left px-4 py-3 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-amber-200 rounded-xl text-sm font-medium text-amber-800 transition-colors">
+                {item.description}
+              </button>
+            )
+          })}
 
           {items.length === 0 && <p className="text-sm text-slate-400 text-center py-4">등록된 품목이 없습니다.</p>}
         </div>
