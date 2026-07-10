@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 // 마감: 유효 현재일 기준
-// - 배달: 대기/배정 → completed (보드 비움)
+// - 배송: 대기/배정 → completed (보드 비움)
 // - 고품: 수거된 품목 archived(현황에서 제거), 미수거는 유지
 // - closed_until = 다음날 06:00 KST 저장 → 그 전까지 마감 상태
 export async function GET(_req: NextRequest) {
@@ -43,7 +43,7 @@ export async function GET(_req: NextRequest) {
 
     // 2) DB 정리 전부 병렬 (조회한 데이터로 잔여 계산 → 재조회 불필요)
     await Promise.all([
-      // 배달 전체 삭제 (시트에 기록됨)
+      // 배송 전체 삭제 (시트에 기록됨)
       supabaseServer.from('deliveries').delete().not('id', 'is', null),
       // 수거된 고품 → archived
       supabaseServer.from('gopoum_items').update({ archived_at: nowIso }).not('picked_at', 'is', null).is('archived_at', null),

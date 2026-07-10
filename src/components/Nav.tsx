@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { AppState, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow } from '@/lib/appState'
 
@@ -45,7 +46,7 @@ export default function Nav() {
 
   async function handleMaekam() {
     if (closed) return
-    if (!confirm('오늘 마감을 실행하시겠습니까?\n\n· 배달 현황이 초기화됩니다\n· 수거한 고품은 정리되고 미수거만 남습니다\n· 오늘 기록이 시트에 확정됩니다')) return
+    if (!confirm('오늘 마감을 실행하시겠습니까?\n\n· 배송 현황이 초기화됩니다\n· 수거한 고품은 정리되고 미수거만 남습니다\n· 오늘 기록이 시트에 확정됩니다')) return
     setMaekamLoading(true)
     try {
       const res = await fetch('/api/close')
@@ -78,9 +79,9 @@ export default function Nav() {
 
   return (
     <nav className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6 shadow-sm">
-      <span className="text-lg font-bold text-slate-800">대경배달시스템</span>
-      <a href="/" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">배달 현황</a>
-      <a href="/gopoum" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">고품 현황</a>
+      <span className="text-lg font-bold text-slate-800">대경배송시스템</span>
+      <Link href="/" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">배송 현황</Link>
+      <Link href="/gopoum" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">고품 현황</Link>
 
       {/* 관리 드롭다운 */}
       <div className="relative" ref={menuRef}>
@@ -96,10 +97,10 @@ export default function Nav() {
         {menuOpen && (
           <div className="absolute top-full left-0 mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
             <a href={sheetUrl} target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)} className="flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-              배달·고품 내역 <span className="text-xs text-green-600">시트 ↗</span>
+              배송·고품 내역 <span className="text-xs text-green-600">시트 ↗</span>
             </a>
-            <a href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">거래처 관리</a>
-            <a href="/riders" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">라이더 관리</a>
+            <Link href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">거래처 관리</Link>
+            <Link href="/riders" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">라이더 관리</Link>
           </div>
         )}
       </div>

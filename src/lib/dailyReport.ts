@@ -63,7 +63,7 @@ export async function generateDailyReports(now = new Date()): Promise<ReportFile
     const locRiders = riders.filter(r => (r.location ?? 'gn') === location)
     const riderIds = new Set(locRiders.map(r => r.id))
     const locDeliveries = deliveries.filter(d => d.rider_id && riderIds.has(d.rider_id))
-    if (locDeliveries.length === 0) continue // 배달 없는 지점은 생략
+    if (locDeliveries.length === 0) continue // 배송 없는 지점은 생략
 
     const rep = buildLocationReport(location, stamp, locRiders, locDeliveries)
     const wb = reportToWorkbook(rep)

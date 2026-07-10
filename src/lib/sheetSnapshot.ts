@@ -27,7 +27,7 @@ function orderRiders(riders: Rider[]): Rider[] {
 
 const DCOLS = 4 // 라이더당: 상호|주소|주문시각|배정시각 (일별 탭이라 날짜열 불필요)
 
-// 배달 현황 그리드 (전체 라이더 가로)
+// 배송 현황 그리드 (전체 라이더 가로)
 function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] {
   const cols = Math.max(riders.length, 1) * DCOLS
   const grid: string[][] = []

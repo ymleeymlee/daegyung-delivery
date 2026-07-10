@@ -151,7 +151,7 @@ export default function QuickAddBar({ onAdd }: Props) {
         disabled={!name.trim()}
         className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
       >
-        <span className="text-base leading-none">+</span> 배달 추가
+        <span className="text-base leading-none">+</span> 배송 추가
       </button>
 
       {open && groups.length > 0 && (

@@ -68,7 +68,7 @@ export default function RecordsPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="text-xl font-bold text-slate-800">배달 내역</h1>
+        <h1 className="text-xl font-bold text-slate-800">배송 내역</h1>
         <div className="flex items-center gap-2">
           <input
             type="date"
@@ -103,7 +103,7 @@ function LocationTable({ rep, onDownload }: { rep: LocationReport; onDownload: (
     <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
         <span className="text-sm font-bold text-slate-800">
-          {rep.dateStr} {rep.label} 배달 내역
+          {rep.dateStr} {rep.label} 배송 내역
         </span>
         <button
           onClick={onDownload}
@@ -115,7 +115,7 @@ function LocationTable({ rep, onDownload }: { rep: LocationReport; onDownload: (
       </div>
 
       {!hasData ? (
-        <div className="px-4 py-10 text-center text-slate-400 text-sm">배달 내역이 없습니다.</div>
+        <div className="px-4 py-10 text-center text-slate-400 text-sm">배송 내역이 없습니다.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="text-sm border-collapse w-full">
@@ -163,7 +163,7 @@ function LocationTable({ rep, onDownload }: { rep: LocationReport; onDownload: (
                     colSpan={4}
                     className="border border-slate-200 px-3 py-2 text-center font-semibold text-slate-700 bg-slate-50"
                   >
-                    배달 {c.count}건
+                    배송 {c.count}건
                   </td>
                 ))}
               </tr>
@@ -172,7 +172,7 @@ function LocationTable({ rep, onDownload }: { rep: LocationReport; onDownload: (
                   colSpan={rep.columns.length * 4}
                   className="border border-slate-200 px-3 py-2 text-center font-bold text-slate-800 bg-amber-50"
                 >
-                  총 {rep.grandTotal}군데 배달
+                  총 {rep.grandTotal}군데 배송
                 </td>
               </tr>
             </tfoot>

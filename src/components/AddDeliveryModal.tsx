@@ -51,7 +51,7 @@ export default function AddDeliveryModal({ onClose, onAdd }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-base font-bold text-slate-800 mb-4">배달 추가</h2>
+        <h2 className="text-base font-bold text-slate-800 mb-4">배송 추가</h2>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="relative">
             <label className="text-xs text-slate-500 mb-1 block">상호명</label>

@@ -33,7 +33,7 @@ async function findFolder(name: string): Promise<string | null> {
   return id
 }
 
-// 연도 폴더 안에서 문서 찾기 (예: 2026 폴더 안 '배달-07')
+// 연도 폴더 안에서 문서 찾기 (예: 2026 폴더 안 '배송-07')
 const _docCache = new Map<string, string>()
 async function findDocInYear(year: string, docName: string): Promise<string> {
   const cacheKey = `${year}/${docName}`
@@ -77,9 +77,9 @@ async function writeDayTab(docName: string, year: string, month: string, day: st
   }
 }
 
-// 배달-MM 문서의 MM-DD 탭에 저장
+// 배송-MM 문서의 MM-DD 탭에 저장
 export async function writeDeliveryTab(year: string, month: string, day: string, grid: (string | number)[][]) {
-  await writeDayTab(`배달-${month}`, year, month, day, grid)
+  await writeDayTab(`배송-${month}`, year, month, day, grid)
 }
 // 고품-MM 문서의 MM-DD 탭에 저장
 export async function writeGopoumTab(year: string, month: string, day: string, grid: (string | number)[][]) {

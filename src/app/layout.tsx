@@ -3,8 +3,8 @@ import './globals.css'
 import Nav from '@/components/Nav'
 
 export const metadata: Metadata = {
-  title: '대경배달시스템',
-  description: '배달 배차 관리 시스템',
+  title: '대경배송시스템',
+  description: '배송 배차 관리 시스템',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

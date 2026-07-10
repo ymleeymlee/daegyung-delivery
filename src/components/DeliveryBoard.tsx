@@ -54,7 +54,7 @@ function RiderSection({
 
       <DroppableZone id={`rider-${rider.id}`} className="min-h-20 flex flex-col gap-2">
         <SortableContext items={deliveries.map(d => d.id)} strategy={sortStrategy}>
-          {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-4">배달 없음</p>}
+          {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-4">배송 없음</p>}
           {deliveries.map(d => {
             const gd = getGopoumData(d)
             return (
@@ -157,7 +157,7 @@ export default function DeliveryBoard() {
   }, [gopoumClients, gopoumItems])
 
   function getGopoumData(d: Delivery) {
-    // 1) 업체번호 매칭 (배달 카드의 대표 거래처 → 코드 → 고품)
+    // 1) 업체번호 매칭 (배송 카드의 대표 거래처 → 코드 → 고품)
     const code = d.client_id ? codeById.get(d.client_id) : undefined
     let items: GopoumItem[] | null = null
     if (code && gopoumMap.byCode.has(code)) {
@@ -175,7 +175,7 @@ export default function DeliveryBoard() {
   }
 
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {
-    if (isClosedNow(appState)) { alert('마감된 상태입니다. 배달을 추가할 수 없습니다.'); return }
+    if (isClosedNow(appState)) { alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return }
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order))
     const now = new Date().toISOString()
     const row: Delivery = {
@@ -310,7 +310,7 @@ export default function DeliveryBoard() {
           </div>
           <DroppableZone id="waiting-zone" className="min-h-16 flex gap-3 flex-wrap">
             <SortableContext items={waitingDeliveries.map(d => d.id)} strategy={horizontalListSortingStrategy}>
-              {waitingDeliveries.length === 0 && <p className="text-sm text-slate-300 italic self-center">배달 카드를 추가하거나 드래그해서 놓으세요</p>}
+              {waitingDeliveries.length === 0 && <p className="text-sm text-slate-300 italic self-center">배송 카드를 추가하거나 드래그해서 놓으세요</p>}
               {waitingDeliveries.map(d => {
                 const gd = getGopoumData(d)
                 return (

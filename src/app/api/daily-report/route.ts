@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     const files = await generateDailyReports()
 
     if (files.length === 0) {
-      return NextResponse.json({ ok: true, sent: false, reason: '당일 배달 내역 없음' })
+      return NextResponse.json({ ok: true, sent: false, reason: '당일 배송 내역 없음' })
     }
 
     const apiKey = process.env.RESEND_API_KEY
@@ -42,8 +42,8 @@ export async function GET(req: NextRequest) {
     const { error } = await resend.emails.send({
       from: fromEmail,
       to: adminEmail,
-      subject: `[대경배달] ${stamp} 배달 내역 (${summary})`,
-      text: `${stamp} 배달 내역입니다.\n\n${files
+      subject: `[대경배송] ${stamp} 배송 내역 (${summary})`,
+      text: `${stamp} 배송 내역입니다.\n\n${files
         .map(f => `· ${f.filename}: 총 ${f.total}군데`)
         .join('\n')}`,
       attachments: files.map(f => ({

@@ -41,7 +41,7 @@ export function kstTime(iso: string | null) {
   }).format(new Date(iso))
 }
 
-// 라이더 + 배달을 지점 리포트 구조로 변환
+// 라이더 + 배송을 지점 리포트 구조로 변환
 export function buildLocationReport(
   location: LocationCode,
   dateStr: string,
@@ -89,7 +89,7 @@ export function reportToGrid(rep: LocationReport): string[][] {
     if (!grid[row]) grid[row] = new Array(cols).fill('')
   }
 
-  setCell(0, 0, `${rep.dateStr} ${rep.label} 배달 내역`)
+  setCell(0, 0, `${rep.dateStr} ${rep.label} 배송 내역`)
   ensureRow(1)
 
   const NAME_ROW = 2
@@ -120,11 +120,11 @@ export function reportToGrid(rep: LocationReport): string[][] {
   const TOTAL_ROW = DATA_START + maxRows + 1
   rep.columns.forEach((c, k) => {
     const base = k * 4
-    setCell(TOTAL_ROW, base, `배달 ${c.count}건`)
+    setCell(TOTAL_ROW, base, `배송 ${c.count}건`)
   })
 
   const GRAND_ROW = TOTAL_ROW + 1
-  setCell(GRAND_ROW, 0, `총 ${rep.grandTotal}군데 배달`)
+  setCell(GRAND_ROW, 0, `총 ${rep.grandTotal}군데 배송`)
   for (let r = 0; r <= GRAND_ROW; r++) ensureRow(r)
   return grid
 }

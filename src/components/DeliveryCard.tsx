@@ -46,10 +46,10 @@ function GopoumModal({
   // 로컬 선택 상태. 탭하면 여기만 바뀌고 DB 통신은 하지 않음 → 실시간 왕복으로 인한 깜빡임 없음
   const [picks, setPicks] = useState<Record<string, boolean>>(original)
 
-  // 타 배달자가 수거한 아이템은 선택 불가(자리만 유지)
+  // 타 배송자가 수거한 아이템은 선택 불가(자리만 유지)
   const isOthers = (i: GopoumItem) => !!i.picked_at && i.delivery_id !== deliveryId
 
-  // 헤더 카운트 = 고품현황 기준 (수거한 갯수 / 총수량). 타 배달자 수거 + 내 로컬 선택 포함
+  // 헤더 카운트 = 고품현황 기준 (수거한 갯수 / 총수량). 타 배송자 수거 + 내 로컬 선택 포함
   const total = sorted.length
   const collectedNow = sorted.filter(i => isOthers(i) || picks[i.id]).length
 
@@ -84,7 +84,7 @@ function GopoumModal({
           {/* 하나의 리스트 — 추가 순서 고정. 탭하면 수거(초록)/취소 토글 (닫을 때 일괄 저장) */}
           {sorted.map(item => {
             if (isOthers(item)) {
-              // 타 배달자 수거 — 비활성(자리 유지)
+              // 타 배송자 수거 — 비활성(자리 유지)
               return (
                 <div key={item.id} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl opacity-50">
                   <span className="text-sm text-slate-400 line-through">{item.description}</span>
@@ -154,7 +154,7 @@ export default function DeliveryCard({
     : null
 
   function handleCollect(itemId: string) {
-    if (onCollectItem) onCollectItem(itemId, delivery.id, riderName ?? '배달자')
+    if (onCollectItem) onCollectItem(itemId, delivery.id, riderName ?? '배송자')
   }
 
   function handleUncollect(itemId: string) {
@@ -174,7 +174,7 @@ export default function DeliveryCard({
       >
         {/* 삭제 버튼 */}
         <button
-          onClick={(e) => { e.stopPropagation(); if (!window.confirm('배달을 삭제하시겠습니까?')) return; onDelete(delivery) }}
+          onClick={(e) => { e.stopPropagation(); if (!window.confirm('배송을 삭제하시겠습니까?')) return; onDelete(delivery) }}
           className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 flex items-center justify-center text-xs transition-colors shadow-sm"
         >×</button>
 

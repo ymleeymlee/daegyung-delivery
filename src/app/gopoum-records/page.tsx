@@ -124,7 +124,7 @@ export default function GopoumRecordsPage() {
 
   function downloadExcel() {
     const stamp = date.replace(/-/g, '_')
-    const header = ['생성시간', '업체번호', '업체명', '찾아온수량', '총수량', '품목', '수거배달자', '수거시각']
+    const header = ['생성시간', '업체번호', '업체명', '찾아온수량', '총수량', '품목', '수거배송자', '수거시각']
     const rows: (string | number)[][] = [header]
 
     for (const { gc, items } of dayData) {
@@ -183,7 +183,7 @@ export default function GopoumRecordsPage() {
             <div className="w-20 flex-shrink-0 pl-2">업체번호</div>
             <div className="w-40 flex-shrink-0 pl-2">업체명</div>
             <div className="w-28 flex-shrink-0 text-center">찾아온/총수량</div>
-            <div className="flex-1 pl-4">품목 목록 (품목 · 수거배달자 · 시각)</div>
+            <div className="flex-1 pl-4">품목 목록 (품목 · 수거배송자 · 시각)</div>
           </div>
           <div className="flex flex-col gap-2 mb-4">
             {dayData.map(({ gc, items }) => <GopoumHistoryCard key={gc.id} gc={gc} items={items} />)}
