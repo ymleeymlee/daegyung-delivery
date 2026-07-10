@@ -25,12 +25,12 @@ function DroppableZone({ id, children, className }: { id: string; children: Reac
 }
 
 function RiderSection({
-  rider, deliveries, selectedCardId, onRiderClick, onSelect, onDelete,
+  rider, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
   strategy = 'vertical', getGopoumData, onCollectItem, onUncollectItem,
 }: {
   rider: Rider
   deliveries: Delivery[]
-  selectedCardId: string | null
+  selectedIds: string[]
   onRiderClick: (riderId: string, e: React.MouseEvent) => void
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
@@ -39,7 +39,7 @@ function RiderSection({
   onCollectItem: (itemId: string, deliveryId: string, riderName: string) => void
   onUncollectItem: (itemId: string) => void
 }) {
-  const isClickable = selectedCardId !== null
+  const isClickable = selectedIds.length > 0
   const sortStrategy = strategy === 'vertical' ? verticalListSortingStrategy : horizontalListSortingStrategy
 
   return (
@@ -61,7 +61,7 @@ function RiderSection({
               <DeliveryCard
                 key={d.id}
                 delivery={d}
-                isSelected={selectedCardId === d.id}
+                isSelected={selectedIds.includes(d.id)}
                 onSelect={onSelect}
                 onDelete={onDelete}
                 gopoumItems={gd?.items}
@@ -82,7 +82,7 @@ export default function DeliveryBoard() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
   const [riders, setRiders] = useState<Rider[]>([])
   const [activeDelivery, setActiveDelivery] = useState<Delivery | null>(null)
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
@@ -201,7 +201,7 @@ export default function DeliveryBoard() {
   }
 
   function handleDelete(delivery: Delivery) {
-    if (selectedCardId === delivery.id) setSelectedCardId(null)
+    setSelectedIds(prev => prev.filter(id => id !== delivery.id))
     setDeliveries(prev => prev.filter(d => d.id !== delivery.id))
     setGopoumItems(prev => prev.filter(i => i.delivery_id !== delivery.id))
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
@@ -226,43 +226,67 @@ export default function DeliveryBoard() {
     }).then(res => { if (!res.ok) fetchGopoum() })
   }
 
-  function moveSelectedTo(zone: 'waiting' | 'rider', riderId?: string) {
-    if (!selectedCardId) return
-    const sel = deliveries.find(d => d.id === selectedCardId)
-    if (!sel) { setSelectedCardId(null); return }
-    if (zone === 'rider' && riderId) {
-      if (!(sel.rider_id === riderId && sel.status === 'assigned')) handleAssign(selectedCardId, riderId)
-    } else if (zone === 'waiting' && sel.status !== 'waiting') {
-      handleUnassign(selectedCardId)
-    }
-    setSelectedCardId(null)
+  // 카드 클릭: 다중 선택 토글 (여러 장을 골라 한 번에 이동)
+  function handleCardClick(clicked: Delivery) {
+    setSelectedIds(prev =>
+      prev.includes(clicked.id) ? prev.filter(id => id !== clicked.id) : [...prev, clicked.id]
+    )
   }
 
-  function handleCardClick(clicked: Delivery) {
-    if (selectedCardId === clicked.id) { setSelectedCardId(null); return }
-    if (selectedCardId) {
-      if (clicked.status === 'waiting') moveSelectedTo('waiting')
-      else if (clicked.rider_id) moveSelectedTo('rider', clicked.rider_id)
-      return
+  // 선택된 카드들을 클릭 순서대로 한 라이더에 일괄 배정
+  function assignSelectedToRider(riderId: string) {
+    if (selectedIds.length === 0) return
+    const targets = selectedIds
+      .map(id => deliveries.find(d => d.id === id))
+      .filter((d): d is Delivery => !!d && !(d.rider_id === riderId && d.status === 'assigned'))
+    if (targets.length === 0) { setSelectedIds([]); return }
+    const now = new Date().toISOString()
+    const base = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && d.status === 'assigned').map(d => d.sort_order))
+    const orderMap = new Map(targets.map((d, i) => [d.id, base + i + 1]))
+    setDeliveries(prev => prev.map(d => orderMap.has(d.id)
+      ? { ...d, rider_id: riderId, status: 'assigned', assigned_at: now, sort_order: orderMap.get(d.id)! } : d))
+    for (const d of targets) {
+      supabase.from('deliveries')
+        .update({ rider_id: riderId, status: 'assigned', assigned_at: now, sort_order: orderMap.get(d.id)! })
+        .eq('id', d.id).then(({ error }) => { if (error) fetchAll() })
     }
-    setSelectedCardId(clicked.id)
+    setSelectedIds([])
+  }
+
+  // 선택된 카드들을 대기열로 일괄 복귀
+  function requeueSelected() {
+    if (selectedIds.length === 0) return
+    const targets = selectedIds
+      .map(id => deliveries.find(d => d.id === id))
+      .filter((d): d is Delivery => !!d && d.status !== 'waiting')
+    if (targets.length === 0) { setSelectedIds([]); return }
+    const base = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order))
+    const orderMap = new Map(targets.map((d, i) => [d.id, base + i + 1]))
+    setDeliveries(prev => prev.map(d => orderMap.has(d.id)
+      ? { ...d, rider_id: null, status: 'waiting', assigned_at: null, sort_order: orderMap.get(d.id)! } : d))
+    for (const d of targets) {
+      supabase.from('deliveries')
+        .update({ rider_id: null, status: 'waiting', assigned_at: null, sort_order: orderMap.get(d.id)! })
+        .eq('id', d.id).then(({ error }) => { if (error) fetchAll() })
+    }
+    setSelectedIds([])
   }
 
   function handleRiderClick(riderId: string, e: React.MouseEvent) {
     e.stopPropagation()
-    if (!selectedCardId) return
-    moveSelectedTo('rider', riderId)
+    if (selectedIds.length === 0) return
+    assignSelectedToRider(riderId)
   }
 
   function handleWaitingZoneClick(e: React.MouseEvent) {
     e.stopPropagation()
-    if (!selectedCardId) return
-    moveSelectedTo('waiting')
+    if (selectedIds.length === 0) return
+    requeueSelected()
   }
 
   function handleDragStart(event: DragStartEvent) {
     setActiveDelivery(deliveries.find(d => d.id === event.active.id) ?? null)
-    setSelectedCardId(null)
+    setSelectedIds([])
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -283,7 +307,7 @@ export default function DeliveryBoard() {
   }
 
   const cardProps = {
-    selectedCardId,
+    selectedIds,
     onRiderClick: handleRiderClick,
     onSelect: handleCardClick,
     onDelete: handleDelete,
@@ -298,9 +322,9 @@ export default function DeliveryBoard() {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="p-4 flex flex-col gap-4 min-h-[calc(100vh-56px)]" onClick={() => setSelectedCardId(null)}>
+      <div className="p-4 flex flex-col gap-4 min-h-[calc(100vh-56px)]" onClick={() => setSelectedIds([])}>
         {/* 대기열 */}
-        <section onClick={handleWaitingZoneClick} className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 transition-colors ${selectedCardId ? 'cursor-pointer hover:border-amber-300 hover:bg-amber-50/30' : ''}`}>
+        <section onClick={handleWaitingZoneClick} className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 transition-colors ${selectedIds.length > 0 ? 'cursor-pointer hover:border-amber-300 hover:bg-amber-50/30' : ''}`}>
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-slate-700">대기열</span>
@@ -316,7 +340,7 @@ export default function DeliveryBoard() {
                 return (
                   <DeliveryCard
                     key={d.id} delivery={d}
-                    isSelected={selectedCardId === d.id}
+                    isSelected={selectedIds.includes(d.id)}
                     onSelect={handleCardClick} onDelete={handleDelete}
                     gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
                     onCollectItem={handleCollectItem}
