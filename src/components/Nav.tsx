@@ -99,6 +99,7 @@ export default function Nav() {
               배달·고품 내역 <span className="text-xs text-green-600">시트 ↗</span>
             </a>
             <a href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">거래처 관리</a>
+            <a href="/riders" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">라이더 관리</a>
           </div>
         )}
       </div>

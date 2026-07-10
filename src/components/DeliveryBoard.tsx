@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, useSensor, useSensors,
@@ -120,17 +120,24 @@ export default function DeliveryBoard() {
 
   const refreshAppState = useCallback(async () => { setAppState(await fetchAppState()) }, [])
 
+  // realtime 재조회 debounce: 빠른 연속 수거 시 중간 상태로 낙관적 업데이트가 덮이는 것 방지
+  const gopoumTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedFetchGopoum = useCallback(() => {
+    if (gopoumTimer.current) clearTimeout(gopoumTimer.current)
+    gopoumTimer.current = setTimeout(fetchGopoum, 500)
+  }, [fetchGopoum])
+
   useEffect(() => {
     Promise.all([fetchAll(), fetchGopoum(), refreshAppState()]).finally(() => setLoading(false))
     const channel = supabase
       .channel('board-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, fetchAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, fetchGopoum)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, fetchGopoum)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, debouncedFetchGopoum)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, debouncedFetchGopoum)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state' }, refreshAppState)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fetchAll, fetchGopoum, refreshAppState])
+  }, [fetchAll, fetchGopoum, debouncedFetchGopoum, refreshAppState])
 
   const gopoumMap = useMemo(() => {
     // 업체번호(코드) 기준으로 고품 품목을 묶음. 코드 없으면 상호명 폴백.
