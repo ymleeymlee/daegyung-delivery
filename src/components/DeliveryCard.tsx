@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -34,26 +34,55 @@ function GopoumModal({
 }) {
   // 생성 순서(고품현황 추가 순)로 고정 — 수거/취소해도 위치가 바뀌지 않음
   const sorted = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at))
-  const myCount = items.filter(i => i.picked_at && i.delivery_id === deliveryId).length
-  const availableCount = items.filter(i => !i.picked_at).length
+
+  // 열 때의 원래 수거 상태 (내 것) — 닫을 때 변경분만 커밋하기 위한 기준
+  const original = useMemo(() => {
+    const m: Record<string, boolean> = {}
+    for (const i of items) m[i.id] = !!i.picked_at && i.delivery_id === deliveryId
+    return m
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 로컬 선택 상태. 탭하면 여기만 바뀌고 DB 통신은 하지 않음 → 실시간 왕복으로 인한 깜빡임 없음
+  const [picks, setPicks] = useState<Record<string, boolean>>(original)
+
+  // 타 배달자가 수거한 아이템은 선택 불가(자리만 유지)
+  const isOthers = (i: GopoumItem) => !!i.picked_at && i.delivery_id !== deliveryId
+
+  const myCount = sorted.filter(i => !isOthers(i) && picks[i.id]).length
+  const availableCount = sorted.filter(i => !isOthers(i) && !picks[i.id]).length
+
+  function toggle(id: string) {
+    setPicks(p => ({ ...p, [id]: !p[id] }))
+  }
+
+  // 닫을 때 변경분을 한 번에 커밋 (고품현황/DB 반영은 이 시점에만)
+  function commitAndClose() {
+    for (const i of items) {
+      if (isOthers(i)) continue
+      const now = !!picks[i.id]
+      if (now === original[i.id]) continue
+      if (now) onCollect(i.id)
+      else onUncollect(i.id)
+    }
+    onClose()
+  }
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4" onClick={commitAndClose}>
       <div className="bg-white rounded-2xl shadow-xl w-80 max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
             <span className="font-bold text-slate-800">고품 수거</span>
             <span className="ml-2 text-sm text-slate-500">{myCount}/{myCount + availableCount}</span>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+          <button onClick={commitAndClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-          {/* 하나의 리스트 — 추가 순서 고정. 탭하면 수거(초록)/취소 토글 */}
+          {/* 하나의 리스트 — 추가 순서 고정. 탭하면 수거(초록)/취소 토글 (닫을 때 일괄 저장) */}
           {sorted.map(item => {
-            const mine = !!item.picked_at && item.delivery_id === deliveryId
-            const others = !!item.picked_at && item.delivery_id !== deliveryId
-            if (others) {
+            if (isOthers(item)) {
               // 타 배달자 수거 — 비활성(자리 유지)
               return (
                 <div key={item.id} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl opacity-50">
@@ -62,10 +91,10 @@ function GopoumModal({
                 </div>
               )
             }
-            if (mine) {
+            if (picks[item.id]) {
               // 수거됨 — 탭하면 취소
               return (
-                <button key={item.id} onClick={() => onUncollect(item.id)}
+                <button key={item.id} onClick={() => toggle(item.id)}
                   className="w-full text-left px-4 py-3 bg-green-50 hover:bg-green-100 border border-green-300 rounded-xl transition-colors">
                   <span className="text-sm font-medium text-green-700 line-through">{item.description}</span>
                   <span className="text-xs text-green-500 ml-2">✓ 수거완료</span>
@@ -74,7 +103,7 @@ function GopoumModal({
             }
             // 미수거 — 탭하면 수거
             return (
-              <button key={item.id} onClick={() => onCollect(item.id)}
+              <button key={item.id} onClick={() => toggle(item.id)}
                 className="w-full text-left px-4 py-3 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-amber-200 rounded-xl text-sm font-medium text-amber-800 transition-colors">
                 {item.description}
               </button>
@@ -85,7 +114,7 @@ function GopoumModal({
         </div>
 
         <div className="px-4 py-3 border-t border-slate-200">
-          <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-medium text-slate-700 transition-colors">
+          <button onClick={commitAndClose} className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-medium text-slate-700 transition-colors">
             닫기
           </button>
         </div>
