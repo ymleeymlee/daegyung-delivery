@@ -94,8 +94,11 @@ function GopoumModal({
                   picked ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-200'
                 }`}>
                 <div className="flex-1 min-w-0">
-                  <span className={`text-sm font-medium ${picked ? 'text-green-700' : 'text-amber-800'}`}>{item.description}</span>
-                  <span className="text-xs text-slate-400 ml-2 whitespace-nowrap">총 {qty(item)}{others > 0 ? ` · 타 ${others}` : ''}</span>
+                  <div>
+                    <span className={`text-sm font-medium ${picked ? 'text-green-700' : 'text-amber-800'}`}>{item.description}</span>
+                    <span className="text-xs text-slate-400 ml-2 whitespace-nowrap">총 {qty(item)}{others > 0 ? ` · 타 ${others}` : ''}</span>
+                  </div>
+                  {item.note && <div className="text-xs text-slate-500 mt-0.5 break-words">{item.note}</div>}
                 </div>
                 {/* 내 수거량 −/값/+ */}
                 <div className="flex items-center gap-1 flex-shrink-0">

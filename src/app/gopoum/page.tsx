@@ -36,14 +36,12 @@ function GopoumCard({
   const qty = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
   const isDone = (i: GopoumItem) => collectedOf(i) > 0 && collectedOf(i) >= qty(i)
-  const collectorNames = (i: GopoumItem): string[] | null => {
-    const names = (i.collectors ?? []).map(c => `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`)
-    return names.length ? names : null
-  }
-  const lastPickedAt = (i: GopoumItem): string | null => {
-    const ts = (i.collectors ?? []).map(c => c.picked_at).sort()
-    return ts.length ? ts[ts.length - 1] : null
-  }
+  // 수거자별 한 줄씩: { 이름(수량), 수거시각 } — 수거시간·수거자 열을 같은 순서로 줄맞춤
+  const collectorLines = (i: GopoumItem) =>
+    (i.collectors ?? []).map(c => ({
+      name: `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`,
+      time: fmtTime(c.picked_at),
+    }))
 
   const sortedItems = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at))
   const total = items.reduce((s, i) => s + qty(i), 0)
@@ -117,14 +115,16 @@ function GopoumCard({
                   <button type="button" onClick={() => onEditItem(item.id, { quantity: qty(item) + 1 }, true)}
                     className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-base leading-none flex items-center justify-center">+</button>
                 </div>
-                {/* 수거시간 (마지막 수거, 또는 -) */}
+                {/* 수거시간 (수거자별 한 줄씩, 또는 -) */}
                 <span className={`w-12 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'text-slate-600' : 'text-slate-300'}`}>
-                  {lastPickedAt(item) ? fmtTime(lastPickedAt(item)!) : '-'}
+                  {collectorLines(item).length
+                    ? collectorLines(item).map((l, idx) => <div key={idx} className="leading-tight">{l.time}</div>)
+                    : '-'}
                 </span>
-                {/* 수거자 (완료 전까지 수거한 이름 누적, 또는 미수거) */}
+                {/* 수거자 (수거자별 한 줄씩, 또는 미수거) */}
                 <span className={`w-28 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>
-                  {collectorNames(item)
-                    ? collectorNames(item)!.map((n, idx) => <div key={idx} className="truncate leading-tight">{n}</div>)
+                  {collectorLines(item).length
+                    ? collectorLines(item).map((l, idx) => <div key={idx} className="truncate leading-tight">{l.name}</div>)
                     : '미수거'}
                 </span>
                 {/* 수거량/총수량 */}
@@ -208,15 +208,22 @@ export default function GopoumPage() {
     setGopoumItems(allItems.filter(i => !i.archived_at))
   }, [])
 
+  // 실시간 재조회 디바운스: 수량 +/- 연타 시 오래된 서버 응답이 낙관적 값을 덮어써 숫자가 튀는 현상 방지
+  const fetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedFetch = useCallback(() => {
+    if (fetchTimer.current) clearTimeout(fetchTimer.current)
+    fetchTimer.current = setTimeout(() => { fetchData() }, 500)
+  }, [fetchData])
+
   useEffect(() => {
     fetchData().finally(() => setLoading(false))
     const channel = supabase
       .channel('gopoum-page-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, fetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, debouncedFetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, debouncedFetch)
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [fetchData])
+    return () => { if (fetchTimer.current) clearTimeout(fetchTimer.current); supabase.removeChannel(channel) }
+  }, [fetchData, debouncedFetch])
 
   useEffect(() => {
     const term = (inputCode || inputName).trim()
