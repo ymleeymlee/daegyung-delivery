@@ -63,40 +63,52 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
 }
 
 // 고품 현황 그리드 (업체 정보는 첫 행만, 품목부터 행 추가)
-// collectors(배송자별 수거량) 기반: 부분수거·다중수거·잔여 수량까지 기록
+// collectors(배송자별 수거량) 기반: 부분수거·다중수거·잔여 수량까지 기록.
+// 수거자가 여러 명이면 수거자별로 행을 나눠 기록(수거날짜·수거시각·수거자·수거량).
+// 열: 업체번호 | 업체명 | 수거 | 총수량 | 생성날짜 | 생성시간 | 품목 | 수거날짜 | 수거시각 | 수거자 | 수거량/총 | 비고
 function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[][] {
   const qtyOf = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
-  const collectorLabel = (i: GopoumItem) =>
-    (i.collectors ?? []).map(c => `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`).join(', ')
-  const lastPickedAt = (i: GopoumItem): string | null => {
-    const ts = (i.collectors ?? []).map(c => c.picked_at).filter(Boolean).sort()
-    return ts.length ? ts[ts.length - 1] : null
-  }
-  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성날짜', '생성시간', '품목', '수거시각', '수거자', '수거량/총', '비고']]
+  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성날짜', '생성시간', '품목', '수거날짜', '수거시각', '수거자', '수거량/총', '비고']]
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
     if (gcItems.length === 0) continue
     const totalQty = gcItems.reduce((s, i) => s + qtyOf(i), 0)          // 총 수량 합
     const collectedQty = gcItems.reduce((s, i) => s + collectedOf(i), 0) // 수거된 수량 합
-    gcItems.forEach((item, i) => {
-      const head = i === 0
-      const col = collectedOf(item)
-      grid.push([
-        head ? (gc.client_code || '-') : '',
-        head ? gc.client_name : '',
-        head ? String(collectedQty) : '',
-        head ? String(totalQty) : '',
-        kstYMD(item.created_at),
-        kstTime(item.created_at),
-        item.description,
-        lastPickedAt(item) ? kstTime(lastPickedAt(item)) : '-',
-        col > 0 ? collectorLabel(item) : '미수거',
-        `${col}/${qtyOf(item)}`,
-        item.note ?? '',
-      ])
-    })
+
+    const clientRows: string[][] = []
+    for (const item of gcItems) {
+      const cols = item.collectors ?? []
+      const ratio = `${collectedOf(item)}/${qtyOf(item)}`
+      if (cols.length === 0) {
+        // 미수거: 한 행
+        clientRows.push(['', '', '', '', kstYMD(item.created_at), kstTime(item.created_at), item.description, '-', '-', '미수거', ratio, item.note ?? ''])
+      } else {
+        // 수거자별로 한 행씩. 품목 정보(생성날짜/시간/품목/수거량·총/비고)는 첫 행만
+        cols.forEach((c, ci) => {
+          const head = ci === 0
+          const label = `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`
+          clientRows.push([
+            '', '', '', '',
+            head ? kstYMD(item.created_at) : '',
+            head ? kstTime(item.created_at) : '',
+            head ? item.description : '',
+            kstYMD(c.picked_at),
+            kstTime(c.picked_at),
+            label,
+            head ? ratio : '',
+            head ? (item.note ?? '') : '',
+          ])
+        })
+      }
+    }
+    // 업체 정보(업체번호/업체명/수거/총수량)는 업체 첫 행만
+    clientRows[0][0] = gc.client_code || '-'
+    clientRows[0][1] = gc.client_name
+    clientRows[0][2] = String(collectedQty)
+    clientRows[0][3] = String(totalQty)
+    grid.push(...clientRows)
   }
   return grid
 }

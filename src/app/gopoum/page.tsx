@@ -36,10 +36,11 @@ function GopoumCard({
   const qty = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
   const isDone = (i: GopoumItem) => collectedOf(i) > 0 && collectedOf(i) >= qty(i)
-  // 수거자별 한 줄씩: { 이름(수량), 수거시각 } — 수거시간·수거자 열을 같은 순서로 줄맞춤
+  // 수거자별 한 줄씩: { 이름(수량), 수거날짜, 수거시각 } — 수거날짜·시간·수거자 열을 같은 순서로 줄맞춤
   const collectorLines = (i: GopoumItem) =>
     (i.collectors ?? []).map(c => ({
       name: `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`,
+      date: fmtYMD(c.picked_at),
       time: fmtTime(c.picked_at),
     }))
 
@@ -115,6 +116,12 @@ function GopoumCard({
                   <button type="button" onClick={() => onEditItem(item.id, { quantity: qty(item) + 1 }, true)}
                     className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-base leading-none flex items-center justify-center">+</button>
                 </div>
+                {/* 수거날짜 (수거자별 한 줄씩, 또는 -) */}
+                <span className={`w-16 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'text-slate-500' : 'text-slate-300'}`}>
+                  {collectorLines(item).length
+                    ? collectorLines(item).map((l, idx) => <div key={idx} className="leading-tight text-xs">{l.date}</div>)
+                    : '-'}
+                </span>
                 {/* 수거시간 (수거자별 한 줄씩, 또는 -) */}
                 <span className={`w-12 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'text-slate-600' : 'text-slate-300'}`}>
                   {collectorLines(item).length
@@ -358,7 +365,7 @@ export default function GopoumPage() {
             <div className="w-20 flex-shrink-0 pl-2">업체번호</div>
             <div className="w-40 flex-shrink-0 pl-2">업체명</div>
             <div className="w-32 flex-shrink-0 text-center">찾아온/총수량</div>
-            <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 수량 · 수거시간 · 수거자 · 수거량/총 · 비고)</div>
+            <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 수량 · 수거날짜 · 수거시간 · 수거자 · 수거량/총 · 비고)</div>
           </div>
         )}
 
