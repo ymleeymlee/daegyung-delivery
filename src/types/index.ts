@@ -52,6 +52,8 @@ export interface GopoumItem {
   id: string
   gopoum_client_id: string
   description: string
+  quantity: number
+  note: string | null
   rider_name: string | null
   delivery_id: string | null
   picked_at: string | null
