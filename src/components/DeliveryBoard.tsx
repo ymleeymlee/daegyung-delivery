@@ -32,6 +32,7 @@ function RiderSection({
     >
       <div className="flex items-center gap-2 mb-3">
         <span className={`text-sm font-semibold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-700'}`}>{rider.name}</span>
+        {rider.phone && <span className="text-xs text-slate-400 font-medium">{rider.phone}</span>}
         <span className="ml-auto bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">{deliveries.length}</span>
       </div>
 
@@ -81,6 +82,7 @@ export default function DeliveryBoard() {
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
   const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
   const [loading, setLoading] = useState(true)
+  const [queueOpen, setQueueOpen] = useState(false)   // 대기열 접기: 기본 숨김
 
   const fetchAll = useCallback(async () => {
     const [{ data: d }, { data: r }, { data: c }] = await Promise.all([
@@ -314,29 +316,36 @@ export default function DeliveryBoard() {
     <div className="p-4 flex flex-col gap-4 min-h-[calc(100vh-56px)]" onClick={() => setSelectedIds([])}>
       {/* 대기열 */}
       <section onClick={handleWaitingZoneClick} className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 transition-colors ${selectedIds.length > 0 ? 'cursor-pointer hover:border-amber-300 hover:bg-amber-50/30' : ''}`}>
-        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center gap-2">
+        <div className={`flex items-center justify-between gap-3 flex-wrap ${queueOpen ? 'mb-3' : ''}`} onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => setQueueOpen(o => !o)}
+            className="flex items-center gap-2 rounded-lg px-1 -mx-1 hover:bg-slate-50 transition-colors"
+          >
+            <span className={`text-slate-400 text-xs transition-transform ${queueOpen ? 'rotate-90' : ''}`}>▶</span>
             <span className="text-sm font-semibold text-slate-700">대기열</span>
             <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{waitingDeliveries.length}</span>
+          </button>
+          <QuickAddBar onAdd={(name, address, clientId) => { setQueueOpen(true); handleAdd(name, address, clientId) }} />
+        </div>
+        {queueOpen && (
+          <div className="min-h-16 flex gap-3 flex-wrap">
+            {waitingDeliveries.length === 0 && <p className="text-sm text-slate-300 italic self-center">배송 카드를 추가하세요</p>}
+            {waitingDeliveries.map(d => {
+              const gd = getGopoumData(d)
+              return (
+                <DeliveryCard
+                  key={d.id} delivery={d}
+                  isSelected={selectedIds.includes(d.id)}
+                  hasSelection={selectedIds.length > 0}
+                  onSelect={handleCardClick} onDelete={handleDelete}
+                  gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
+                  onSetPickup={handleSetPickup}
+                />
+              )
+            })}
           </div>
-          <QuickAddBar onAdd={handleAdd} />
-        </div>
-        <div className="min-h-16 flex gap-3 flex-wrap">
-          {waitingDeliveries.length === 0 && <p className="text-sm text-slate-300 italic self-center">배송 카드를 추가하세요</p>}
-          {waitingDeliveries.map(d => {
-            const gd = getGopoumData(d)
-            return (
-              <DeliveryCard
-                key={d.id} delivery={d}
-                isSelected={selectedIds.includes(d.id)}
-                hasSelection={selectedIds.length > 0}
-                onSelect={handleCardClick} onDelete={handleDelete}
-                gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
-                onSetPickup={handleSetPickup}
-              />
-            )
-          })}
-        </div>
+        )}
       </section>
 
       {/* 라이더 구역 */}

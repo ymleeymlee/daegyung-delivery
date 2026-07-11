@@ -10,6 +10,7 @@ export default function RidersPage() {
   const [riders, setRiders] = useState<Rider[]>([])
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
   const [location, setLocation] = useState<'gn' | 'as'>('gn')
   const [isQuick, setIsQuick] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -27,11 +28,11 @@ export default function RidersPage() {
     if (!name.trim() || adding) return
     setAdding(true)
     const { error } = await supabase.from('riders').insert({
-      name: name.trim(), location, is_quick: isQuick, is_active: true,
+      name: name.trim(), phone: phone.trim() || null, location, is_quick: isQuick, is_active: true,
     })
     setAdding(false)
     if (!error) {
-      setName(''); setLocation('gn'); setIsQuick(false)
+      setName(''); setPhone(''); setLocation('gn'); setIsQuick(false)
       fetchRiders()
     } else {
       alert('추가 실패: ' + error.message)
@@ -64,6 +65,16 @@ export default function RidersPage() {
           />
         </div>
         <div>
+          <label className="text-xs text-slate-500 block mb-1">전화번호</label>
+          <input
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+            placeholder="010-0000-0000"
+            className={`${inputCls} w-40`}
+          />
+        </div>
+        <div>
           <label className="text-xs text-slate-500 block mb-1">지점</label>
           <select value={location} onChange={e => setLocation(e.target.value as 'gn' | 'as')} className={inputCls}>
             <option value="gn">강남</option>
@@ -89,6 +100,7 @@ export default function RidersPage() {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
               <th className="text-left px-4 py-3 font-semibold">이름</th>
+              <th className="text-left px-4 py-3 font-semibold w-40">전화번호</th>
               <th className="text-left px-4 py-3 font-semibold w-24">지점</th>
               <th className="text-left px-4 py-3 font-semibold w-20">퀵</th>
               <th className="px-4 py-3 w-20"></th>
@@ -96,12 +108,13 @@ export default function RidersPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">불러오는 중...</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">불러오는 중...</td></tr>
             ) : riders.length === 0 ? (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400">라이더가 없습니다.</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">라이더가 없습니다.</td></tr>
             ) : riders.map(r => (
               <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium text-slate-800">{r.name}</td>
+                <td className="px-4 py-3 text-slate-600">{r.phone ? <a href={`tel:${r.phone}`} className="hover:text-blue-600">{r.phone}</a> : <span className="text-slate-300">-</span>}</td>
                 <td className="px-4 py-3 text-slate-600">{LOC_LABEL[r.location ?? 'gn']}</td>
                 <td className="px-4 py-3">{r.is_quick ? <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">퀵</span> : ''}</td>
                 <td className="px-4 py-3 text-right">

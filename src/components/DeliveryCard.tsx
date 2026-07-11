@@ -98,7 +98,11 @@ function GopoumModal({
                     <span className={`text-sm font-medium ${picked ? 'text-green-700' : 'text-amber-800'}`}>{item.description}</span>
                     <span className="text-xs text-slate-400 ml-2 whitespace-nowrap">총 {qty(item)}{others > 0 ? ` · 타 ${others}` : ''}</span>
                   </div>
-                  {item.note && <div className="text-xs text-slate-500 mt-0.5 break-words">{item.note}</div>}
+                  {item.note && (
+                    <div className="mt-1.5 text-xs text-slate-700 bg-white border border-slate-200 rounded-md px-2 py-1 break-words">
+                      <span className="text-slate-400 mr-1">비고</span>{item.note}
+                    </div>
+                  )}
                 </div>
                 {/* 내 수거량 −/값/+ */}
                 <div className="flex items-center gap-1 flex-shrink-0">
