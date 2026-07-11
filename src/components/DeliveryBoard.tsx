@@ -10,7 +10,7 @@ import { AppState, fetchAppState, isClosedNow } from '@/lib/appState'
 
 function RiderSection({
   rider, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
-  getGopoumData, onCollectItem, onUncollectItem, onSetQuantity, onAddToRider,
+  getGopoumData, onSetPickup, onAddToRider,
 }: {
   rider: Rider
   deliveries: Delivery[]
@@ -19,9 +19,7 @@ function RiderSection({
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
-  onCollectItem: (itemId: string, deliveryId: string, riderName: string) => void
-  onUncollectItem: (itemId: string) => void
-  onSetQuantity: (itemId: string, quantity: number) => void
+  onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
 }) {
   const isClickable = selectedIds.length > 0
@@ -52,9 +50,7 @@ function RiderSection({
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={rider.name}
-              onCollectItem={onCollectItem}
-              onUncollectItem={onUncollectItem}
-              onSetQuantity={onSetQuantity}
+              onSetPickup={onSetPickup}
             />
           )
         })}
@@ -203,31 +199,27 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
-  function handleCollectItem(itemId: string, deliveryId: string, riderName: string) {
-    const pickedAt = new Date().toISOString()
-    setGopoumItems(prev => prev.map(i => i.id === itemId ? { ...i, rider_name: riderName, delivery_id: deliveryId, picked_at: pickedAt } : i))
+  // 이 배송(라이더)의 수거량을 myQty로 설정. collectors 배열을 갱신하고 완전수거면 picked_at 기록.
+  function handleSetPickup(itemId: string, deliveryId: string, riderName: string, myQty: number) {
+    const item = gopoumItems.find(i => i.id === itemId)
+    if (!item) return
+    const now = new Date().toISOString()
+    const others = (item.collectors ?? []).filter(c => c.delivery_id !== deliveryId)
+    const next = myQty > 0
+      ? [...others, { delivery_id: deliveryId, rider_name: riderName, quantity: myQty, picked_at: now }]
+      : others
+    const collectedTotal = next.reduce((s, c) => s + c.quantity, 0)
+    const patch = {
+      collectors: next,
+      rider_name: next.length ? next.map(c => c.rider_name).join(', ') : null,
+      delivery_id: null,
+      picked_at: collectedTotal > 0 && collectedTotal >= (item.quantity ?? 1) ? now : null,
+    }
+    setGopoumItems(prev => prev.map(i => i.id === itemId ? { ...i, ...patch } : i))
     fetch('/api/gopoum-items', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: itemId, rider_name: riderName, delivery_id: deliveryId, picked_at: pickedAt }),
-    }).then(res => { if (!res.ok) fetchGopoum() })
-  }
-
-  function handleUncollectItem(itemId: string) {
-    setGopoumItems(prev => prev.map(i => i.id === itemId ? { ...i, rider_name: null, delivery_id: null, picked_at: null } : i))
-    fetch('/api/gopoum-items', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: itemId, rider_name: null, delivery_id: null, picked_at: null }),
-    }).then(res => { if (!res.ok) fetchGopoum() })
-  }
-
-  function handleSetItemQuantity(itemId: string, quantity: number) {
-    setGopoumItems(prev => prev.map(i => i.id === itemId ? { ...i, quantity } : i))
-    fetch('/api/gopoum-items', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: itemId, quantity }),
+      body: JSON.stringify({ id: itemId, ...patch }),
     }).then(res => { if (!res.ok) fetchGopoum() })
   }
 
@@ -310,9 +302,7 @@ export default function DeliveryBoard() {
     onSelect: handleCardClick,
     onDelete: handleDelete,
     getGopoumData,
-    onCollectItem: handleCollectItem,
-    onUncollectItem: handleUncollectItem,
-    onSetQuantity: handleSetItemQuantity,
+    onSetPickup: handleSetPickup,
     onAddToRider: handleAddToRider,
   }
 
@@ -342,9 +332,7 @@ export default function DeliveryBoard() {
                 hasSelection={selectedIds.length > 0}
                 onSelect={handleCardClick} onDelete={handleDelete}
                 gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
-                onCollectItem={handleCollectItem}
-                onUncollectItem={handleUncollectItem}
-                onSetQuantity={handleSetItemQuantity}
+                onSetPickup={handleSetPickup}
               />
             )
           })}

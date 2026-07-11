@@ -48,15 +48,24 @@ export interface GopoumPickup {
   picked_at: string
 }
 
+// 한 배송(라이더)이 이 품목에서 수거한 기록
+export interface GopoumCollector {
+  delivery_id: string | null
+  rider_name: string
+  quantity: number
+  picked_at: string
+}
+
 export interface GopoumItem {
   id: string
   gopoum_client_id: string
   description: string
-  quantity: number
+  quantity: number              // 총 수거해야 할 수량 (고품현황에서 입력)
   note: string | null
-  rider_name: string | null
-  delivery_id: string | null
-  picked_at: string | null
+  collectors: GopoumCollector[] // 배송자별 수거량 기록 (부분·다중 수거)
+  rider_name: string | null     // 수거자명(합쳐진 문자열, 시트/호환용)
+  delivery_id: string | null    // (레거시) 다중 수거로 의미 축소
+  picked_at: string | null      // 총량이 모두 수거된 시각 (완전수거). 부분이면 null
   created_at: string
   archived_at: string | null
 }

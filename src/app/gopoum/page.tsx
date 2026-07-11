@@ -34,10 +34,23 @@ function GopoumCard({
   useEffect(() => { if (showAddItem) inputRef.current?.focus() }, [showAddItem])
 
   const qty = (i: GopoumItem) => i.quantity ?? 1
+  const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
+  const isDone = (i: GopoumItem) => collectedOf(i) > 0 && collectedOf(i) >= qty(i)
+  const collectorNames = (i: GopoumItem) => {
+    const names = (i.collectors ?? []).map(c => `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`)
+    return names.length ? names.join(', ') : null
+  }
+  const lastPickedAt = (i: GopoumItem): string | null => {
+    const ts = (i.collectors ?? []).map(c => c.picked_at).sort()
+    return ts.length ? ts[ts.length - 1] : null
+  }
+
   const sortedItems = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at))
-  const todayCollected = items.filter(i => i.picked_at && i.picked_at >= todayStart).reduce((s, i) => s + qty(i), 0)
   const total = items.reduce((s, i) => s + qty(i), 0)
-  const remaining = items.filter(i => !i.picked_at).reduce((s, i) => s + qty(i), 0)
+  const collectedAll = items.reduce((s, i) => s + collectedOf(i), 0)
+  const remaining = Math.max(0, total - collectedAll)
+  const todayCollected = items.reduce((s, i) =>
+    s + (i.collectors ?? []).filter(c => c.picked_at >= todayStart).reduce((a, c) => a + c.quantity, 0), 0)
 
   function submitItem() {
     if (!newDesc.trim()) return
@@ -83,12 +96,12 @@ function GopoumCard({
             <div className="px-4 py-3 text-xs text-slate-300 italic flex items-center h-full">품목 없음</div>
           ) : (
             sortedItems.map(item => (
-              <div key={item.id} className={`flex items-center gap-2 px-4 py-2 group ${item.picked_at ? 'bg-green-50' : ''}`}>
+              <div key={item.id} className={`flex items-center gap-2 px-4 py-2 group ${isDone(item) ? 'bg-green-50' : ''}`}>
                 {/* 생성날짜 + 생성시간 */}
                 <span className="w-16 flex-shrink-0 text-xs text-slate-400">{fmtYMD(item.created_at)}</span>
                 <span className="w-12 flex-shrink-0 text-xs text-slate-400">{fmtTime(item.created_at)}</span>
                 {/* 품목명 */}
-                <span className={`w-28 flex-shrink-0 text-sm truncate ${item.picked_at ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
+                <span className={`w-28 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
                   {item.description}
                 </span>
                 {/* 수량 (−/직접입력/+) */}
@@ -104,13 +117,18 @@ function GopoumCard({
                   <button type="button" onClick={() => onEditItem(item.id, { quantity: qty(item) + 1 }, true)}
                     className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-base leading-none flex items-center justify-center">+</button>
                 </div>
-                {/* 수거시간 (또는 -) */}
-                <span className={`w-12 flex-shrink-0 text-sm ${item.picked_at ? 'text-slate-600' : 'text-slate-300'}`}>
-                  {item.picked_at ? fmtTime(item.picked_at) : '-'}
+                {/* 수거시간 (마지막 수거, 또는 -) */}
+                <span className={`w-12 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'text-slate-600' : 'text-slate-300'}`}>
+                  {lastPickedAt(item) ? fmtTime(lastPickedAt(item)!) : '-'}
                 </span>
-                {/* 수거자 (또는 미수거) */}
-                <span className={`flex-shrink-0 text-sm whitespace-nowrap ${item.picked_at ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>
-                  {item.picked_at ? item.rider_name : '미수거'}
+                {/* 수거자 (완료 전까지 수거한 이름 누적, 또는 미수거) */}
+                <span className={`w-28 flex-shrink-0 text-sm truncate ${collectedOf(item) > 0 ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>
+                  {collectorNames(item) ?? '미수거'}
+                </span>
+                {/* 수거량/총수량 */}
+                <span className="w-14 flex-shrink-0 text-sm text-center whitespace-nowrap">
+                  <span className={isDone(item) ? 'text-green-600 font-bold' : 'text-slate-600 font-semibold'}>{collectedOf(item)}</span>
+                  <span className="text-slate-300">/{qty(item)}</span>
                 </span>
                 {/* 비고 (우측 정렬, 내용 입력) */}
                 <input
@@ -235,7 +253,7 @@ export default function GopoumPage() {
     // 낙관적 업데이트: DB 응답 전에 화면 먼저 반영
     const tempId = crypto.randomUUID()
     const now = new Date().toISOString()
-    const tempItem: GopoumItem = { id: tempId, gopoum_client_id: clientId, description, quantity: 1, note: null, rider_name: null, delivery_id: null, picked_at: null, created_at: now, archived_at: null }
+    const tempItem: GopoumItem = { id: tempId, gopoum_client_id: clientId, description, quantity: 1, note: null, collectors: [], rider_name: null, delivery_id: null, picked_at: null, created_at: now, archived_at: null }
     setGopoumItems(prev => [...prev, tempItem])
 
     const res = await fetch('/api/gopoum-items', {
@@ -321,7 +339,7 @@ export default function GopoumPage() {
             <div className="w-20 flex-shrink-0 pl-2">업체번호</div>
             <div className="w-40 flex-shrink-0 pl-2">업체명</div>
             <div className="w-32 flex-shrink-0 text-center">찾아온/총수량</div>
-            <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 수량 · 수거시간 · 수거자 · 비고)</div>
+            <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 수량 · 수거시간 · 수거자 · 수거량/총 · 비고)</div>
           </div>
         )}
 
