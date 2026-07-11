@@ -293,6 +293,16 @@ export default function GopoumPage() {
 
   // 수량/비고 편집: 입력 중(commit=false)엔 화면만, 확정(commit=true)엔 DB에도 저장
   function handleEditItem(itemId: string, updates: Partial<GopoumItem>, commit: boolean) {
+    // 수량 변경 시 완전수거 여부(picked_at) 재계산.
+    // 수량을 올려 미완료가 되면 picked_at을 비워 배송카드·마감 로직이 다시 미수거로 인식하게 함.
+    if (typeof updates.quantity === 'number') {
+      const item = gopoumItems.find(i => i.id === itemId)
+      if (item) {
+        const collected = (item.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
+        const fullyCollected = collected > 0 && collected >= updates.quantity
+        updates = { ...updates, picked_at: fullyCollected ? (item.picked_at ?? new Date().toISOString()) : null }
+      }
+    }
     setGopoumItems(prev => prev.map(i => i.id === itemId ? { ...i, ...updates } : i))
     if (!commit) return
     fetch('/api/gopoum-items', {

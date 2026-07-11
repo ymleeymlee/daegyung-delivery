@@ -22,6 +22,7 @@ const qty = (i: GopoumItem) => i.quantity ?? 1
 const itemCollectors = (i: GopoumItem) => i.collectors ?? []
 const collectedTotal = (i: GopoumItem) => itemCollectors(i).reduce((s, c) => s + c.quantity, 0)
 const myPickup = (i: GopoumItem, deliveryId: string) => itemCollectors(i).find(c => c.delivery_id === deliveryId)?.quantity ?? 0
+const isFull = (i: GopoumItem) => collectedTotal(i) > 0 && collectedTotal(i) >= qty(i)  // 완전수거 여부(수량 기준)
 
 function GopoumModal({
   items,
@@ -135,7 +136,8 @@ export default function DeliveryCard({
   const myCount = gItems.reduce((s, i) => s + myPickup(i, delivery.id), 0)        // 내가 수거한 수량 합
   // 카드 생성 당시 "찾을 고품"이 있었는지 = 생성 시점에 미수거였던 품목이 하나라도 있었는지.
   // 없으면(전부 이미 수거됐거나 품목 자체가 없음) 이 카드엔 고품 표시 안 함.
-  const hadGopoumAtCreation = gItems.some(i => !i.picked_at || i.picked_at > delivery.created_at)
+  // 판정은 실제 수거량 기준(isFull) — 완전수거 후 수량을 늘리면 다시 미완료가 되어 이 카드도 고품으로 잡힘.
+  const hadGopoumAtCreation = gItems.some(i => !isFull(i) || (i.picked_at != null && i.picked_at > delivery.created_at))
   const hasGopoum = hadGopoumAtCreation
   const isGopoumCard = hasGopoum
   const collectedByMe = myCount > 0                              // 내가 하나라도 수거했으면 초록
