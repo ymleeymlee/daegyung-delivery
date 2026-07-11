@@ -5,11 +5,12 @@ import { supabase } from '@/lib/supabase'
 import { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
+import RiderAddModal from './RiderAddModal'
 import { AppState, fetchAppState, isClosedNow } from '@/lib/appState'
 
 function RiderSection({
   rider, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
-  getGopoumData, onCollectItem, onUncollectItem,
+  getGopoumData, onCollectItem, onUncollectItem, onAddToRider,
 }: {
   rider: Rider
   deliveries: Delivery[]
@@ -20,8 +21,10 @@ function RiderSection({
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onCollectItem: (itemId: string, deliveryId: string, riderName: string) => void
   onUncollectItem: (itemId: string) => void
+  onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
 }) {
   const isClickable = selectedIds.length > 0
+  const [showAdd, setShowAdd] = useState(false)
 
   return (
     <div
@@ -53,6 +56,19 @@ function RiderSection({
           )
         })}
       </div>
+
+      {/* 이 라이더에 바로 추가 (업체번호 검색 팝업) */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
+        className="mt-2 w-full py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
+      >+ 추가</button>
+      {showAdd && (
+        <RiderAddModal
+          riderName={rider.name}
+          onPick={(name, address, clientId) => onAddToRider(rider.id, name, address, clientId)}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
     </div>
   )
 }
@@ -158,6 +174,20 @@ export default function DeliveryBoard() {
       id: crypto.randomUUID(), client_id: clientId ?? null, client_name: clientName,
       client_address: clientAddress, status: 'waiting', created_at: now,
       assigned_at: null, rider_id: null, sort_order: maxOrder + 1,
+    }
+    setDeliveries(prev => [...prev, row])
+    supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })
+  }
+
+  // 이름블럭 아래 + 버튼: 선택한 업체를 해당 라이더에 바로 배정 상태로 추가
+  function handleAddToRider(riderId: string, clientName: string, clientAddress: string, clientId?: string) {
+    if (isClosedNow(appState)) { alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return }
+    const maxOrder = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && d.status === 'assigned').map(d => d.sort_order))
+    const now = new Date().toISOString()
+    const row: Delivery = {
+      id: crypto.randomUUID(), client_id: clientId ?? null, client_name: clientName,
+      client_address: clientAddress, status: 'assigned', created_at: now,
+      assigned_at: now, rider_id: riderId, sort_order: maxOrder + 1,
     }
     setDeliveries(prev => [...prev, row])
     supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })
@@ -270,6 +300,7 @@ export default function DeliveryBoard() {
     getGopoumData,
     onCollectItem: handleCollectItem,
     onUncollectItem: handleUncollectItem,
+    onAddToRider: handleAddToRider,
   }
 
   if (loading) {

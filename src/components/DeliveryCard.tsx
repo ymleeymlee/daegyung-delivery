@@ -180,14 +180,13 @@ export default function DeliveryCard({
         )}
 
         <p className="font-semibold text-sm truncate text-slate-800">{delivery.client_name}</p>
-        <p className="text-xs text-slate-400 mt-0.5 truncate">{delivery.client_address}</p>
 
-        <div className="mt-2 pt-2 border-t border-slate-100 flex flex-col gap-0.5">
-          <span className="text-xs text-slate-400">주문 {orderTime}</span>
+        <div className="mt-1 flex items-center gap-2 text-xs whitespace-nowrap">
+          <span className="text-slate-400">주문 {orderTime}</span>
           {delivery.status === 'waiting' ? (
-            <span className="text-xs font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
+            <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
           ) : (
-            <span className="text-xs font-medium text-blue-600">배정 {assignedTime}</span>
+            <span className="font-medium text-blue-600">배정 {assignedTime}</span>
           )}
         </div>
 
