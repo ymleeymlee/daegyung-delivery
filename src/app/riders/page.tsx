@@ -6,6 +6,15 @@ import { Rider } from '@/types'
 
 const LOC_LABEL: Record<string, string> = { gn: '강남', as: '안산' }
 
+// 숫자만 뽑아 자동 하이픈: 01087000078 → 010-8700-0078
+function formatPhone(v: string) {
+  const d = v.replace(/\D/g, '').slice(0, 11)
+  if (d.length < 4) return d
+  if (d.length < 7) return `${d.slice(0, 3)}-${d.slice(3)}`
+  if (d.length <= 10) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`  // 10자리(3-3-4)
+  return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`                       // 11자리(3-4-4)
+}
+
 export default function RidersPage() {
   const [riders, setRiders] = useState<Rider[]>([])
   const [loading, setLoading] = useState(true)
@@ -39,6 +48,17 @@ export default function RidersPage() {
     }
   }
 
+  // 기존 라이더 전화번호 인라인 편집: 입력 중 자동 포맷(로컬), 포커스 아웃 시 저장
+  function handlePhoneEdit(id: string, raw: string) {
+    const formatted = formatPhone(raw)
+    setRiders(prev => prev.map(r => r.id === id ? { ...r, phone: formatted } : r))
+  }
+  async function handlePhoneCommit(id: string, raw: string) {
+    const formatted = formatPhone(raw)
+    const { error } = await supabase.from('riders').update({ phone: formatted || null }).eq('id', id)
+    if (error) fetchRiders()
+  }
+
   async function handleDelete(r: Rider) {
     if (!confirm(`라이더 '${r.name}'를 삭제할까요?`)) return
     setRiders(prev => prev.filter(x => x.id !== r.id))
@@ -68,9 +88,10 @@ export default function RidersPage() {
           <label className="text-xs text-slate-500 block mb-1">전화번호</label>
           <input
             value={phone}
-            onChange={e => setPhone(e.target.value)}
+            onChange={e => setPhone(formatPhone(e.target.value))}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
             placeholder="010-0000-0000"
+            inputMode="numeric"
             className={`${inputCls} w-40`}
           />
         </div>
@@ -114,7 +135,17 @@ export default function RidersPage() {
             ) : riders.map(r => (
               <tr key={r.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium text-slate-800">{r.name}</td>
-                <td className="px-4 py-3 text-slate-600">{r.phone ? <a href={`tel:${r.phone}`} className="hover:text-blue-600">{r.phone}</a> : <span className="text-slate-300">-</span>}</td>
+                <td className="px-4 py-3">
+                  <input
+                    value={r.phone ?? ''}
+                    onChange={e => handlePhoneEdit(r.id, e.target.value)}
+                    onBlur={e => handlePhoneCommit(r.id, e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                    placeholder="010-0000-0000"
+                    inputMode="numeric"
+                    className="w-36 border border-transparent hover:border-slate-200 focus:border-blue-400 rounded-md px-2 py-1 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300"
+                  />
+                </td>
                 <td className="px-4 py-3 text-slate-600">{LOC_LABEL[r.location ?? 'gn']}</td>
                 <td className="px-4 py-3">{r.is_quick ? <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">퀵</span> : ''}</td>
                 <td className="px-4 py-3 text-right">
