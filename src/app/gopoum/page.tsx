@@ -36,9 +36,9 @@ function GopoumCard({
   const qty = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
   const isDone = (i: GopoumItem) => collectedOf(i) > 0 && collectedOf(i) >= qty(i)
-  const collectorNames = (i: GopoumItem) => {
+  const collectorNames = (i: GopoumItem): string[] | null => {
     const names = (i.collectors ?? []).map(c => `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`)
-    return names.length ? names.join(', ') : null
+    return names.length ? names : null
   }
   const lastPickedAt = (i: GopoumItem): string | null => {
     const ts = (i.collectors ?? []).map(c => c.picked_at).sort()
@@ -122,8 +122,10 @@ function GopoumCard({
                   {lastPickedAt(item) ? fmtTime(lastPickedAt(item)!) : '-'}
                 </span>
                 {/* 수거자 (완료 전까지 수거한 이름 누적, 또는 미수거) */}
-                <span className={`w-28 flex-shrink-0 text-sm truncate ${collectedOf(item) > 0 ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>
-                  {collectorNames(item) ?? '미수거'}
+                <span className={`w-28 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>
+                  {collectorNames(item)
+                    ? collectorNames(item)!.map((n, idx) => <div key={idx} className="truncate leading-tight">{n}</div>)
+                    : '미수거'}
                 </span>
                 {/* 수거량/총수량 */}
                 <span className="w-14 flex-shrink-0 text-sm text-center whitespace-nowrap">
