@@ -49,12 +49,12 @@ export default function RiderAddModal({ riderName, onPick, onClose }: Props) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
         </div>
 
-        <div className="p-3">
+        <div className="p-3 flex flex-col gap-3">
           <input
             ref={inputRef}
             autoFocus
             value={code}
-            onChange={e => setCode(e.target.value)}
+            onChange={e => setCode(e.target.value.replace(/[^0-9]/g, ''))}
             onKeyDown={e => {
               if (e.key === 'Enter' && groups.length > 0) {
                 const g = groups[0]
@@ -62,11 +62,32 @@ export default function RiderAddModal({ riderName, onPick, onClose }: Props) {
               }
               if (e.key === 'Escape') onClose()
             }}
-            inputMode="numeric"
-            pattern="[0-9]*"
+            inputMode="none"
             placeholder="업체번호 입력"
-            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-lg tracking-wide bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
+
+          {/* 직접 그린 숫자 키패드 (OS 터치 키보드 대신). 하드웨어 키보드 숫자도 입력됨 */}
+          <div className="grid grid-cols-3 gap-2" onMouseDown={e => e.preventDefault()}>
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => (
+              <button key={d} type="button" onClick={() => setCode(c => c + d)}
+                className="py-3 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-xl font-semibold text-slate-800 transition-colors">
+                {d}
+              </button>
+            ))}
+            <button type="button" onClick={() => setCode('')}
+              className="py-3 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-sm font-semibold text-slate-500 transition-colors">
+              전체삭제
+            </button>
+            <button type="button" onClick={() => setCode(c => c + '0')}
+              className="py-3 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-xl font-semibold text-slate-800 transition-colors">
+              0
+            </button>
+            <button type="button" onClick={() => setCode(c => c.slice(0, -1))}
+              className="py-3 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-xl font-semibold text-slate-500 transition-colors">
+              ⌫
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-1">
