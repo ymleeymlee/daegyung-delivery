@@ -63,26 +63,38 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
 }
 
 // 고품 현황 그리드 (업체 정보는 첫 행만, 품목부터 행 추가)
-// 아이템 열 순서: 생성시간 | 품목 | 수거시각(또는 -) | 수거자(또는 미수거)
+// collectors(배송자별 수거량) 기반: 부분수거·다중수거·잔여 수량까지 기록
 function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[][] {
-  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성날짜', '생성시간', '품목', '수거시각', '수거자']]
+  const qtyOf = (i: GopoumItem) => i.quantity ?? 1
+  const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
+  const collectorLabel = (i: GopoumItem) =>
+    (i.collectors ?? []).map(c => `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`).join(', ')
+  const lastPickedAt = (i: GopoumItem): string | null => {
+    const ts = (i.collectors ?? []).map(c => c.picked_at).filter(Boolean).sort()
+    return ts.length ? ts[ts.length - 1] : null
+  }
+  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성날짜', '생성시간', '품목', '수거시각', '수거자', '수거량/총', '비고']]
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
     if (gcItems.length === 0) continue
-    const collected = gcItems.filter(i => i.picked_at).length
+    const totalQty = gcItems.reduce((s, i) => s + qtyOf(i), 0)          // 총 수량 합
+    const collectedQty = gcItems.reduce((s, i) => s + collectedOf(i), 0) // 수거된 수량 합
     gcItems.forEach((item, i) => {
       const head = i === 0
+      const col = collectedOf(item)
       grid.push([
         head ? (gc.client_code || '-') : '',
         head ? gc.client_name : '',
-        head ? String(collected) : '',
-        head ? String(gcItems.length) : '',
+        head ? String(collectedQty) : '',
+        head ? String(totalQty) : '',
         kstYMD(item.created_at),
         kstTime(item.created_at),
         item.description,
-        item.picked_at ? kstTime(item.picked_at) : '-',
-        item.picked_at ? (item.rider_name ?? '') : '미수거',
+        lastPickedAt(item) ? kstTime(lastPickedAt(item)) : '-',
+        col > 0 ? collectorLabel(item) : '미수거',
+        `${col}/${qtyOf(item)}`,
+        item.note ?? '',
       ])
     })
   }
