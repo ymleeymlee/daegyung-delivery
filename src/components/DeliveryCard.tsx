@@ -8,6 +8,7 @@ import ElapsedTimer from './ElapsedTimer'
 interface Props {
   delivery: Delivery
   isSelected: boolean
+  hasSelection?: boolean
   onSelect: (delivery: Delivery) => void
   onDelete: (delivery: Delivery) => void
   gopoumItems?: GopoumItem[]
@@ -124,7 +125,7 @@ function GopoumModal({
 }
 
 export default function DeliveryCard({
-  delivery, isSelected, onSelect, onDelete,
+  delivery, isSelected, hasSelection, onSelect, onDelete,
   gopoumItems, gopoumClientId, riderName, onCollectItem, onUncollectItem,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
@@ -141,7 +142,6 @@ export default function DeliveryCard({
   const isGopoumCard = hasGopoum
   const collectedByMe = myCount > 0                              // 내가 하나라도 수거했으면 초록
 
-  const orderTime = new Date(delivery.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
   const assignedTime = delivery.assigned_at
     ? new Date(delivery.assigned_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
     : null
@@ -154,10 +154,21 @@ export default function DeliveryCard({
     if (onUncollectItem) onUncollectItem(itemId)
   }
 
+  // 카드 클릭: 배정된 고품(노란) 카드는 선택 중이 아니면 카드 자체가 고품 버튼 → 팝업 열기.
+  // 그 외(대기열 카드 / 선택 진행 중)는 기존 선택·배정 로직으로.
+  function handleClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (delivery.status === 'assigned' && hasGopoum && !hasSelection) {
+      setShowModal(true)
+      return
+    }
+    onSelect(delivery)
+  }
+
   return (
     <>
       <div
-        onClick={(e) => { e.stopPropagation(); onSelect(delivery) }}
+        onClick={handleClick}
         className={`relative overflow-visible rounded-xl shadow-sm border p-3 w-48 select-none flex-shrink-0 transition-all cursor-pointer ${
           isGopoumCard
             ? isSelected ? 'bg-amber-50 border-blue-500 ring-2 ring-blue-500' : 'bg-amber-50 border-amber-300 hover:border-amber-400'
@@ -182,28 +193,12 @@ export default function DeliveryCard({
         <p className="font-semibold text-sm truncate text-slate-800">{delivery.client_name}</p>
 
         <div className="mt-1 flex items-center gap-2 text-xs whitespace-nowrap">
-          <span className="text-slate-400">주문 {orderTime}</span>
           {delivery.status === 'waiting' ? (
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
           ) : (
-            <span className="font-medium text-blue-600">배정 {assignedTime}</span>
+            <span className="font-medium text-blue-600">배송 {assignedTime}</span>
           )}
         </div>
-
-        {/* 고품 N/M 버튼 (배정됐을 때만) */}
-        {delivery.status === 'assigned' && hasGopoum && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowModal(true) }}
-            onPointerDown={(e) => e.stopPropagation()}
-            className={`mt-2 w-full py-2 rounded-xl text-sm font-bold transition-colors ${
-              collectedByMe
-                ? 'bg-green-100 hover:bg-green-200 text-green-700'
-                : 'bg-amber-400 hover:bg-amber-500 text-white'
-            }`}
-          >
-            고품 {collectedCount}/{total}
-          </button>
-        )}
       </div>
 
       {showModal && gopoumItems && (

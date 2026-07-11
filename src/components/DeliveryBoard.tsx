@@ -45,6 +45,7 @@ function RiderSection({
               key={d.id}
               delivery={d}
               isSelected={selectedIds.includes(d.id)}
+              hasSelection={selectedIds.length > 0}
               onSelect={onSelect}
               onDelete={onDelete}
               gopoumItems={gd?.items}
@@ -326,6 +327,7 @@ export default function DeliveryBoard() {
               <DeliveryCard
                 key={d.id} delivery={d}
                 isSelected={selectedIds.includes(d.id)}
+                hasSelection={selectedIds.length > 0}
                 onSelect={handleCardClick} onDelete={handleDelete}
                 gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
                 onCollectItem={handleCollectItem}
