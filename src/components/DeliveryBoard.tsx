@@ -10,7 +10,7 @@ import { AppState, fetchAppState, isClosedNow } from '@/lib/appState'
 
 function RiderSection({
   rider, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
-  getGopoumData, onCollectItem, onUncollectItem, onAddToRider,
+  getGopoumData, onCollectItem, onUncollectItem, onSetQuantity, onAddToRider,
 }: {
   rider: Rider
   deliveries: Delivery[]
@@ -21,6 +21,7 @@ function RiderSection({
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onCollectItem: (itemId: string, deliveryId: string, riderName: string) => void
   onUncollectItem: (itemId: string) => void
+  onSetQuantity: (itemId: string, quantity: number) => void
   onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
 }) {
   const isClickable = selectedIds.length > 0
@@ -53,6 +54,7 @@ function RiderSection({
               riderName={rider.name}
               onCollectItem={onCollectItem}
               onUncollectItem={onUncollectItem}
+              onSetQuantity={onSetQuantity}
             />
           )
         })}
@@ -220,6 +222,15 @@ export default function DeliveryBoard() {
     }).then(res => { if (!res.ok) fetchGopoum() })
   }
 
+  function handleSetItemQuantity(itemId: string, quantity: number) {
+    setGopoumItems(prev => prev.map(i => i.id === itemId ? { ...i, quantity } : i))
+    fetch('/api/gopoum-items', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: itemId, quantity }),
+    }).then(res => { if (!res.ok) fetchGopoum() })
+  }
+
   // 카드 클릭
   function handleCardClick(clicked: Delivery) {
     if (clicked.status === 'waiting') {
@@ -301,6 +312,7 @@ export default function DeliveryBoard() {
     getGopoumData,
     onCollectItem: handleCollectItem,
     onUncollectItem: handleUncollectItem,
+    onSetQuantity: handleSetItemQuantity,
     onAddToRider: handleAddToRider,
   }
 
@@ -332,6 +344,7 @@ export default function DeliveryBoard() {
                 gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
                 onCollectItem={handleCollectItem}
                 onUncollectItem={handleUncollectItem}
+                onSetQuantity={handleSetItemQuantity}
               />
             )
           })}
