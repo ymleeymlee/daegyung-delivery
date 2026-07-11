@@ -1,6 +1,41 @@
-# 대경배달시스템 — 작업 인수인계 (2026-07-10 기준)
+# 대경배송시스템 — 작업 인수인계 (2026-07-11 갱신)
 
-내부 직원용 배달 배차 + 고품(반품/회수 물품) 관리 시스템. 실시간 웹앱 + Google Sheets 기록.
+내부 직원용 배송 배차 + 고품(반품/회수 물품) 관리 시스템. 실시간 웹앱 + Google Sheets 기록.
+
+> 🟥 **미적용 마이그레이션 (사용자가 Supabase SQL Editor에서 직접 Run 해야 함. 안 하면 관련 기능이 저장 안 되고 값이 되돌아감):**
+> - `supabase/update_09.sql` — `gopoum_items`에 `quantity`(기본1), `note`
+> - `supabase/update_10.sql` — `gopoum_items`에 `collectors`(jsonb, 기본 `[]`)
+> 실행 여부 불명이면 사용자에게 확인. (RLS 경고 시 "Run without RLS")
+
+> 🟨 **'배달' → '배송' 전면 교체됨.** 구글시트 월별 문서명 매칭도 코드가 `배송-MM`을 찾음 → **Drive의 기존 `배달-MM` 월별 문서들을 `배송-MM`으로 리네임**해야 마감 시 시트 저장 정상 동작. (`고품-MM`은 그대로)
+
+---
+
+## 최근 세션 변경 (2026-07-11) — 위 인수인계 본문보다 이게 최신
+
+1. **성능**: `Nav.tsx` 내부 링크를 `<a>` → `next/link` `<Link>` 로 교체(하드 네비게이션 제거, 탭 전환 즉시화). 외부 시트 링크만 `<a target=_blank>`.
+2. **'배달'→'배송' 전면 교체**: UI/앱 제목(`대경배송시스템`)/시트 셀 라벨/이메일 리포트/구글시트 월별 문서명(`배송-MM`)까지. (위 🟨 주의)
+3. **대기열 다중 선택 배차** (`DeliveryBoard.tsx`): `selectedIds: string[]`. 대기열 카드 클릭=선택 토글(여러 장), 이름블럭(빈 곳/배정된 카드 위 포함) 클릭=선택분 전부 일괄 배정. **배정된 카드는 선택 대상 아님**. 바탕 클릭=해제.
+4. **드래그(dnd-kit) 완전 제거**: `DndContext`/`useSortable`/`DroppableZone` 등 삭제. 배차는 클릭만. (`@dnd-kit/*` 패키지는 package.json에 미사용으로 잔존)
+5. **검색 컬럼 분리** (`QuickAddBar.tsx`): 입력한 칸의 컬럼만 검색(업체번호칸=`code`, 상호명=`name`, 주소=`address`). 그룹핑 로직은 `lib/clientGroups.ts`로 추출(QuickAddBar·RiderAddModal 공용).
+6. **배송 카드 축소** (`DeliveryCard.tsx`): 주소 줄·주문시각 제거 → 상호명 + 배송(배정)시각(또는 대기 타이머)만(2줄). **고품 버튼 제거 → 노란(고품) 카드 자체가 버튼**: 배정된 고품 카드를 (선택 진행 중이 아닐 때) 클릭하면 고품 수거 팝업. 좌상단 배지 `고품 N/M` 유지.
+7. **라이더별 추가 팝업** (`RiderAddModal.tsx` 신규): 각 이름블럭 아래 `+ 추가` 버튼 → 팝업(두 블록: **왼쪽 검색결과 리스트 / 오른쪽 업체번호 입력+자체 숫자 키패드**). 입력칸 `inputMode="none"`으로 OS 터치키보드 억제(하드웨어 숫자 입력은 됨) + 직접 그린 키패드. 선택 시 해당 라이더에 **바로 배정** 상태로 추가(`handleAddToRider`).
+8. **고품 수량·비고** (`gopoum/page.tsx`, `update_09.sql`): 품목명 옆 수량 `−/직접입력/+`, 수거자 우측에 비고 입력(우측정렬). 총수량/찾아온/잔여는 수량 합계 기준.
+9. **고품 부분·다중 수거** (`update_10.sql`, `DeliveryBoard`/`DeliveryCard`/`gopoum` page): `gopoum_items.collectors` jsonb = `[{delivery_id, rider_name, quantity, picked_at}]`.
+   - 배송카드 고품 팝업: 토글 제거, **아이템별 내 수거량 `−/+`(기본 0, 0보다 크면 초록=수거)**, `총량 − 타인수거량` 초과 불가(`+` 비활성). 닫을 때 일괄 커밋(`handleSetPickup`).
+   - **완전수거(수거합계≥총량)** 시에만 `picked_at` 기록 + `rider_name`=수거자명 합침 → **마감(close)·시트 로직은 코드 변경 없이 호환**.
+   - 고품현황: 수거자 칸에 완료 전까지 **수거자명 누적**(`홍길동(2), 김철수(1)`), **`수거량/총` 열 추가**, 완전수거 시 초록. 배지/집계 모두 collectors 기준.
+
+### 다음 후보 / 미해결 (이번 세션 관련)
+- **마감 시 부분수거 미처리**: 부분수거(수거<총량) 품목은 `picked_at` null이라 마감 때 "미수거"로 이월됨. **구글시트 고품 그리드에 수량/부분수거자/비고 미반영**(`sheetSnapshot.ts buildGopoumGrid` 그대로). 필요 시 확장.
+- `@dnd-kit/*` 미사용 패키지 정리 가능.
+- 배정된 카드를 클릭으로 대기열 복귀시키는 경로 없음(드래그 제거로). 필요 시 추가.
+
+---
+
+# (이하 2026-07-10 기준 인수인계 — 위 최근 변경으로 일부 대체됨)
+
+내부 직원용 배송 배차 + 고품(반품/회수 물품) 관리 시스템. 실시간 웹앱 + Google Sheets 기록.
 
 - **배포(운영)**: https://daegyung-delivery.vercel.app (main 브랜치 = 프로덕션)
 - **저장소**: github.com/ymleeymlee/daegyung-delivery
@@ -44,8 +79,11 @@
   - status: waiting/assigned/completed/cancelled
   - **마감 시 전부 삭제됨** (시트에 기록되므로 DB에 안 쌓음)
 - `gopoum_clients(id, client_id, client_code, client_name, total_quantity, created_at, started_at)` — 고품 있는 업체
-- `gopoum_items(id, gopoum_client_id, description, rider_name, delivery_id, picked_at, created_at, archived_at)` — 고품 품목 단위
-  - `picked_at` 있으면 수거됨, `archived_at` 있으면 마감 처리됨(현황서 제거)
+- `gopoum_items(id, gopoum_client_id, description, quantity, note, collectors, rider_name, delivery_id, picked_at, created_at, archived_at)` — 고품 품목 단위
+  - `quantity`(update_09) = 총 수거해야 할 수량, `note`(update_09) = 비고
+  - `collectors`(update_10, jsonb) = `[{delivery_id, rider_name, quantity, picked_at}]` 배송자별 수거량(부분·다중 수거)
+  - `picked_at` = **완전수거(수거합계≥총량)** 시각(부분이면 null), `rider_name` = 수거자명 합친 문자열
+  - `archived_at` 있으면 마감 처리됨(현황서 제거)
 - `app_state(key, value)` — `date_offset`(테스트용 날짜 오프셋), `closed_until`(마감 해제 시각 ISO)
 
 RLS 전부 비활성. `app_state`, `gopoum_items` 등 realtime publication 등록됨.
