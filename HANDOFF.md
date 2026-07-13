@@ -1,15 +1,44 @@
 # 대경배송시스템 — 작업 인수인계 (2026-07-13 갱신)
 
 내부 직원용 배송 배차 + 고품(반품/회수 물품) 관리 시스템. 실시간 웹앱 + Google Sheets 기록.
-**다음 작업 예정: 이 웹(Supabase)과 연동되는 안드로이드 앱 신규 개발** (아래 "안드로이드 앱 연동 참고" 섹션 참조).
+**진행 중인 큰 작업: 라이더 위치추적.** 웹 1단계(실시간 지도)는 완료, **다음은 안드로이드(키오스크) 앱 개발** (아래 "라이더 위치추적 프로젝트" 섹션이 최신 · 이어서 여기부터).
 
 > 🟥 **마이그레이션 적용 여부 확인 필요** (Supabase SQL Editor에서 직접 Run. RLS 경고 시 "Run without RLS"):
 > - `supabase/update_09.sql` — `gopoum_items`에 `quantity`(기본1), `note`
 > - `supabase/update_10.sql` — `gopoum_items`에 `collectors`(jsonb, 기본 `[]`)
 > - `supabase/update_11.sql` — `riders`에 `phone`(text)
-> 09/10은 고품 수량·부분수거 기능이 동작하면 적용된 것. 11(phone)은 **라이더 전번 저장이 되는지로 확인**. 안 되면: `alter table riders add column if not exists phone text;`
+> - `supabase/update_12.sql` — 위치추적: `rider_locations`·`location_pings` 생성, 창고 설정(app_state), deliveries ETA 필드. **/tracking 지도는 떴으나 라이더 점이 안 찍히면 이게 미적용.** (앱이 write하기 시작하면 확인 가능)
+> 09/10은 고품 수량·부분수거 동작하면 적용된 것. 11은 라이더 전번 저장으로, 12는 라이더 위치 저장으로 확인.
 
-> 🟩 **'배달'→'배송' 전면 교체 + Drive 문서 `배달-MM`→`배송-MM` 리네임 완료** (사용자 처리함). 마감 시 시트 저장은 `배송-MM`/`고품-MM` 월별 문서를 찾음.
+> 🟩 **'배달'→'배송' 전면 교체 + Drive 문서 리네임 완료.** 마감 시트는 `배송-MM`/`고품-MM` 찾음. (위치는 `위치-MM` — phase 2에서 사용, 문서는 사람이 미리 생성해야 함)
+
+---
+
+## 라이더 위치추적 프로젝트 (2026-07-13 착수) — ⭐ 이어서 여기부터
+
+**목표:** 라이더 지급 키오스크폰으로 위치를 실시간 추적 → 웹에서 지도로 보고 + 기록 저장 → (추후) 배송카드별 동선.
+
+**확정된 설계 (변경 금지선):**
+- **백엔드는 기존 Supabase 하나로 공유** (분리 안 함 — 분리하면 riders 중복·조인 지옥). 위치는 독립 테이블로 격리.
+- **실시간 지도 대시보드 = 기존 웹의 `/tracking` 페이지** (별도 앱 아님). Nav 관리▼에 '실시간 위치' 링크 있음.
+- **지도 = 카카오맵 JS SDK.** ETA/동선까지 같은 SDK로 확장 예정. (한국 자동차 길찾기는 카카오/TMap/네이버만 됨 — Google 불가)
+- **키오스크 = 기존 제품(Fully Kiosk Browser & Launcher) 사용**, Device Owner 잠금 + 허용앱(전화·카메라·사진·블루투스·무전기·우리앱) 화이트리스트 + 우리앱 부팅 자동실행. **런처는 우리가 안 만듦.**
+- **우리가 만들 안드로이드 앱 = 네이티브 Kotlin (Compose + supabase-kt)**, 역할 = 라이더 세션 게이트 + 백그라운드 위치 전송(생산자). 지도는 안 봄. 프로젝트 위치 예정: `~/Desktop/daegyung-rider-app` (별도 git 저장소).
+- **시트 저장은 배달회차 요약** (창고이탈→복귀 1회=1행). 원시 핑은 DB에만.
+- 창고 임시 좌표: 개포동 `37.4787, 127.0664`, 반경 100m (app_state에 저장, 값만 바꾸면 됨. 실제 창고는 추후).
+
+**1단계 = 완료 (커밋 `f24c8d2`~`f36f1b3`):**
+- `update_12.sql`: `rider_locations`(라이더당 1행, 실시간 구독 대상), `location_pings`(append, 기록/동선용, 마감해도 보관), app_state 창고설정, deliveries에 `dest_lat/lng·eta_seconds·baseline_arrival_at`(optional, phase2용).
+- `src/types/index.ts`: `RiderLocation`, `LocationPing`, Delivery ETA 필드(optional).
+- `src/app/tracking/page.tsx`: 카카오맵 + 라이더 실시간 마커 + 창고 마커/지오펜스 원 + 운행목록 패널 + 로드 진단 배너.
+- 카카오 세팅 완료: 앱ID `1512122`, JS키 `NEXT_PUBLIC_KAKAO_MAP_KEY`(.env.local + Vercel prod/preview). **JS SDK 도메인 등록 위치 = 새 콘솔 [앱>플랫폼 키>JavaScript 키>JavaScript SDK 도메인]** (기존 '플랫폼' 메뉴 없어짐, 헤맴 주의). 등록: `https://daegyung-delivery.vercel.app`, `http://localhost:3000`. 등록 후 반영에 몇 분 걸림. **REST키도 발급돼 있음** → phase2 카카오모빌리티 길찾기(ETA)용.
+
+**다음 할 일 (2단계 후보 순서):**
+1. **안드로이드 앱 착수** (핵심 · 이게 있어야 지도에 점 찍힘): 라이더 리스트(riders에서 `is_quick=false` 조회)→세션 고정 → 포그라운드 위치서비스로 `rider_locations` upsert + `location_pings` insert. 퇴근/충전 시 세션 해제. (RLS off라 supabase-kt 직접 write)
+2. **지오펜스 + 알람 + 회차**: 창고 이탈=배달시작 알람 + `delivery_trips`(신규 `update_13`) 생성, 복귀=완료 알람+trip 종료. 판정은 폰이.
+3. **마감 시 `위치-MM` 시트**: `googleSheets.ts writeLocationTab` + `sheetSnapshot.ts buildLocationGrid`(라이더|회차|출발|복귀|소요|거리|핑수) → `/api/close`에 추가.
+4. **ETA/지연**: 카카오 로컬(주소→좌표) + 카카오모빌리티 길찾기(교통반영 duration)로 `baseline_arrival_at` 계산, /tracking·배송카드에 지연 표시. 쿼터 있으니 배정시 1회+간격 갱신으로 throttle, REST키는 서버(API route)에 숨김.
+5. **배송카드별 동선 지도**: `location_pings`로 폴리라인.
 
 ---
 
