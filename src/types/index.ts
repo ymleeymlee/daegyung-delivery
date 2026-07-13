@@ -28,6 +28,33 @@ export interface Delivery {
   assigned_at: string | null
   rider_id: string | null
   sort_order: number
+  // 위치추적 ETA/지연용 (phase 2~3, 지금은 미사용 · optional로 두어 insert에 안 실림)
+  dest_lat?: number | null
+  dest_lng?: number | null
+  eta_seconds?: number | null
+  baseline_arrival_at?: string | null
+}
+
+// 라이더별 최신 위치 (실시간 지도용)
+export interface RiderLocation {
+  rider_id: string
+  rider_name: string
+  lat: number
+  lng: number
+  accuracy: number | null
+  updated_at: string
+}
+
+// 원시 GPS 핑 (기록·동선용)
+export interface LocationPing {
+  id: string
+  rider_id: string | null
+  rider_name: string
+  lat: number
+  lng: number
+  accuracy: number | null
+  captured_at: string
+  created_at: string
 }
 
 export interface GopoumClient {

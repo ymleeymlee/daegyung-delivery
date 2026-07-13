@@ -99,6 +99,7 @@ export default function Nav() {
             <a href={sheetUrl} target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)} className="flex items-center justify-between px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
               배송·고품 내역 <span className="text-xs text-green-600">시트 ↗</span>
             </a>
+            <Link href="/tracking" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">실시간 위치</Link>
             <Link href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">거래처 관리</Link>
             <Link href="/riders" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">라이더 관리</Link>
           </div>
