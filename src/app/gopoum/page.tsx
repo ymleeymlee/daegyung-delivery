@@ -36,13 +36,19 @@ function GopoumCard({
   const qty = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
   const isDone = (i: GopoumItem) => collectedOf(i) > 0 && collectedOf(i) >= qty(i)
-  // 수거자별 한 줄씩: { 이름(수량), 수거날짜, 수거시각 } — 수거날짜·시간·수거자 열을 같은 순서로 줄맞춤
-  const collectorLines = (i: GopoumItem) =>
-    (i.collectors ?? []).map(c => ({
+  // 수거자별 한 줄씩 + 잔여가 있으면 마지막에 '미수거(n)' 줄 추가.
+  // { 이름(수량), 수거날짜, 수거시각, collected } — 수거날짜·시간·수거자 열을 같은 순서로 줄맞춤
+  const collectorLines = (i: GopoumItem) => {
+    const lines = (i.collectors ?? []).map(c => ({
       name: `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`,
       date: fmtYMD(c.picked_at),
       time: fmtTime(c.picked_at),
+      collected: true,
     }))
+    const rem = qty(i) - collectedOf(i)
+    if (rem > 0) lines.push({ name: `미수거(${rem})`, date: '', time: '', collected: false })
+    return lines
+  }
 
   const sortedItems = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at))
   const total = items.reduce((s, i) => s + qty(i), 0)
@@ -128,10 +134,12 @@ function GopoumCard({
                     ? collectorLines(item).map((l, idx) => <div key={idx} className="leading-tight">{l.time}</div>)
                     : '-'}
                 </span>
-                {/* 수거자 (수거자별 한 줄씩, 또는 미수거) */}
-                <span className={`w-28 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>
+                {/* 수거자 (수거자별 + 미수거 잔여 한 줄씩) */}
+                <span className="w-28 flex-shrink-0 text-sm">
                   {collectorLines(item).length
-                    ? collectorLines(item).map((l, idx) => <div key={idx} className="truncate leading-tight">{l.name}</div>)
+                    ? collectorLines(item).map((l, idx) => (
+                        <div key={idx} className={`truncate leading-tight ${l.collected ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>{l.name}</div>
+                      ))
                     : '미수거'}
                 </span>
                 {/* 수거량/총수량 */}
