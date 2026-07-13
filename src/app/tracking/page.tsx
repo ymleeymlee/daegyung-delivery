@@ -30,6 +30,19 @@ export default function TrackingPage() {
   const [warehouse, setWarehouse] = useState<Warehouse | null>(null)
   const [locations, setLocations] = useState<RiderLocation[]>([])
   const [, forceTick] = useState(0) // "n초 전" 갱신용
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading') // 지도 로드 진단
+  const [statusMsg, setStatusMsg] = useState('')
+
+  // SDK가 일정 시간 내 준비 안 되면 힌트 표시 (도메인 미등록 시 조용히 실패하는 경우 대비)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setStatus(s => {
+        if (s === 'loading') setStatusMsg('지도 로딩이 지연됩니다. 카카오 개발자 콘솔의 JavaScript SDK 도메인 등록/반영을 확인하세요.')
+        return s
+      })
+    }, 7000)
+    return () => clearTimeout(t)
+  }, [])
 
   // 창고 설정 + 초기 위치 로드 + 실시간 구독
   useEffect(() => {
@@ -75,21 +88,28 @@ export default function TrackingPage() {
   // SDK + 창고 준비되면 지도 1회 생성
   useEffect(() => {
     if (!sdkReady || !warehouse || !containerRef.current || mapRef.current) return
-    const kakao = window.kakao
-    const center = new kakao.maps.LatLng(warehouse.lat, warehouse.lng)
-    const map = new kakao.maps.Map(containerRef.current, { center, level: 5 })
-    mapRef.current = map
-    // 창고 마커 + 지오펜스 반경 원
-    new kakao.maps.Circle({
-      center, radius: warehouse.radius,
-      strokeWeight: 2, strokeColor: '#2563eb', strokeOpacity: 0.7, strokeStyle: 'solid',
-      fillColor: '#3b82f6', fillOpacity: 0.08,
-    }).setMap(map)
-    const wh = new kakao.maps.CustomOverlay({
-      position: center, yAnchor: 1.4,
-      content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">창고</div>',
-    })
-    wh.setMap(map)
+    try {
+      const kakao = window.kakao
+      const center = new kakao.maps.LatLng(warehouse.lat, warehouse.lng)
+      const map = new kakao.maps.Map(containerRef.current, { center, level: 5 })
+      mapRef.current = map
+      // 컨테이너 크기 확정 후 재배치 (초기 사이즈 0으로 빈 지도 방지)
+      setTimeout(() => { try { map.relayout(); map.setCenter(center) } catch { /* noop */ } }, 200)
+      // 창고 마커 + 지오펜스 반경 원
+      new kakao.maps.Circle({
+        center, radius: warehouse.radius,
+        strokeWeight: 2, strokeColor: '#2563eb', strokeOpacity: 0.7, strokeStyle: 'solid',
+        fillColor: '#3b82f6', fillOpacity: 0.08,
+      }).setMap(map)
+      const wh = new kakao.maps.CustomOverlay({
+        position: center, yAnchor: 1.4,
+        content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">창고</div>',
+      })
+      wh.setMap(map)
+      setStatus('ready'); setStatusMsg('')
+    } catch (e) {
+      setStatus('error'); setStatusMsg('지도 생성 실패: ' + String(e))
+    }
   }, [sdkReady, warehouse])
 
   // 위치 변동 시 라이더 마커 갱신
@@ -141,10 +161,20 @@ export default function TrackingPage() {
       <Script
         src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`}
         strategy="afterInteractive"
-        onLoad={() => window.kakao.maps.load(() => setSdkReady(true))}
+        onLoad={() => {
+          try { window.kakao.maps.load(() => setSdkReady(true)) }
+          catch (e) { setStatus('error'); setStatusMsg('SDK 초기화 실패: ' + String(e)) }
+        }}
+        onError={() => { setStatus('error'); setStatusMsg('카카오 SDK 스크립트 로드 실패 — 도메인 등록/키를 확인하세요.') }}
       />
       <div className="relative h-[calc(100vh-56px)]">
-        <div ref={containerRef} className="w-full h-full" />
+        <div ref={containerRef} className="w-full h-full bg-slate-200" />
+        {/* 지도 로드 상태/에러 배너 */}
+        {status !== 'ready' && (
+          <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl shadow text-sm ${status === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-white/95 border border-slate-200 text-slate-600'}`}>
+            {status === 'error' ? '⚠ ' : ''}{statusMsg || '지도 불러오는 중…'}
+          </div>
+        )}
         {/* 좌상단 라이더 목록 패널 */}
         <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur rounded-xl shadow-lg border border-slate-200 w-56 max-h-[70vh] overflow-y-auto">
           <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
