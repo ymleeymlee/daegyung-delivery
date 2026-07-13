@@ -123,16 +123,16 @@ function GopoumCard({
                   <button type="button" onClick={() => onEditItem(item.id, { quantity: qty(item) + 1 }, true)}
                     className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-base leading-none flex items-center justify-center">+</button>
                 </div>
-                {/* 수거날짜 (수거자별 한 줄씩, 또는 -) — 고정 줄높이(leading-5)로 옆 열들과 줄맞춤 */}
+                {/* 수거날짜 (수거자별 한 줄씩, 또는 -) — 빈 줄도 공백(nbsp)으로 채워 옆 열과 줄맞춤 */}
                 <span className={`w-16 flex-shrink-0 text-xs ${collectedOf(item) > 0 ? 'text-slate-500' : 'text-slate-300'}`}>
                   {collectorLines(item).length
-                    ? collectorLines(item).map((l, idx) => <div key={idx} className="leading-5">{l.date}</div>)
+                    ? collectorLines(item).map((l, idx) => <div key={idx} className="leading-5">{l.date || ' '}</div>)
                     : <div className="leading-5">-</div>}
                 </span>
                 {/* 수거시간 (수거자별 한 줄씩, 또는 -) */}
                 <span className={`w-12 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'text-slate-600' : 'text-slate-300'}`}>
                   {collectorLines(item).length
-                    ? collectorLines(item).map((l, idx) => <div key={idx} className="leading-5">{l.time}</div>)
+                    ? collectorLines(item).map((l, idx) => <div key={idx} className="leading-5">{l.time || ' '}</div>)
                     : <div className="leading-5">-</div>}
                 </span>
                 {/* 수거자 (수거자별 + 미수거 잔여 한 줄씩) */}
