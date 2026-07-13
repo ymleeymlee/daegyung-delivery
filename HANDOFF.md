@@ -1,35 +1,49 @@
-# 대경배송시스템 — 작업 인수인계 (2026-07-11 갱신)
+# 대경배송시스템 — 작업 인수인계 (2026-07-13 갱신)
 
 내부 직원용 배송 배차 + 고품(반품/회수 물품) 관리 시스템. 실시간 웹앱 + Google Sheets 기록.
+**다음 작업 예정: 이 웹(Supabase)과 연동되는 안드로이드 앱 신규 개발** (아래 "안드로이드 앱 연동 참고" 섹션 참조).
 
-> 🟥 **미적용 마이그레이션 (사용자가 Supabase SQL Editor에서 직접 Run 해야 함. 안 하면 관련 기능이 저장 안 되고 값이 되돌아감):**
+> 🟥 **마이그레이션 적용 여부 확인 필요** (Supabase SQL Editor에서 직접 Run. RLS 경고 시 "Run without RLS"):
 > - `supabase/update_09.sql` — `gopoum_items`에 `quantity`(기본1), `note`
 > - `supabase/update_10.sql` — `gopoum_items`에 `collectors`(jsonb, 기본 `[]`)
-> 실행 여부 불명이면 사용자에게 확인. (RLS 경고 시 "Run without RLS")
+> - `supabase/update_11.sql` — `riders`에 `phone`(text)
+> 09/10은 고품 수량·부분수거 기능이 동작하면 적용된 것. 11(phone)은 **라이더 전번 저장이 되는지로 확인**. 안 되면: `alter table riders add column if not exists phone text;`
 
-> 🟨 **'배달' → '배송' 전면 교체됨.** 구글시트 월별 문서명 매칭도 코드가 `배송-MM`을 찾음 → **Drive의 기존 `배달-MM` 월별 문서들을 `배송-MM`으로 리네임**해야 마감 시 시트 저장 정상 동작. (`고품-MM`은 그대로)
+> 🟩 **'배달'→'배송' 전면 교체 + Drive 문서 `배달-MM`→`배송-MM` 리네임 완료** (사용자 처리함). 마감 시 시트 저장은 `배송-MM`/`고품-MM` 월별 문서를 찾음.
 
 ---
 
-## 최근 세션 변경 (2026-07-11) — 위 인수인계 본문보다 이게 최신
+## 최근 세션 변경 (2026-07-13) — 위 인수인계 본문보다 이게 최신
 
-1. **성능**: `Nav.tsx` 내부 링크를 `<a>` → `next/link` `<Link>` 로 교체(하드 네비게이션 제거, 탭 전환 즉시화). 외부 시트 링크만 `<a target=_blank>`.
-2. **'배달'→'배송' 전면 교체**: UI/앱 제목(`대경배송시스템`)/시트 셀 라벨/이메일 리포트/구글시트 월별 문서명(`배송-MM`)까지. (위 🟨 주의)
-3. **대기열 다중 선택 배차** (`DeliveryBoard.tsx`): `selectedIds: string[]`. 대기열 카드 클릭=선택 토글(여러 장), 이름블럭(빈 곳/배정된 카드 위 포함) 클릭=선택분 전부 일괄 배정. **배정된 카드는 선택 대상 아님**. 바탕 클릭=해제.
-4. **드래그(dnd-kit) 완전 제거**: `DndContext`/`useSortable`/`DroppableZone` 등 삭제. 배차는 클릭만. (`@dnd-kit/*` 패키지는 package.json에 미사용으로 잔존)
-5. **검색 컬럼 분리** (`QuickAddBar.tsx`): 입력한 칸의 컬럼만 검색(업체번호칸=`code`, 상호명=`name`, 주소=`address`). 그룹핑 로직은 `lib/clientGroups.ts`로 추출(QuickAddBar·RiderAddModal 공용).
-6. **배송 카드 축소** (`DeliveryCard.tsx`): 주소 줄·주문시각 제거 → 상호명 + 배송(배정)시각(또는 대기 타이머)만(2줄). **고품 버튼 제거 → 노란(고품) 카드 자체가 버튼**: 배정된 고품 카드를 (선택 진행 중이 아닐 때) 클릭하면 고품 수거 팝업. 좌상단 배지 `고품 N/M` 유지.
-7. **라이더별 추가 팝업** (`RiderAddModal.tsx` 신규): 각 이름블럭 아래 `+ 추가` 버튼 → 팝업(두 블록: **왼쪽 검색결과 리스트 / 오른쪽 업체번호 입력+자체 숫자 키패드**). 입력칸 `inputMode="none"`으로 OS 터치키보드 억제(하드웨어 숫자 입력은 됨) + 직접 그린 키패드. 선택 시 해당 라이더에 **바로 배정** 상태로 추가(`handleAddToRider`).
-8. **고품 수량·비고** (`gopoum/page.tsx`, `update_09.sql`): 품목명 옆 수량 `−/직접입력/+`, 수거자 우측에 비고 입력(우측정렬). 총수량/찾아온/잔여는 수량 합계 기준.
-9. **고품 부분·다중 수거** (`update_10.sql`, `DeliveryBoard`/`DeliveryCard`/`gopoum` page): `gopoum_items.collectors` jsonb = `[{delivery_id, rider_name, quantity, picked_at}]`.
-   - 배송카드 고품 팝업: 토글 제거, **아이템별 내 수거량 `−/+`(기본 0, 0보다 크면 초록=수거)**, `총량 − 타인수거량` 초과 불가(`+` 비활성). 닫을 때 일괄 커밋(`handleSetPickup`).
-   - **완전수거(수거합계≥총량)** 시에만 `picked_at` 기록 + `rider_name`=수거자명 합침 → **마감(close)·시트 로직은 코드 변경 없이 호환**.
-   - 고품현황: 수거자 칸에 완료 전까지 **수거자명 누적**(`홍길동(2), 김철수(1)`), **`수거량/총` 열 추가**, 완전수거 시 초록. 배지/집계 모두 collectors 기준.
+이 세션 커밋 범위: `4da6bdf`(dnd-kit 제거) ~ `b3246f1`(고품 줄맞춤).
 
-### 다음 후보 / 미해결 (이번 세션 관련)
-- **마감 시 부분수거 미처리**: 부분수거(수거<총량) 품목은 `picked_at` null이라 마감 때 "미수거"로 이월됨. **구글시트 고품 그리드에 수량/부분수거자/비고 미반영**(`sheetSnapshot.ts buildGopoumGrid` 그대로). 필요 시 확장.
-- `@dnd-kit/*` 미사용 패키지 정리 가능.
-- 배정된 카드를 클릭으로 대기열 복귀시키는 경로 없음(드래그 제거로). 필요 시 추가.
+1. **`@dnd-kit/*` 3개 패키지 제거** (미사용, 드래그 배차 삭제 잔존분).
+2. **완전수거 후 수량↑ 버그 수정** (`DeliveryCard.tsx`): 고품 카드 판정을 `picked_at` → **실제 수거량(`isFull`=collectedTotal≥quantity)** 기준으로. 완전수거된 뒤 수량을 늘려 미완료가 되면 새 배송카드가 다시 노란 고품 카드로 잡힘. 더불어 `gopoum/page.tsx` **수량 편집 시 `picked_at` 재계산**(미완료면 null로 비워 마감 이월 보장).
+3. **고품 수량 +/- 연타 깜빡임 수정**: `gopoum/page.tsx` 실시간 재조회를 **500ms 디바운스**(`DeliveryBoard`와 동일 패턴). 오래된 서버 응답이 낙관적 값을 덮어써 숫자가 튀던 문제 해결.
+4. **라이더 전화번호** (`update_11.sql`, `riders/page.tsx`, `types`): `riders.phone`. 라이더 관리에서 추가·**목록 인라인 편집**, **자동 하이픈 포맷**(`01087000078`→`010-8700-0078`, 10자리 3-3-4 / 11자리 3-4-4). 배송현황 라이더 이름블록 옆에 전번 **상시 표시**(`RiderSection`).
+5. **대기열 접기** (`DeliveryBoard.tsx`): `queueOpen` state, **기본 숨김**. 헤더 ▶ 클릭 토글. 카드 추가(QuickAddBar) 시 자동 펼침.
+6. **배송카드 고품 팝업에 비고 표시** (`DeliveryCard.tsx` `GopoumModal`): 각 아이템 밑에 `비고` 라벨+흰 배경칩으로 표시.
+7. **고품현황 수거자 영역 재구성** (`gopoum/page.tsx`): 수거자별로 **한 줄씩** — 열 순서 `수거날짜 · 수거시간 · 수거자 · 수거량`(모두 `leading-5` 고정 줄높이로 줄맞춤, 빈 줄은 nbsp). 이름 옆 `(n)` 제거하고 **수거량은 별도 열**. 잔여 있으면 마지막에 `미수거`(주황) 줄 + 잔여수량. **기존 `수거량/총` 열 삭제**(앞 `수량` 열과 중복).
+8. **마감 시 고품 시트 부분수거·잔여 반영** (`sheetSnapshot.ts buildGopoumGrid` 재작성): 이전엔 `picked_at`/`rider_name`(완전수거일 때만 채워짐) 기반이라 **부분수거 아이템이 시트에 `미수거`로만 기록**되던 문제 해결. 이제 `collectors` 기반 — **수거자 여러 명이면 수거자별로 행 분리**, 열: `업체번호 | 업체명 | 수거 | 총수량 | 생성날짜 | 생성시간 | 품목 | 수거날짜 | 수거시각 | 수거자 | 수거량/총 | 비고`. 업체정보는 업체 첫 행만, 품목정보는 품목 첫 행만.
+
+### 다음 후보 / 미해결
+- **마감 시 부분수거 이월 동작**: 부분수거(수거<총량) 품목은 `picked_at` null이라 마감 때 아카이브 안 되고 **다음날로 이월**(정상). 단 그러면 **다음날 시트에도 다시 기록**됨(일별 스냅샷이라 의도된 동작이나, 월 합산 시 중복 주의).
+- 배정된 카드를 클릭으로 대기열 복귀시키는 단건 경로 없음(다중선택 복귀 `handleReturnToQueue`는 있음).
+- 이메일 발송(`/api/daily-report`, Resend) 여전히 미설정.
+
+---
+
+## 안드로이드 앱 연동 참고 (신규 개발용)
+
+웹과 **같은 Supabase 프로젝트**를 백엔드로 공유하면 됨. 웹은 Next.js지만 앱은 Supabase에 직접 붙으면 실시간까지 그대로 동작.
+
+- **연결 정보**: `.env.local`의 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Vercel 환경변수에도 동일). ⚠️ 이 파일은 `.gitignore`됨 — **키는 이 md/저장소에 적지 말 것**. 앱에선 Supabase Android SDK(`supabase-kt` 등)로 URL+anon key 사용.
+- **인증/보안 현황**: **RLS 전부 비활성, 로그인 없음** (사내 신뢰망 전제). anon key로 읽기/쓰기 다 됨. 앱을 외부 배포하려면 RLS·인증 설계 먼저 필요 — 현재는 무방비.
+- **실시간 테이블** (Realtime publication 등록됨): `deliveries`, `gopoum_clients`, `gopoum_items`, `app_state`. `postgres_changes`로 구독하면 웹과 동기화.
+- **핵심 데이터 모델**: 아래 "데이터 모델 (Supabase)" 섹션 + `src/types/index.ts`가 소스 오브 트루스. 특히 `gopoum_items.collectors` jsonb(`[{delivery_id, rider_name, quantity, picked_at}]`) 규칙과 `picked_at`=완전수거 시각(부분이면 null) 불변식 준수 필요.
+- **서버 경유가 필요한 동작**: 고품 아이템 추가/수거/삭제는 웹에선 `/api/gopoum-items`(service role, RLS 우회)로 감. 앱은 RLS off라 Supabase 직접 write 가능하나, **로직(예: 완전수거 시 `picked_at`·`rider_name` 세팅, 수량 편집 시 `picked_at` 재계산)을 클라이언트가 동일하게 구현**해야 웹과 일관.
+- **마감**: 웹의 `GET /api/close`(Vercel) 1곳에서만 수행 권장. 앱에서 별도 마감 로직 만들지 말고 이 엔드포인트 호출 또는 웹에 위임.
+- **날짜/시간**: 전부 KST(`Asia/Seoul`) 기준. `app_state.date_offset`(테스트용 가상 날짜) 존재 — 앱도 `effNow = now + offset일` 규칙 인지.
 
 ---
 
