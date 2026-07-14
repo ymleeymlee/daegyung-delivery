@@ -51,6 +51,7 @@ export default function TrackingPage() {
   const [pathRiderId, setPathRiderId] = useState<string | null>(null)
   const [pathLoading, setPathLoading] = useState(false)
   const [pathPointCount, setPathPointCount] = useState(0)
+  const [radiusInput, setRadiusInput] = useState(100)
 
   // 날짜 선택 (기본=오늘). today=실시간, 과거=아카이브
   const [viewDate, setViewDate] = useState<string>(todayKst())
@@ -195,6 +196,28 @@ export default function TrackingPage() {
       alert('동선 불러오기 실패: ' + String(e))
     } finally {
       setPathLoading(false)
+    }
+  }, [])
+
+  // 창고 초기 로드 시 슬라이더 값 동기화
+  useEffect(() => {
+    if (warehouse) setRadiusInput(warehouse.radius)
+  }, [warehouse?.radius])
+
+  // 드래그 중: 지도 원 크기만 실시간 반영 (저장 X)
+  const previewRadius = useCallback((r: number) => {
+    setRadiusInput(r)
+    try { warehouseCircleRef.current?.setRadius(r) } catch { /* noop */ }
+  }, [])
+
+  // 드래그 종료(마우스업/터치엔드/키업) 시 저장
+  const saveRadius = useCallback(async (r: number) => {
+    try {
+      const { error } = await supabase.from('app_state').upsert({ key: 'geofence_radius_m', value: String(r) })
+      if (error) throw error
+      setWarehouse(w => (w ? { ...w, radius: r } : w))
+    } catch (e) {
+      alert('반경 저장 실패: ' + String(e))
     }
   }, [])
 
@@ -394,6 +417,21 @@ export default function TrackingPage() {
                 오늘 →
               </button>
             )}
+          </div>
+          <div className="bg-white rounded-xl shadow border border-slate-200 px-3 py-2 flex items-center gap-2">
+            <span className="text-xs text-slate-500">반경</span>
+            <input
+              type="range" min={10} max={100} step={10}
+              value={radiusInput}
+              onChange={e => previewRadius(parseInt(e.target.value))}
+              onMouseUp={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
+              onTouchEnd={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
+              onKeyUp={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
+              disabled={status !== 'ready'}
+              className="w-24 accent-blue-600 disabled:opacity-40"
+              title="본사 지오펜스 반경 (10~100m)"
+            />
+            <span className="text-xs font-mono text-slate-700 min-w-[2.5rem] text-right">{radiusInput}m</span>
           </div>
           <button
             onClick={() => setPickMode(v => !v)}
