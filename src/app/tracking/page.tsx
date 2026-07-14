@@ -27,6 +27,8 @@ export default function TrackingPage() {
   const markersRef = useRef<Map<string, any>>(new Map()) // eslint-disable-line @typescript-eslint/no-explicit-any
   const warehouseCircleRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const warehouseLabelRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const pathRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const pathStartMarkerRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const pickModeRef = useRef(false)
 
   const [sdkReady, setSdkReady] = useState(false)
@@ -37,6 +39,9 @@ export default function TrackingPage() {
   const [statusMsg, setStatusMsg] = useState('')
   const [pickMode, setPickMode] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [pathRiderId, setPathRiderId] = useState<string | null>(null)
+  const [pathLoading, setPathLoading] = useState(false)
+  const [pathPointCount, setPathPointCount] = useState(0)
 
   useEffect(() => { pickModeRef.current = pickMode }, [pickMode])
 
@@ -135,6 +140,57 @@ export default function TrackingPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sdkReady, warehouse])
+
+  // 라이더 오늘 이동 궤적 로드/표시. 다시 부르면 갱신, null 넘기면 지움.
+  const showPath = useCallback(async (riderId: string | null) => {
+    const kakao = window.kakao
+    const map = mapRef.current
+    if (!kakao || !map) return
+    // 기존 궤적 제거
+    pathRef.current?.setMap(null); pathRef.current = null
+    pathStartMarkerRef.current?.setMap(null); pathStartMarkerRef.current = null
+    setPathPointCount(0)
+    if (!riderId) return
+    setPathLoading(true)
+    try {
+      // KST 오늘 00:00 부터
+      const kstToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
+      const startISO = new Date(`${kstToday}T00:00:00+09:00`).toISOString()
+      const { data, error } = await supabase
+        .from('location_pings')
+        .select('lat,lng,captured_at')
+        .eq('rider_id', riderId)
+        .gte('captured_at', startISO)
+        .order('captured_at', { ascending: true })
+        .limit(20000)
+      if (error) throw error
+      const pts = (data ?? []) as { lat: number; lng: number; captured_at: string }[]
+      if (pts.length < 2) {
+        setPathPointCount(pts.length)
+        return
+      }
+      const path = pts.map(p => new kakao.maps.LatLng(p.lat, p.lng))
+      pathRef.current = new kakao.maps.Polyline({
+        path,
+        strokeWeight: 4, strokeColor: '#7c3aed', strokeOpacity: 0.85, strokeStyle: 'solid',
+      })
+      pathRef.current.setMap(map)
+      pathStartMarkerRef.current = new kakao.maps.CustomOverlay({
+        position: path[0], yAnchor: 1.2,
+        content: '<div style="background:#22c55e;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:9999px;white-space:nowrap;">시작</div>',
+      })
+      pathStartMarkerRef.current.setMap(map)
+      // 경로 전체가 보이게 지도 fit
+      const bounds = new kakao.maps.LatLngBounds()
+      for (const p of path) bounds.extend(p)
+      map.setBounds(bounds)
+      setPathPointCount(pts.length)
+    } catch (e) {
+      alert('동선 불러오기 실패: ' + String(e))
+    } finally {
+      setPathLoading(false)
+    }
+  }, [])
 
   const saveWarehouse = useCallback(async (lat: number, lng: number) => {
     setSaving(true)
@@ -252,7 +308,7 @@ export default function TrackingPage() {
           </button>
         </div>
         {/* 좌상단 라이더 목록 패널 */}
-        <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur rounded-xl shadow-lg border border-slate-200 w-56 max-h-[70vh] overflow-y-auto">
+        <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur rounded-xl shadow-lg border border-slate-200 w-64 max-h-[70vh] overflow-y-auto">
           <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
             <span className="text-sm font-semibold text-slate-700">운행 중</span>
             <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">{locations.length}</span>
@@ -261,15 +317,45 @@ export default function TrackingPage() {
             <p className="px-4 py-4 text-xs text-slate-400 italic text-center">위치 전송 중인 라이더 없음</p>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {[...locations].sort((a, b) => a.rider_name.localeCompare(b.rider_name, 'ko')).map(l => (
-                <li key={l.rider_id}
-                  className="px-4 py-2 hover:bg-slate-50 cursor-pointer"
-                  onClick={() => { const k = window.kakao; if (k && mapRef.current) mapRef.current.panTo(new k.maps.LatLng(l.lat, l.lng)) }}>
-                  <div className="text-sm font-medium text-slate-800">{l.rider_name}</div>
-                  <div className="text-xs text-slate-400">{fmtAgo(l.updated_at)}</div>
-                </li>
-              ))}
+              {[...locations].sort((a, b) => a.rider_name.localeCompare(b.rider_name, 'ko')).map(l => {
+                const isActive = pathRiderId === l.rider_id
+                return (
+                  <li key={l.rider_id}
+                    className={`px-4 py-2 cursor-pointer transition-colors ${isActive ? 'bg-purple-50 hover:bg-purple-100' : 'hover:bg-slate-50'}`}
+                    onClick={() => {
+                      const next = isActive ? null : l.rider_id
+                      setPathRiderId(next)
+                      if (next) {
+                        void showPath(next)
+                      } else {
+                        void showPath(null)
+                        const k = window.kakao
+                        if (k && mapRef.current) mapRef.current.panTo(new k.maps.LatLng(l.lat, l.lng))
+                      }
+                    }}>
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-medium text-slate-800">{l.rider_name}</div>
+                      {isActive && <span className="text-[10px] font-bold text-purple-600">🛤️ 동선</span>}
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      {fmtAgo(l.updated_at)}
+                      {isActive && (
+                        pathLoading
+                          ? <span className="ml-2 text-purple-500">불러오는 중…</span>
+                          : pathPointCount > 0
+                            ? <span className="ml-2 text-purple-500">{pathPointCount.toLocaleString()}개 지점</span>
+                            : <span className="ml-2 text-slate-400">기록 없음</span>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
+          )}
+          {pathRiderId && (
+            <div className="px-4 py-2 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-500 text-center">
+              오늘 00시 이후 동선 · 클릭 시 해제
+            </div>
           )}
         </div>
       </div>
