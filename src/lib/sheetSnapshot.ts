@@ -1,6 +1,6 @@
 import { supabaseServer } from '@/lib/supabaseServer'
-import { writeDeliveryTab, writeGopoumTab } from '@/lib/googleSheets'
-import type { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
+import { writeDeliveryTab, writeGopoumTab, writeLocationTab } from '@/lib/googleSheets'
+import type { Delivery, Rider, GopoumClient, GopoumItem, LocationPing } from '@/types'
 
 function kstTime(iso: string | null) {
   if (!iso) return ''
@@ -113,24 +113,83 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[]
   return grid
 }
 
+// 이동 기록 그리드. 원본 핑을 라이더별로 정렬 후 라이더당 분당 1개로 다운샘플.
+// 열: 라이더 | 측정시각(MM-DD HH:MM:SS) | 위도 | 경도 | 정확도(m)
+// (분당 다운샘플 = 하루 8시간 라이더 1명 ≈ 480줄. 원본 5,760줄 → 시트 사람이 보기 좋게 축소)
+function buildLocationGrid(pings: LocationPing[]): string[][] {
+  if (pings.length === 0) return []
+  // (rider_id, minute-bucket) → 그 분의 첫 핑만 유지
+  const seen = new Set<string>()
+  const kept: LocationPing[] = []
+  const sorted = [...pings].sort((a, b) => {
+    const rn = (a.rider_name ?? '').localeCompare(b.rider_name ?? '', 'ko')
+    if (rn !== 0) return rn
+    return a.captured_at.localeCompare(b.captured_at)
+  })
+  for (const p of sorted) {
+    const minute = p.captured_at.slice(0, 16) // YYYY-MM-DDTHH:MM
+    const key = `${p.rider_id ?? p.rider_name}|${minute}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    kept.push(p)
+  }
+  const fmt = (iso: string) => {
+    const d = new Date(iso)
+    const s = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Seoul',
+      year: '2-digit', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    }).format(d)
+    // sv-SE 로케일 → "YY-MM-DD HH:MM:SS"
+    return s.replace('T', ' ')
+  }
+  const grid: string[][] = [['라이더', '측정시각', '위도', '경도', '정확도(m)']]
+  for (const p of kept) {
+    grid.push([
+      p.rider_name,
+      fmt(p.captured_at),
+      String(p.lat),
+      String(p.lng),
+      p.accuracy == null ? '' : String(Math.round(p.accuracy)),
+    ])
+  }
+  return grid
+}
+
 export interface SnapshotData {
   deliveryGrid: string[][]
   gopoumGrid: string[][]
+  locationGrid: string[][]
 }
 
 // 조회한 데이터로 시트 그리드 생성 (동기). close에서 조회를 공유해 왕복 최소화
-export function buildGrids(riders: Rider[], deliveries: Delivery[], clients: GopoumClient[], activeItems: GopoumItem[]): SnapshotData {
+export function buildGrids(
+  riders: Rider[],
+  deliveries: Delivery[],
+  clients: GopoumClient[],
+  activeItems: GopoumItem[],
+  pings: LocationPing[] = [],
+): SnapshotData {
   return {
     deliveryGrid: buildDeliveryGrid(orderRiders(riders), deliveries),
     gopoumGrid: buildGopoumGrid(clients, activeItems),
+    locationGrid: buildLocationGrid(pings),
   }
 }
 
-// 그리드를 그날 탭(MM-DD)에 저장 (느림 — Google Sheets API). 백그라운드 실행용
+// 그리드를 그날 탭(MM-DD)에 저장 (느림 — Google Sheets API). 백그라운드 실행용.
+// 하나 실패해도 나머지는 시도되도록 allSettled 사용 (예: 위치-MM 문서 없을 때).
 export async function writeSnapshot(dateStr: string, data: SnapshotData) {
   const year = dateStr.slice(0, 4), month = dateStr.slice(5, 7), day = dateStr.slice(8, 10)
-  await Promise.all([
-    writeDeliveryTab(year, month, day, data.deliveryGrid),
-    writeGopoumTab(year, month, day, data.gopoumGrid),
-  ])
+  const tasks: { name: string; run: () => Promise<void> }[] = [
+    { name: '배송', run: () => writeDeliveryTab(year, month, day, data.deliveryGrid) },
+    { name: '고품', run: () => writeGopoumTab(year, month, day, data.gopoumGrid) },
+  ]
+  if (data.locationGrid.length > 0) {
+    tasks.push({ name: '위치', run: () => writeLocationTab(year, month, day, data.locationGrid) })
+  }
+  const results = await Promise.allSettled(tasks.map(t => t.run()))
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') console.error(`시트 저장 실패(${tasks[i].name}):`, r.reason)
+  })
 }

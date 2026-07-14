@@ -85,3 +85,7 @@ export async function writeDeliveryTab(year: string, month: string, day: string,
 export async function writeGopoumTab(year: string, month: string, day: string, grid: (string | number)[][]) {
   await writeDayTab(`고품-${month}`, year, month, day, grid)
 }
+// 위치-MM 문서의 MM-DD 탭에 저장 (마감 시 하루치 이동 기록 아카이브)
+export async function writeLocationTab(year: string, month: string, day: string, grid: (string | number)[][]) {
+  await writeDayTab(`위치-${month}`, year, month, day, grid)
+}

@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
 import { buildGrids, writeSnapshot } from '@/lib/sheetSnapshot'
-import type { Rider, Delivery, GopoumClient, GopoumItem } from '@/types'
+import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+
+// location_pings 전량 조회 (Supabase 기본 1000줄 한도 우회). 라이더 8h × 5s = 5,760/명.
+async function fetchAllPings(): Promise<LocationPing[]> {
+  const PAGE = 1000
+  const out: LocationPing[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseServer
+      .from('location_pings')
+      .select('*')
+      .order('captured_at', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    const rows = (data ?? []) as LocationPing[]
+    out.push(...rows)
+    if (rows.length < PAGE) break
+  }
+  return out
+}
 
 // 마감: 유효 현재일 기준
 // - 배송: 대기/배정 → completed (보드 비움)
@@ -13,12 +31,14 @@ export const maxDuration = 60
 export async function GET(_req: NextRequest) {
   try {
     // 1) 현황 + 상태 조회를 한 번에 병렬 — 스냅샷/잔여/날짜 계산에 공유
-    const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }] = await Promise.all([
+    // location_pings 는 페이지네이션 필요할 수 있어 별도 헬퍼로 (라이더 8h × 5초 = 5,760/명)
+    const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, pingRows] = await Promise.all([
       supabaseServer.from('app_state').select('*'),
       supabaseServer.from('riders').select('*').eq('is_active', true),
       supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).eq('status', 'assigned'),
       supabaseServer.from('gopoum_clients').select('*').order('created_at'),
       supabaseServer.from('gopoum_items').select('*'),
+      fetchAllPings(),
     ])
 
     // 유효 날짜(offset 반영) 계산
@@ -37,9 +57,10 @@ export async function GET(_req: NextRequest) {
     const clients = (clientRows ?? []) as GopoumClient[]
     const allItems = (itemRows ?? []) as GopoumItem[]
     const activeItems = allItems.filter(i => !i.archived_at)
+    const pings = pingRows
 
     // 스냅샷 그리드 (동기)
-    const snapshot = buildGrids(riders, deliveries, clients, activeItems)
+    const snapshot = buildGrids(riders, deliveries, clients, activeItems, pings)
 
     // 2) DB 정리 전부 병렬 (조회한 데이터로 잔여 계산 → 재조회 불필요)
     await Promise.all([
@@ -57,6 +78,14 @@ export async function GET(_req: NextRequest) {
       // 마감 상태 저장
       supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }),
     ])
+
+    // 위치 테이블은 시트 기록됐으니 초기화 (핑 없으면 이미 비어있으니 스킵)
+    if (pings.length > 0) {
+      await Promise.all([
+        supabaseServer.from('location_pings').delete().not('id', 'is', null),
+        supabaseServer.from('rider_locations').delete().not('rider_id', 'is', null),
+      ])
+    }
 
     // 시트 저장(느린 Google API)은 응답 후 백그라운드 → 마감 즉시 완료
     after(async () => {
