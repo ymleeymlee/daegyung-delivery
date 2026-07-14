@@ -25,24 +25,38 @@ export default function TrackingPage() {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<Map<string, any>>(new Map()) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const warehouseCircleRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const warehouseLabelRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const pickModeRef = useRef(false)
 
   const [sdkReady, setSdkReady] = useState(false)
   const [warehouse, setWarehouse] = useState<Warehouse | null>(null)
   const [locations, setLocations] = useState<RiderLocation[]>([])
   const [, forceTick] = useState(0) // "n초 전" 갱신용
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading') // 지도 로드 진단
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [statusMsg, setStatusMsg] = useState('')
+  const [pickMode, setPickMode] = useState(false)
+  const [saving, setSaving] = useState(false)
 
-  // SDK가 일정 시간 내 준비 안 되면 힌트 표시 (도메인 미등록 시 조용히 실패하는 경우 대비)
+  useEffect(() => { pickModeRef.current = pickMode }, [pickMode])
+
+  // 이미 로드된 SDK를 재사용 (다른 탭에서 돌아왔을 때 onLoad 가 다시 호출되지 않는 문제 대응)
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.kakao?.maps) {
+      try { window.kakao.maps.load(() => setSdkReady(true)) } catch { /* noop */ }
+    }
+  }, [])
+
+  // SDK가 일정 시간 내 준비 안 되면 힌트 표시 (도메인 미등록 등)
+  useEffect(() => {
+    if (sdkReady) { setStatusMsg(''); return }
     const t = setTimeout(() => {
-      setStatus(s => {
-        if (s === 'loading') setStatusMsg('지도 로딩이 지연됩니다. 카카오 개발자 콘솔의 JavaScript SDK 도메인 등록/반영을 확인하세요.')
-        return s
-      })
+      if (!mapRef.current) {
+        setStatusMsg('지도 로딩이 지연됩니다. 카카오 개발자 콘솔의 JavaScript SDK 도메인 등록/반영을 확인하세요.')
+      }
     }, 7000)
     return () => clearTimeout(t)
-  }, [])
+  }, [sdkReady])
 
   // 창고 설정 + 초기 위치 로드 + 실시간 구독
   useEffect(() => {
@@ -93,24 +107,57 @@ export default function TrackingPage() {
       const center = new kakao.maps.LatLng(warehouse.lat, warehouse.lng)
       const map = new kakao.maps.Map(containerRef.current, { center, level: 5 })
       mapRef.current = map
-      // 컨테이너 크기 확정 후 재배치 (초기 사이즈 0으로 빈 지도 방지)
       setTimeout(() => { try { map.relayout(); map.setCenter(center) } catch { /* noop */ } }, 200)
-      // 창고 마커 + 지오펜스 반경 원
-      new kakao.maps.Circle({
+
+      warehouseCircleRef.current = new kakao.maps.Circle({
         center, radius: warehouse.radius,
         strokeWeight: 2, strokeColor: '#2563eb', strokeOpacity: 0.7, strokeStyle: 'solid',
         fillColor: '#3b82f6', fillOpacity: 0.08,
-      }).setMap(map)
-      const wh = new kakao.maps.CustomOverlay({
-        position: center, yAnchor: 1.4,
-        content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">창고</div>',
       })
-      wh.setMap(map)
+      warehouseCircleRef.current.setMap(map)
+
+      warehouseLabelRef.current = new kakao.maps.CustomOverlay({
+        position: center, yAnchor: 1.4,
+        content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">본사</div>',
+      })
+      warehouseLabelRef.current.setMap(map)
+
+      // 지도 클릭 → 픽 모드일 때만 본사 위치 저장
+      kakao.maps.event.addListener(map, 'click', (e: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        if (!pickModeRef.current) return
+        const latlng = e.latLng
+        void saveWarehouse(latlng.getLat(), latlng.getLng())
+      })
+
       setStatus('ready'); setStatusMsg('')
     } catch (e) {
       setStatus('error'); setStatusMsg('지도 생성 실패: ' + String(e))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sdkReady, warehouse])
+
+  const saveWarehouse = useCallback(async (lat: number, lng: number) => {
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('app_state').upsert([
+        { key: 'warehouse_lat', value: String(lat) },
+        { key: 'warehouse_lng', value: String(lng) },
+      ])
+      if (error) throw error
+      // 로컬 상태 + 지도 마커/원 즉시 갱신
+      const kakao = window.kakao
+      const pos = new kakao.maps.LatLng(lat, lng)
+      warehouseCircleRef.current?.setPosition(pos)
+      warehouseLabelRef.current?.setPosition(pos)
+      mapRef.current?.panTo(pos)
+      setWarehouse(w => (w ? { ...w, lat, lng } : { lat, lng, radius: 100 }))
+      setPickMode(false)
+    } catch (e) {
+      alert('본사 위치 저장 실패: ' + String(e))
+    } finally {
+      setSaving(false)
+    }
+  }, [])
 
   // 위치 변동 시 라이더 마커 갱신
   const syncMarkers = useCallback(() => {
@@ -156,25 +203,54 @@ export default function TrackingPage() {
     )
   }
 
+  const readySignal = () => { try { window.kakao.maps.load(() => setSdkReady(true)) } catch (e) { setStatus('error'); setStatusMsg('SDK 초기화 실패: ' + String(e)) } }
+
   return (
     <>
       <Script
         src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`}
         strategy="afterInteractive"
-        onLoad={() => {
-          try { window.kakao.maps.load(() => setSdkReady(true)) }
-          catch (e) { setStatus('error'); setStatusMsg('SDK 초기화 실패: ' + String(e)) }
-        }}
+        onReady={readySignal}
+        onLoad={readySignal}
         onError={() => { setStatus('error'); setStatusMsg('카카오 SDK 스크립트 로드 실패 — 도메인 등록/키를 확인하세요.') }}
       />
       <div className="relative h-[calc(100vh-56px)]">
-        <div ref={containerRef} className="w-full h-full bg-slate-200" />
+        <div
+          ref={containerRef}
+          className="w-full h-full bg-slate-200"
+          style={pickMode ? { cursor: 'crosshair' } : undefined}
+        />
         {/* 지도 로드 상태/에러 배너 */}
-        {status !== 'ready' && (
+        {status !== 'ready' && statusMsg && (
           <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl shadow text-sm ${status === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-white/95 border border-slate-200 text-slate-600'}`}>
-            {status === 'error' ? '⚠ ' : ''}{statusMsg || '지도 불러오는 중…'}
+            {status === 'error' ? '⚠ ' : ''}{statusMsg}
           </div>
         )}
+        {/* 픽 모드 안내 배너 */}
+        {pickMode && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-xl shadow text-sm bg-blue-600 text-white flex items-center gap-3">
+            지도를 클릭하여 본사 위치를 지정하세요
+            <button
+              onClick={() => setPickMode(false)}
+              className="text-xs bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded"
+            >취소</button>
+          </div>
+        )}
+        {/* 우상단: 본사 위치 설정 버튼 */}
+        <div className="absolute top-3 right-3 z-10">
+          <button
+            onClick={() => setPickMode(v => !v)}
+            disabled={saving || status !== 'ready'}
+            className={`px-3 py-2 rounded-xl shadow text-sm font-semibold transition-colors ${
+              pickMode
+                ? 'bg-slate-600 text-white hover:bg-slate-700'
+                : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+            } disabled:opacity-40 disabled:cursor-not-allowed`}
+            title="본사(배송 출발) 위치를 지도에서 지정"
+          >
+            {saving ? '저장 중…' : pickMode ? '취소' : '📍 본사 위치 변경'}
+          </button>
+        </div>
         {/* 좌상단 라이더 목록 패널 */}
         <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur rounded-xl shadow-lg border border-slate-200 w-56 max-h-[70vh] overflow-y-auto">
           <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
