@@ -89,3 +89,22 @@ export async function writeGopoumTab(year: string, month: string, day: string, g
 export async function writeLocationTab(year: string, month: string, day: string, grid: (string | number)[][]) {
   await writeDayTab(`위치-${month}`, year, month, day, grid)
 }
+
+// 위치-MM 문서의 MM-DD 탭 읽기 (아카이브 조회용). 탭/문서 없으면 null.
+export async function readLocationTab(year: string, month: string, day: string): Promise<string[][] | null> {
+  const docName = `위치-${month}`
+  const tab = `${month}-${day}`
+  try {
+    const docId = await findDocInYear(year, docName)
+    const sheets = sheetsClient()
+    // 탭 존재 확인 (없는 탭 조회 시 400 대신 조용히 null 반환)
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: docId, fields: 'sheets(properties(title))' })
+    if (!meta.data.sheets?.some(s => s.properties?.title === tab)) return null
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: docId, range: tab })
+    return (res.data.values as string[][] | undefined) ?? []
+  } catch (e) {
+    // 문서 자체가 없거나 접근 불가 → null 로 취급 (호출측이 안내)
+    console.error(`readLocationTab(${year}, ${month}, ${day}) 실패:`, e)
+    return null
+  }
+}
