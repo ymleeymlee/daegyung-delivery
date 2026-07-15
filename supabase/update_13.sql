@@ -21,3 +21,11 @@ create index if not exists delivery_trips_rider_time_idx
 -- "이 라이더의 진행 중 trip" 빠른 검색 (앱이 복귀 시 이걸로 update)
 create index if not exists delivery_trips_open_idx
   on delivery_trips(rider_id) where ended_at is null;
+
+-- 웹 /tracking 이 배송 출발/완료를 실시간 알림용으로 구독
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='delivery_trips') then
+    alter publication supabase_realtime add table delivery_trips;
+  end if;
+end $$;

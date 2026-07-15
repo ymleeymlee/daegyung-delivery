@@ -58,6 +58,10 @@ export default function TrackingPage() {
   const [radiusInput, setRadiusInput] = useState(100)
   const [trips, setTrips] = useState<DeliveryTrip[]>([])
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null)
+  // 현재 진행 중인 배송(rider_id) 집합 — "배송 중" 인디케이터용
+  const [activeTripRiderIds, setActiveTripRiderIds] = useState<Set<string>>(new Set())
+  // 배송 출발/완료 토스트 알림
+  const [toasts, setToasts] = useState<{ id: number; text: string; kind: 'start' | 'end' }[]>([])
 
   // 날짜 선택 (기본=오늘). today=실시간, 과거=아카이브
   const [viewDate, setViewDate] = useState<string>(todayKst())
@@ -124,6 +128,46 @@ export default function TrackingPage() {
 
     const tick = setInterval(() => forceTick(t => t + 1), 15000)
     return () => { active = false; supabase.removeChannel(ch); clearInterval(tick) }
+  }, [])
+
+  // 진행 중 trip 초기 로드 + delivery_trips 실시간 구독 → 토스트 + 배송중 인디케이터
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      const startISO = new Date(`${todayKst()}T00:00:00+09:00`).toISOString()
+      const { data } = await supabase.from('delivery_trips')
+        .select('rider_id,started_at,ended_at')
+        .is('ended_at', null)
+        .gte('started_at', startISO)
+      if (!active) return
+      setActiveTripRiderIds(new Set(((data ?? []) as { rider_id: string }[]).map(r => r.rider_id)))
+    })()
+
+    const timeFmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+    })
+    const pushToast = (text: string, kind: 'start' | 'end') => {
+      const id = Date.now() + Math.random()
+      setToasts(t => [...t, { id, text, kind }])
+      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 6000)
+    }
+
+    const ch = supabase
+      .channel('delivery-trips-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'delivery_trips' }, payload => {
+        const t = payload.new as DeliveryTrip
+        setActiveTripRiderIds(s => new Set(s).add(t.rider_id))
+        pushToast(`🚚 ${t.rider_name} 배송 출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'delivery_trips' }, payload => {
+        const t = payload.new as DeliveryTrip
+        if (!t.ended_at) return
+        setActiveTripRiderIds(s => { const n = new Set(s); n.delete(t.rider_id); return n })
+        const dur = Math.round((new Date(t.ended_at).getTime() - new Date(t.started_at).getTime()) / 60000)
+        pushToast(`🏁 ${t.rider_name} 배송 완료 · ${dur}분`, 'end')
+      })
+      .subscribe()
+    return () => { active = false; supabase.removeChannel(ch) }
   }, [])
 
   // SDK + 창고 준비되면 지도 1회 생성
@@ -461,6 +505,19 @@ export default function TrackingPage() {
           className="w-full h-full bg-slate-200"
           style={pickMode ? { cursor: 'crosshair' } : undefined}
         />
+        {/* 배송 출발/완료 토스트 (우측 중앙, 스택형, 6초 후 자동 사라짐) */}
+        <div className="absolute top-20 right-3 z-40 flex flex-col gap-2 pointer-events-none">
+          {toasts.map(t => (
+            <div key={t.id}
+              className={`pointer-events-auto px-4 py-2 rounded-xl shadow-lg text-sm font-semibold text-white animate-pulse ${
+                t.kind === 'start' ? 'bg-red-500' : 'bg-emerald-500'
+              }`}
+              style={{ animation: 'none' }}
+            >
+              {t.text}
+            </div>
+          ))}
+        </div>
         {/* 지도 로드 상태/에러 배너 */}
         {status !== 'ready' && statusMsg && (
           <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl shadow text-sm ${status === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-white/95 border border-slate-200 text-slate-600'}`}>
@@ -558,7 +615,14 @@ export default function TrackingPage() {
                           }
                         }}>
                         <div className="flex items-center justify-between">
-                          <div className="text-sm font-medium text-slate-800">{l.rider_name}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium text-slate-800">{l.rider_name}</span>
+                            {activeTripRiderIds.has(l.rider_id) && (
+                              <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full leading-none">
+                                🚚 배송중
+                              </span>
+                            )}
+                          </div>
                           {isActive && <span className="text-[10px] font-bold text-purple-600">🛤️ 동선</span>}
                         </div>
                         <div className="text-xs text-slate-400">
