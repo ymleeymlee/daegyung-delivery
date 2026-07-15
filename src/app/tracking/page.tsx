@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
-import type { RiderLocation } from '@/types'
+import type { RiderLocation, DeliveryTrip } from '@/types'
 import type { ArchiveResponse } from '@/app/api/location-archive/route'
+
+interface Ping { lat: number; lng: number; captured_at: string }
 
 const KAKAO_KEY = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY
 
@@ -37,7 +39,9 @@ export default function TrackingPage() {
   const warehouseLabelRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const pathRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any 실시간 모드의 단일 라이더 궤적
   const pathStartMarkerRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const fiveMinMarksRef = useRef<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any 트립 선택 시 5분 간격 라벨
   const archiveLayersRef = useRef<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any 아카이브 폴리라인/라벨 전부
+  const dayPingsRef = useRef<Ping[]>([]) // 선택된 라이더의 오늘 pings 캐시 (트립 필터에 사용)
   const pickModeRef = useRef(false)
 
   const [sdkReady, setSdkReady] = useState(false)
@@ -52,6 +56,8 @@ export default function TrackingPage() {
   const [pathLoading, setPathLoading] = useState(false)
   const [pathPointCount, setPathPointCount] = useState(0)
   const [radiusInput, setRadiusInput] = useState(100)
+  const [trips, setTrips] = useState<DeliveryTrip[]>([])
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null)
 
   // 날짜 선택 (기본=오늘). today=실시간, 과거=아카이브
   const [viewDate, setViewDate] = useState<string>(todayKst())
@@ -156,48 +162,121 @@ export default function TrackingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sdkReady, warehouse])
 
-  // === 실시간 라이더 궤적 (오늘 클릭한 라이더 1명) ===
-  const showPath = useCallback(async (riderId: string | null) => {
+  // 지도 위의 모든 라이더 오버레이(폴리라인·시작·5분 마크) 제거
+  const clearRiderOverlays = useCallback(() => {
+    pathRef.current?.setMap(null); pathRef.current = null
+    pathStartMarkerRef.current?.setMap(null); pathStartMarkerRef.current = null
+    for (const m of fiveMinMarksRef.current) m.setMap(null)
+    fiveMinMarksRef.current = []
+  }, [])
+
+  // 주어진 pings 로 폴리라인 렌더링 (+ withFiveMinMarks 옵션)
+  const renderPingsAsPath = useCallback((pts: Ping[], opts: { withFiveMinMarks: boolean; fit: boolean }) => {
     const kakao = window.kakao
     const map = mapRef.current
     if (!kakao || !map) return
-    pathRef.current?.setMap(null); pathRef.current = null
-    pathStartMarkerRef.current?.setMap(null); pathStartMarkerRef.current = null
+    clearRiderOverlays()
+    if (pts.length < 1) return
+    const path = pts.map(p => new kakao.maps.LatLng(p.lat, p.lng))
+    if (path.length >= 2) {
+      pathRef.current = new kakao.maps.Polyline({
+        path, strokeWeight: 4, strokeColor: '#7c3aed', strokeOpacity: 0.85, strokeStyle: 'solid',
+      })
+      pathRef.current.setMap(map)
+    }
+    pathStartMarkerRef.current = new kakao.maps.CustomOverlay({
+      position: path[0], yAnchor: 1.2, zIndex: 4,
+      content: '<div style="background:#22c55e;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:9999px;white-space:nowrap;">시작</div>',
+    })
+    pathStartMarkerRef.current.setMap(map)
+
+    if (opts.withFiveMinMarks) {
+      // 첫 ping 시각을 5분 경계로 내림 후, 5분 지날 때마다 가장 가까운 이후 ping 위치에 라벨
+      const timeFmt = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+      })
+      const first = new Date(pts[0].captured_at)
+      first.setSeconds(0, 0)
+      first.setMinutes(Math.floor(first.getMinutes() / 5) * 5)
+      let nextMark = first.getTime()
+      const STEP = 5 * 60 * 1000
+      for (const p of pts) {
+        const t = new Date(p.captured_at).getTime()
+        while (t >= nextMark) {
+          const overlay = new kakao.maps.CustomOverlay({
+            position: new kakao.maps.LatLng(p.lat, p.lng), yAnchor: 0.5, zIndex: 3,
+            content: `<div style="background:#fff;border:2px solid #7c3aed;color:#7c3aed;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">${timeFmt.format(new Date(nextMark))}</div>`,
+          })
+          overlay.setMap(map)
+          fiveMinMarksRef.current.push(overlay)
+          nextMark += STEP
+        }
+      }
+    }
+
+    if (opts.fit) {
+      const bounds = new kakao.maps.LatLngBounds()
+      for (const p of path) bounds.extend(p)
+      map.setBounds(bounds)
+    }
+  }, [clearRiderOverlays])
+
+  // === 라이더 선택: 오늘 pings + 오늘 trips 병렬 로드 후 전체 폴리라인 표시 ===
+  const showPath = useCallback(async (riderId: string | null) => {
+    setSelectedTripId(null)
+    setTrips([])
+    dayPingsRef.current = []
+    clearRiderOverlays()
     setPathPointCount(0)
     if (!riderId) return
     setPathLoading(true)
     try {
       const startISO = new Date(`${todayKst()}T00:00:00+09:00`).toISOString()
-      const { data, error } = await supabase
-        .from('location_pings')
-        .select('lat,lng,captured_at')
-        .eq('rider_id', riderId)
-        .gte('captured_at', startISO)
-        .order('captured_at', { ascending: true })
-        .limit(20000)
-      if (error) throw error
-      const pts = (data ?? []) as { lat: number; lng: number; captured_at: string }[]
-      if (pts.length < 2) { setPathPointCount(pts.length); return }
-      const path = pts.map(p => new kakao.maps.LatLng(p.lat, p.lng))
-      pathRef.current = new kakao.maps.Polyline({
-        path, strokeWeight: 4, strokeColor: '#7c3aed', strokeOpacity: 0.85, strokeStyle: 'solid',
-      })
-      pathRef.current.setMap(map)
-      pathStartMarkerRef.current = new kakao.maps.CustomOverlay({
-        position: path[0], yAnchor: 1.2,
-        content: '<div style="background:#22c55e;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:9999px;white-space:nowrap;">시작</div>',
-      })
-      pathStartMarkerRef.current.setMap(map)
-      const bounds = new kakao.maps.LatLngBounds()
-      for (const p of path) bounds.extend(p)
-      map.setBounds(bounds)
+      const [pingsRes, tripsRes] = await Promise.all([
+        supabase.from('location_pings')
+          .select('lat,lng,captured_at')
+          .eq('rider_id', riderId)
+          .gte('captured_at', startISO)
+          .order('captured_at', { ascending: true })
+          .limit(20000),
+        supabase.from('delivery_trips')
+          .select('*')
+          .eq('rider_id', riderId)
+          .gte('started_at', startISO)
+          .order('started_at', { ascending: true }),
+      ])
+      if (pingsRes.error) throw pingsRes.error
+      if (tripsRes.error && tripsRes.error.code !== '42P01') throw tripsRes.error  // 42P01 = 테이블 없음(마이그레이션 미적용)
+      const pts = (pingsRes.data ?? []) as Ping[]
+      dayPingsRef.current = pts
+      setTrips((tripsRes.data ?? []) as DeliveryTrip[])
       setPathPointCount(pts.length)
+      renderPingsAsPath(pts, { withFiveMinMarks: false, fit: true })
     } catch (e) {
       alert('동선 불러오기 실패: ' + String(e))
     } finally {
       setPathLoading(false)
     }
-  }, [])
+  }, [clearRiderOverlays, renderPingsAsPath])
+
+  // === 트립 선택: 캐시된 pings 를 시작~종료 시각으로 필터 후 폴리라인 + 5분 마크 ===
+  const showTrip = useCallback((tripId: string | null) => {
+    setSelectedTripId(tripId)
+    if (!tripId) {
+      // 트립 해제 → 전체 오늘 궤적으로 복귀
+      renderPingsAsPath(dayPingsRef.current, { withFiveMinMarks: false, fit: true })
+      return
+    }
+    const trip = trips.find(t => t.id === tripId)
+    if (!trip) return
+    const startMs = new Date(trip.started_at).getTime()
+    const endMs = trip.ended_at ? new Date(trip.ended_at).getTime() : Date.now()
+    const filtered = dayPingsRef.current.filter(p => {
+      const t = new Date(p.captured_at).getTime()
+      return t >= startMs && t <= endMs
+    })
+    renderPingsAsPath(filtered, { withFiveMinMarks: true, fit: true })
+  }, [trips, renderPingsAsPath])
 
   // 창고 초기 로드 시 슬라이더 값 동기화
   useEffect(() => {
@@ -421,15 +500,15 @@ export default function TrackingPage() {
           <div className="bg-white rounded-xl shadow border border-slate-200 px-3 py-2 flex items-center gap-2">
             <span className="text-xs text-slate-500">반경</span>
             <input
-              type="range" min={10} max={100} step={10}
+              type="range" min={10} max={300} step={10}
               value={radiusInput}
               onChange={e => previewRadius(parseInt(e.target.value))}
               onMouseUp={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
               onTouchEnd={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
               onKeyUp={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
               disabled={status !== 'ready'}
-              className="w-24 accent-blue-600 disabled:opacity-40"
-              title="본사 지오펜스 반경 (10~100m)"
+              className="w-32 accent-blue-600 disabled:opacity-40"
+              title="본사 지오펜스 반경 (10~300m)"
             />
             <span className="text-xs font-mono text-slate-700 min-w-[2.5rem] text-right">{radiusInput}m</span>
           </div>
@@ -465,30 +544,70 @@ export default function TrackingPage() {
                 {[...locations].sort((a, b) => a.rider_name.localeCompare(b.rider_name, 'ko')).map(l => {
                   const isActive = pathRiderId === l.rider_id
                   return (
-                    <li key={l.rider_id}
-                      className={`px-4 py-2 cursor-pointer transition-colors ${isActive ? 'bg-purple-50 hover:bg-purple-100' : 'hover:bg-slate-50'}`}
-                      onClick={() => {
-                        const next = isActive ? null : l.rider_id
-                        setPathRiderId(next)
-                        if (next) void showPath(next)
-                        else {
-                          void showPath(null)
-                          const k = window.kakao
-                          if (k && mapRef.current) mapRef.current.panTo(new k.maps.LatLng(l.lat, l.lng))
-                        }
-                      }}>
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm font-medium text-slate-800">{l.rider_name}</div>
-                        {isActive && <span className="text-[10px] font-bold text-purple-600">🛤️ 동선</span>}
+                    <li key={l.rider_id} className="transition-colors">
+                      <div
+                        className={`px-4 py-2 cursor-pointer ${isActive ? 'bg-purple-50 hover:bg-purple-100' : 'hover:bg-slate-50'}`}
+                        onClick={() => {
+                          const next = isActive ? null : l.rider_id
+                          setPathRiderId(next)
+                          if (next) void showPath(next)
+                          else {
+                            void showPath(null)
+                            const k = window.kakao
+                            if (k && mapRef.current) mapRef.current.panTo(new k.maps.LatLng(l.lat, l.lng))
+                          }
+                        }}>
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm font-medium text-slate-800">{l.rider_name}</div>
+                          {isActive && <span className="text-[10px] font-bold text-purple-600">🛤️ 동선</span>}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {fmtAgo(l.updated_at)}
+                          {isActive && (
+                            pathLoading ? <span className="ml-2 text-purple-500">불러오는 중…</span>
+                              : pathPointCount > 0 ? <span className="ml-2 text-purple-500">{pathPointCount.toLocaleString()}개 지점</span>
+                              : <span className="ml-2 text-slate-400">기록 없음</span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-400">
-                        {fmtAgo(l.updated_at)}
-                        {isActive && (
-                          pathLoading ? <span className="ml-2 text-purple-500">불러오는 중…</span>
-                            : pathPointCount > 0 ? <span className="ml-2 text-purple-500">{pathPointCount.toLocaleString()}개 지점</span>
-                            : <span className="ml-2 text-slate-400">기록 없음</span>
-                        )}
-                      </div>
+                      {/* 라이더 활성 시: 오늘 배송(trip) 목록 */}
+                      {isActive && trips.length > 0 && (
+                        <ul className="bg-slate-50/60 divide-y divide-slate-100/70 border-t border-slate-100">
+                          {trips.map((t, i) => {
+                            const isSelTrip = selectedTripId === t.id
+                            const startFmt = new Intl.DateTimeFormat('en-GB', {
+                              timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+                            }).format(new Date(t.started_at))
+                            const endFmt = t.ended_at
+                              ? new Intl.DateTimeFormat('en-GB', {
+                                  timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+                                }).format(new Date(t.ended_at))
+                              : null
+                            const durMin = t.ended_at
+                              ? Math.round((new Date(t.ended_at).getTime() - new Date(t.started_at).getTime()) / 60000)
+                              : Math.round((Date.now() - new Date(t.started_at).getTime()) / 60000)
+                            return (
+                              <li key={t.id}
+                                className={`pl-6 pr-4 py-1.5 text-xs cursor-pointer flex items-center justify-between ${
+                                  isSelTrip ? 'bg-purple-100 text-purple-800' : 'text-slate-600 hover:bg-slate-100'
+                                }`}
+                                onClick={e => { e.stopPropagation(); showTrip(isSelTrip ? null : t.id) }}
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <span className="font-semibold text-slate-700">{i + 1}회</span>
+                                  <span>{startFmt}~{endFmt ?? '진행중'}</span>
+                                </span>
+                                <span className="text-[10px] text-slate-400">{durMin}분</span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                      {isActive && trips.length === 0 && !pathLoading && (
+                        <div className="pl-6 pr-4 py-1.5 text-[11px] text-slate-400 bg-slate-50/60 border-t border-slate-100">
+                          완료된 배송 없음
+                        </div>
+                      )}
                     </li>
                   )
                 })}
@@ -537,8 +656,10 @@ export default function TrackingPage() {
           )}
 
           {isLive && pathRiderId && (
-            <div className="px-4 py-2 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-500 text-center">
-              오늘 00시 이후 동선 · 클릭 시 해제
+            <div className="px-4 py-2 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-500 text-center leading-relaxed">
+              {selectedTripId
+                ? '이 배송 구간 · 5분 간격 시각 표시 · 배송 클릭 시 해제'
+                : '오늘 00시 이후 전체 동선 · 배송 클릭 시 그 구간만'}
             </div>
           )}
         </div>

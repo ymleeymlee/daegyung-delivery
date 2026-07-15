@@ -57,6 +57,16 @@ export interface LocationPing {
   created_at: string
 }
 
+// 배송 회차: 앱이 본사 이탈 시 insert, 복귀 시 ended_at 갱신
+export interface DeliveryTrip {
+  id: string
+  rider_id: string
+  rider_name: string
+  started_at: string
+  ended_at: string | null
+  created_at: string
+}
+
 export interface GopoumClient {
   id: string
   client_id: string | null
