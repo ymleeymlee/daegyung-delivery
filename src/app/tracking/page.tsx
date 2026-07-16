@@ -42,7 +42,6 @@ export default function TrackingPage() {
   const fiveMinMarksRef = useRef<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any 트립 선택 시 5분 간격 라벨
   const archiveLayersRef = useRef<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any 아카이브 폴리라인/라벨 전부
   const dayPingsRef = useRef<Ping[]>([]) // 선택된 라이더의 오늘 pings 캐시 (트립 필터에 사용)
-  const pickModeRef = useRef(false)
 
   const [sdkReady, setSdkReady] = useState(false)
   const [warehouse, setWarehouse] = useState<Warehouse | null>(null)
@@ -52,6 +51,8 @@ export default function TrackingPage() {
   const [statusMsg, setStatusMsg] = useState('')
   const [pickMode, setPickMode] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [addressInput, setAddressInput] = useState('')
+  const [geocoding, setGeocoding] = useState(false)
   const [pathRiderId, setPathRiderId] = useState<string | null>(null)
   const [pathLoading, setPathLoading] = useState(false)
   const [pathPointCount, setPathPointCount] = useState(0)
@@ -69,8 +70,6 @@ export default function TrackingPage() {
   const [archiveLoading, setArchiveLoading] = useState(false)
 
   const isLive = viewDate === todayKst()
-
-  useEffect(() => { pickModeRef.current = pickMode }, [pickMode])
 
   // 이미 로드된 SDK 재사용 (다른 탭에서 돌아왔을 때 onLoad 재발화 안 되는 문제 대응)
   useEffect(() => {
@@ -157,14 +156,14 @@ export default function TrackingPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'delivery_trips' }, payload => {
         const t = payload.new as DeliveryTrip
         setActiveTripRiderIds(s => new Set(s).add(t.rider_id))
-        pushToast(`🚚 ${t.rider_name} 배송 출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
+        pushToast(`🚚 ${t.rider_name} 본사 출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'delivery_trips' }, payload => {
         const t = payload.new as DeliveryTrip
         if (!t.ended_at) return
         setActiveTripRiderIds(s => { const n = new Set(s); n.delete(t.rider_id); return n })
         const dur = Math.round((new Date(t.ended_at).getTime() - new Date(t.started_at).getTime()) / 60000)
-        pushToast(`🏁 ${t.rider_name} 배송 완료 · ${dur}분`, 'end')
+        pushToast(`🏁 ${t.rider_name} 본사 도착 · ${dur}분`, 'end')
       })
       .subscribe()
     return () => { active = false; supabase.removeChannel(ch) }
@@ -192,12 +191,6 @@ export default function TrackingPage() {
         content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">본사</div>',
       })
       warehouseLabelRef.current.setMap(map)
-
-      kakao.maps.event.addListener(map, 'click', (e: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-        if (!pickModeRef.current) return
-        const latlng = e.latLng
-        void saveWarehouse(latlng.getLat(), latlng.getLng())
-      })
 
       setStatus('ready'); setStatusMsg('')
     } catch (e) {
@@ -366,6 +359,26 @@ export default function TrackingPage() {
     }
   }, [])
 
+  // 주소 문자열 → 좌표 변환(카카오 지오코더) 후 본사 위치 저장
+  const searchAddress = useCallback(() => {
+    const q = addressInput.trim()
+    if (!q) return
+    const kakao = window.kakao
+    if (!kakao?.maps?.services) { alert('주소 검색 모듈이 아직 로드되지 않았습니다. 잠시 후 다시 시도하세요.'); return }
+    setGeocoding(true)
+    const geocoder = new kakao.maps.services.Geocoder()
+    geocoder.addressSearch(q, (result: any, statusCode: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      setGeocoding(false)
+      if (statusCode === kakao.maps.services.Status.OK && result[0]) {
+        // 카카오 좌표: x=경도(lng), y=위도(lat)
+        void saveWarehouse(parseFloat(result[0].y), parseFloat(result[0].x))
+        setAddressInput('')
+      } else {
+        alert('주소를 찾을 수 없습니다. 도로명 또는 지번 주소를 정확히 입력하세요.')
+      }
+    })
+  }, [addressInput, saveWarehouse])
+
   // 실시간 라이더 마커 동기화 (아카이브 모드에서는 모두 숨김)
   const syncMarkers = useCallback(() => {
     const kakao = window.kakao
@@ -386,7 +399,7 @@ export default function TrackingPage() {
       else {
         const overlay = new kakao.maps.CustomOverlay({
           position: pos, yAnchor: 1.2,
-          content: `<div style="background:#ef4444;color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);">${l.rider_name}</div>`,
+          content: `<div style="background:#f97316;color:#fff;font-size:15px;font-weight:800;padding:5px 12px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);">${l.rider_name}</div>`,
         })
         overlay.setMap(map)
         markersRef.current.set(l.rider_id, overlay)
@@ -493,7 +506,7 @@ export default function TrackingPage() {
   return (
     <>
       <Script
-        src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`}
+        src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false&libraries=services`}
         strategy="afterInteractive"
         onReady={readySignal}
         onLoad={readySignal}
@@ -503,7 +516,6 @@ export default function TrackingPage() {
         <div
           ref={containerRef}
           className="w-full h-full bg-slate-200"
-          style={pickMode ? { cursor: 'crosshair' } : undefined}
         />
         {/* 배송 출발/완료 토스트 (우측 중앙, 스택형, 6초 후 자동 사라짐) */}
         <div className="absolute top-20 right-3 z-40 flex flex-col gap-2 pointer-events-none">
@@ -524,15 +536,8 @@ export default function TrackingPage() {
             {status === 'error' ? '⚠ ' : ''}{statusMsg}
           </div>
         )}
-        {/* 픽 모드 안내 배너 */}
-        {pickMode && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-xl shadow text-sm bg-blue-600 text-white flex items-center gap-3">
-            지도를 클릭하여 본사 위치를 지정하세요
-            <button onClick={() => setPickMode(false)} className="text-xs bg-white/20 hover:bg-white/30 px-2 py-0.5 rounded">취소</button>
-          </div>
-        )}
         {/* 우상단: 날짜 + 본사 위치 버튼 */}
-        <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+        <div className="absolute top-3 right-3 z-10 flex items-start gap-2">
           <div className="bg-white rounded-xl shadow border border-slate-200 px-3 py-2 flex items-center gap-2">
             <input
               type="date"
@@ -554,32 +559,63 @@ export default function TrackingPage() {
               </button>
             )}
           </div>
-          <div className="bg-white rounded-xl shadow border border-slate-200 px-3 py-2 flex items-center gap-2">
-            <span className="text-xs text-slate-500">반경</span>
-            <input
-              type="range" min={10} max={300} step={10}
-              value={radiusInput}
-              onChange={e => previewRadius(parseInt(e.target.value))}
-              onMouseUp={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
-              onTouchEnd={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
-              onKeyUp={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
-              disabled={status !== 'ready'}
-              className="w-32 accent-blue-600 disabled:opacity-40"
-              title="본사 지오펜스 반경 (10~300m)"
-            />
-            <span className="text-xs font-mono text-slate-700 min-w-[2.5rem] text-right">{radiusInput}m</span>
+          <div className="relative">
+            <button
+              onClick={() => setPickMode(v => !v)}
+              disabled={saving || status !== 'ready'}
+              className={`px-3 py-2 rounded-xl shadow text-sm font-semibold transition-colors ${
+                pickMode ? 'bg-slate-600 text-white hover:bg-slate-700'
+                         : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
+              title="본사(배송 출발) 위치를 주소로 변경"
+            >
+              {saving ? '저장 중…' : pickMode ? '닫기' : '📍 본사 위치 변경'}
+            </button>
+            {pickMode && (
+              <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-lg border border-slate-200 p-3 flex flex-col gap-3">
+                {/* 주소 입력 */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">본사 주소</label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={addressInput}
+                      onChange={e => setAddressInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') searchAddress() }}
+                      placeholder="예) 성남시 분당구 판교역로 235"
+                      className="flex-1 min-w-0 text-sm text-slate-700 border border-slate-300 rounded-lg px-2 py-1.5 outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={searchAddress}
+                      disabled={geocoding || saving || !addressInput.trim()}
+                      className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {geocoding ? '검색 중…' : '검색'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">도로명 또는 지번 주소를 입력하고 검색하면 본사 위치가 변경됩니다.</p>
+                </div>
+                {/* 반경 조절 */}
+                <div className="border-t border-slate-100 pt-2.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-600">지오펜스 반경</label>
+                    <span className="text-xs font-mono text-slate-700">{radiusInput}m</span>
+                  </div>
+                  <input
+                    type="range" min={10} max={300} step={10}
+                    value={radiusInput}
+                    onChange={e => previewRadius(parseInt(e.target.value))}
+                    onMouseUp={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
+                    onTouchEnd={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
+                    onKeyUp={e => saveRadius(parseInt((e.target as HTMLInputElement).value))}
+                    disabled={status !== 'ready'}
+                    className="w-full accent-blue-600 disabled:opacity-40"
+                    title="본사 지오펜스 반경 (10~300m)"
+                  />
+                </div>
+              </div>
+            )}
           </div>
-          <button
-            onClick={() => setPickMode(v => !v)}
-            disabled={saving || status !== 'ready'}
-            className={`px-3 py-2 rounded-xl shadow text-sm font-semibold transition-colors ${
-              pickMode ? 'bg-slate-600 text-white hover:bg-slate-700'
-                       : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
-            } disabled:opacity-40 disabled:cursor-not-allowed`}
-            title="본사(배송 출발) 위치를 지도에서 지정"
-          >
-            {saving ? '저장 중…' : pickMode ? '취소' : '📍 본사 위치 변경'}
-          </button>
         </div>
         {/* 좌상단 패널 — 실시간/아카이브 두 모드 */}
         <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur rounded-xl shadow-lg border border-slate-200 w-64 max-h-[70vh] overflow-y-auto">
@@ -618,8 +654,8 @@ export default function TrackingPage() {
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-medium text-slate-800">{l.rider_name}</span>
                             {activeTripRiderIds.has(l.rider_id) && (
-                              <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full leading-none">
-                                🚚 배송중
+                              <span className="text-[10px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full leading-none">
+                                🚚 본사 출발
                               </span>
                             )}
                           </div>
