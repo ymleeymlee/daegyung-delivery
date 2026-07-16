@@ -146,7 +146,7 @@ function buildLocationGrid(pings: LocationPing[]): string[][] {
   const grid: string[][] = [['라이더', '측정시각', '위도', '경도', '정확도(m)']]
   for (const p of kept) {
     grid.push([
-      p.rider_name,
+      p.rider_name ?? '',
       fmt(p.captured_at),
       String(p.lat),
       String(p.lng),

@@ -53,14 +53,16 @@ export default function TrackingPage() {
   const [saving, setSaving] = useState(false)
   const [addressInput, setAddressInput] = useState('')
   const [geocoding, setGeocoding] = useState(false)
-  const [pathRiderId, setPathRiderId] = useState<string | null>(null)
+  const [pathDeviceId, setPathDeviceId] = useState<string | null>(null)
   const [pathLoading, setPathLoading] = useState(false)
   const [pathPointCount, setPathPointCount] = useState(0)
   const [radiusInput, setRadiusInput] = useState(100)
   const [trips, setTrips] = useState<DeliveryTrip[]>([])
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null)
-  // 현재 진행 중인 배송(rider_id) 집합 — "배송 중" 인디케이터용
-  const [activeTripRiderIds, setActiveTripRiderIds] = useState<Set<string>>(new Set())
+  // 현재 진행 중인 배송(device_id) 집합 — "본사 출발" 인디케이터용
+  const [activeTripDeviceIds, setActiveTripDeviceIds] = useState<Set<string>>(new Set())
+  // device_id → 라이더 이름 매핑 (웹 /riders 에서 지정). 미지정이면 짧은 기기ID 표시.
+  const [deviceMap, setDeviceMap] = useState<Map<string, string>>(new Map())
   // 배송 출발/완료 토스트 알림
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: 'start' | 'end' }[]>([])
 
@@ -70,6 +72,37 @@ export default function TrackingPage() {
   const [archiveLoading, setArchiveLoading] = useState(false)
 
   const isLive = viewDate === todayKst()
+
+  // device_id → 표시 이름. 매핑되면 라이더 이름, 아니면 "미지정 (앞8자)".
+  const nameOf = useCallback((deviceId: string) =>
+    deviceMap.get(deviceId) ?? `미지정 (${deviceId.slice(0, 8)})`, [deviceMap])
+  // 최신 resolver 참조 (구독 재등록 없이 이름 해석용)
+  const nameOfRef = useRef(nameOf)
+  useEffect(() => { nameOfRef.current = nameOf }, [nameOf])
+
+  // 기기↔라이더 매핑 로드 + 실시간 반영 (/riders 에서 지정하면 지도 이름이 바로 갱신)
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      const [{ data: devs }, { data: riders }] = await Promise.all([
+        supabase.from('rider_devices').select('device_id,rider_id'),
+        supabase.from('riders').select('id,name'),
+      ])
+      if (!active) return
+      const rn = new Map<string, string>((riders ?? []).map((r: { id: string; name: string }) => [r.id, r.name]))
+      const m = new Map<string, string>()
+      for (const d of (devs ?? []) as { device_id: string; rider_id: string | null }[]) {
+        if (d.rider_id && rn.has(d.rider_id)) m.set(d.device_id, rn.get(d.rider_id)!)
+      }
+      setDeviceMap(m)
+    }
+    void load()
+    const ch = supabase
+      .channel('rider-devices-map')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_devices' }, () => void load())
+      .subscribe()
+    return () => { active = false; supabase.removeChannel(ch) }
+  }, [])
 
   // 이미 로드된 SDK 재사용 (다른 탭에서 돌아왔을 때 onLoad 재발화 안 되는 문제 대응)
   useEffect(() => {
@@ -112,11 +145,11 @@ export default function TrackingPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_locations' }, payload => {
         setLocations(prev => {
           if (payload.eventType === 'DELETE') {
-            const old = payload.old as { rider_id: string }
-            return prev.filter(l => l.rider_id !== old.rider_id)
+            const old = payload.old as { device_id: string }
+            return prev.filter(l => l.device_id !== old.device_id)
           }
           const row = payload.new as RiderLocation
-          const idx = prev.findIndex(l => l.rider_id === row.rider_id)
+          const idx = prev.findIndex(l => l.device_id === row.device_id)
           if (idx === -1) return [...prev, row]
           const next = prev.slice()
           next[idx] = row
@@ -135,11 +168,13 @@ export default function TrackingPage() {
     ;(async () => {
       const startISO = new Date(`${todayKst()}T00:00:00+09:00`).toISOString()
       const { data } = await supabase.from('delivery_trips')
-        .select('rider_id,started_at,ended_at')
+        .select('device_id,started_at,ended_at')
         .is('ended_at', null)
         .gte('started_at', startISO)
       if (!active) return
-      setActiveTripRiderIds(new Set(((data ?? []) as { rider_id: string }[]).map(r => r.rider_id)))
+      setActiveTripDeviceIds(new Set(
+        ((data ?? []) as { device_id: string | null }[]).map(r => r.device_id).filter((x): x is string => !!x)
+      ))
     })()
 
     const timeFmt = new Intl.DateTimeFormat('en-GB', {
@@ -155,15 +190,16 @@ export default function TrackingPage() {
       .channel('delivery-trips-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'delivery_trips' }, payload => {
         const t = payload.new as DeliveryTrip
-        setActiveTripRiderIds(s => new Set(s).add(t.rider_id))
-        pushToast(`🚚 ${t.rider_name} 본사 출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
+        if (!t.device_id) return
+        setActiveTripDeviceIds(s => new Set(s).add(t.device_id!))
+        pushToast(`🚚 ${nameOfRef.current(t.device_id)} 본사 출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'delivery_trips' }, payload => {
         const t = payload.new as DeliveryTrip
-        if (!t.ended_at) return
-        setActiveTripRiderIds(s => { const n = new Set(s); n.delete(t.rider_id); return n })
+        if (!t.ended_at || !t.device_id) return
+        setActiveTripDeviceIds(s => { const n = new Set(s); n.delete(t.device_id!); return n })
         const dur = Math.round((new Date(t.ended_at).getTime() - new Date(t.started_at).getTime()) / 60000)
-        pushToast(`🏁 ${t.rider_name} 본사 도착 · ${dur}분`, 'end')
+        pushToast(`🏁 ${nameOfRef.current(t.device_id)} 본사 도착 · ${dur}분`, 'end')
       })
       .subscribe()
     return () => { active = false; supabase.removeChannel(ch) }
@@ -258,27 +294,27 @@ export default function TrackingPage() {
     }
   }, [clearRiderOverlays])
 
-  // === 라이더 선택: 오늘 pings + 오늘 trips 병렬 로드 후 전체 폴리라인 표시 ===
-  const showPath = useCallback(async (riderId: string | null) => {
+  // === 기기 선택: 오늘 pings + 오늘 trips 병렬 로드 후 전체 폴리라인 표시 ===
+  const showPath = useCallback(async (deviceId: string | null) => {
     setSelectedTripId(null)
     setTrips([])
     dayPingsRef.current = []
     clearRiderOverlays()
     setPathPointCount(0)
-    if (!riderId) return
+    if (!deviceId) return
     setPathLoading(true)
     try {
       const startISO = new Date(`${todayKst()}T00:00:00+09:00`).toISOString()
       const [pingsRes, tripsRes] = await Promise.all([
         supabase.from('location_pings')
           .select('lat,lng,captured_at')
-          .eq('rider_id', riderId)
+          .eq('device_id', deviceId)
           .gte('captured_at', startISO)
           .order('captured_at', { ascending: true })
           .limit(20000),
         supabase.from('delivery_trips')
           .select('*')
-          .eq('rider_id', riderId)
+          .eq('device_id', deviceId)
           .gte('started_at', startISO)
           .order('started_at', { ascending: true }),
       ])
@@ -392,23 +428,21 @@ export default function TrackingPage() {
     }
     const seen = new Set<string>()
     for (const l of locations) {
-      seen.add(l.rider_id)
+      seen.add(l.device_id)
       const pos = new kakao.maps.LatLng(l.lat, l.lng)
-      const existing = markersRef.current.get(l.rider_id)
-      if (existing) existing.setPosition(pos)
+      const html = `<div style="background:#f97316;color:#fff;font-size:15px;font-weight:800;padding:5px 12px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);">${nameOf(l.device_id)}</div>`
+      const existing = markersRef.current.get(l.device_id)
+      if (existing) { existing.setPosition(pos); existing.setContent(html) }
       else {
-        const overlay = new kakao.maps.CustomOverlay({
-          position: pos, yAnchor: 1.2,
-          content: `<div style="background:#f97316;color:#fff;font-size:15px;font-weight:800;padding:5px 12px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);">${l.rider_name}</div>`,
-        })
+        const overlay = new kakao.maps.CustomOverlay({ position: pos, yAnchor: 1.2, content: html })
         overlay.setMap(map)
-        markersRef.current.set(l.rider_id, overlay)
+        markersRef.current.set(l.device_id, overlay)
       }
     }
     for (const [id, overlay] of markersRef.current) {
       if (!seen.has(id)) { overlay.setMap(null); markersRef.current.delete(id) }
     }
-  }, [locations, isLive])
+  }, [locations, isLive, nameOf])
 
   useEffect(() => { syncMarkers() }, [syncMarkers, sdkReady])
 
@@ -440,7 +474,7 @@ export default function TrackingPage() {
     if (!isLive) {
       pathRef.current?.setMap(null); pathRef.current = null
       pathStartMarkerRef.current?.setMap(null); pathStartMarkerRef.current = null
-      setPathRiderId(null); setPathPointCount(0)
+      setPathDeviceId(null); setPathPointCount(0)
     }
   }, [isLive])
 
@@ -631,18 +665,19 @@ export default function TrackingPage() {
           {isLive ? (
             // 실시간 목록
             locations.length === 0 ? (
-              <p className="px-4 py-4 text-xs text-slate-400 italic text-center">위치 전송 중인 라이더 없음</p>
+              <p className="px-4 py-4 text-xs text-slate-400 italic text-center">위치 전송 중인 기기 없음</p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {[...locations].sort((a, b) => a.rider_name.localeCompare(b.rider_name, 'ko')).map(l => {
-                  const isActive = pathRiderId === l.rider_id
+                {[...locations].sort((a, b) => nameOf(a.device_id).localeCompare(nameOf(b.device_id), 'ko')).map(l => {
+                  const isActive = pathDeviceId === l.device_id
+                  const unassigned = !deviceMap.has(l.device_id)
                   return (
-                    <li key={l.rider_id} className="transition-colors">
+                    <li key={l.device_id} className="transition-colors">
                       <div
                         className={`px-4 py-2 cursor-pointer ${isActive ? 'bg-purple-50 hover:bg-purple-100' : 'hover:bg-slate-50'}`}
                         onClick={() => {
-                          const next = isActive ? null : l.rider_id
-                          setPathRiderId(next)
+                          const next = isActive ? null : l.device_id
+                          setPathDeviceId(next)
                           if (next) void showPath(next)
                           else {
                             void showPath(null)
@@ -652,8 +687,13 @@ export default function TrackingPage() {
                         }}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium text-slate-800">{l.rider_name}</span>
-                            {activeTripRiderIds.has(l.rider_id) && (
+                            <span className="text-sm font-medium text-slate-800">{nameOf(l.device_id)}</span>
+                            {unassigned && (
+                              <span className="text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full leading-none">
+                                미지정
+                              </span>
+                            )}
+                            {activeTripDeviceIds.has(l.device_id) && (
                               <span className="text-[10px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full leading-none">
                                 🚚 본사 출발
                               </span>
@@ -755,7 +795,7 @@ export default function TrackingPage() {
             )
           )}
 
-          {isLive && pathRiderId && (
+          {isLive && pathDeviceId && (
             <div className="px-4 py-2 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-500 text-center leading-relaxed">
               {selectedTripId
                 ? '이 배송 구간 · 5분 간격 시각 표시 · 배송 클릭 시 해제'

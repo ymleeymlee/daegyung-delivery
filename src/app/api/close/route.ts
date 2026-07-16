@@ -32,12 +32,13 @@ export async function GET(_req: NextRequest) {
   try {
     // 1) 현황 + 상태 조회를 한 번에 병렬 — 스냅샷/잔여/날짜 계산에 공유
     // location_pings 는 페이지네이션 필요할 수 있어 별도 헬퍼로 (라이더 8h × 5초 = 5,760/명)
-    const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, pingRows] = await Promise.all([
+    const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, { data: deviceRows }, pingRows] = await Promise.all([
       supabaseServer.from('app_state').select('*'),
       supabaseServer.from('riders').select('*').eq('is_active', true),
       supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).eq('status', 'assigned'),
       supabaseServer.from('gopoum_clients').select('*').order('created_at'),
       supabaseServer.from('gopoum_items').select('*'),
+      supabaseServer.from('rider_devices').select('device_id,rider_id'),
       fetchAllPings(),
     ])
 
@@ -58,6 +59,20 @@ export async function GET(_req: NextRequest) {
     const allItems = (itemRows ?? []) as GopoumItem[]
     const activeItems = allItems.filter(i => !i.archived_at)
     const pings = pingRows
+
+    // 앱은 device_id 로만 핑을 기록 → 기기↔라이더 매핑으로 rider_id/rider_name 을 채워 스냅샷에 반영
+    const riderNameById = new Map(riders.map(r => [r.id, r.name]))
+    const devToRider = new Map<string, { id: string; name: string }>()
+    for (const dv of (deviceRows ?? []) as { device_id: string; rider_id: string | null }[]) {
+      if (dv.rider_id && riderNameById.has(dv.rider_id)) {
+        devToRider.set(dv.device_id, { id: dv.rider_id, name: riderNameById.get(dv.rider_id)! })
+      }
+    }
+    for (const p of pings) {
+      const r = p.device_id ? devToRider.get(p.device_id) : undefined
+      if (r) { p.rider_id = r.id; p.rider_name = r.name }
+      else if (!p.rider_name) p.rider_name = p.device_id ? `미지정(${p.device_id.slice(0, 8)})` : '미지정'
+    }
 
     // 스냅샷 그리드 (동기)
     const snapshot = buildGrids(riders, deliveries, clients, activeItems, pings)

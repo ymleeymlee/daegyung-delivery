@@ -35,10 +35,20 @@ export interface Delivery {
   baseline_arrival_at?: string | null
 }
 
-// 라이더별 최신 위치 (실시간 지도용)
+// 기기 ↔ 라이더 매핑 (앱은 device_id 로만 write, 웹에서 라이더 지정)
+export interface RiderDevice {
+  device_id: string
+  rider_id: string | null
+  label: string | null
+  last_seen_at: string | null
+  created_at: string
+}
+
+// 기기별 최신 위치 (실시간 지도용). rider_* 는 앱이 안 채우므로 웹에서 매핑으로 해석.
 export interface RiderLocation {
-  rider_id: string
-  rider_name: string
+  device_id: string
+  rider_id: string | null
+  rider_name: string | null
   lat: number
   lng: number
   accuracy: number | null
@@ -48,8 +58,9 @@ export interface RiderLocation {
 // 원시 GPS 핑 (기록·동선용)
 export interface LocationPing {
   id: string
+  device_id: string | null
   rider_id: string | null
-  rider_name: string
+  rider_name: string | null
   lat: number
   lng: number
   accuracy: number | null
@@ -57,11 +68,12 @@ export interface LocationPing {
   created_at: string
 }
 
-// 배송 회차: 앱이 본사 이탈 시 insert, 복귀 시 ended_at 갱신
+// 배송 회차: 앱이 본사 이탈 시 insert, 복귀 시 ended_at 갱신 (device_id 기준)
 export interface DeliveryTrip {
   id: string
-  rider_id: string
-  rider_name: string
+  device_id: string | null
+  rider_id: string | null
+  rider_name: string | null
   started_at: string
   ended_at: string | null
   created_at: string
