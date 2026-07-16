@@ -43,6 +43,9 @@ next-env.d.ts
 # Google service account key (절대 커밋 금지)
 gcp-key.json
 
+# Supabase access token (절대 커밋 금지)
+accesstoken.md
+
 # editor swap files
 *.swp
 *.swo

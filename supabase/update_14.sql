@@ -15,6 +15,13 @@ alter table rider_devices disable row level security;
 
 -- 2) rider_locations: device_id 를 새 기본키로 (앱이 device_id 기준 upsert)
 --    실시간 테이블(마감마다 비워짐)이라 기존 행 삭제 후 재구성해도 안전.
+--    퍼블리케이션이 delete 를 publish 하므로 재구성 동안 잠시 퍼블리케이션에서 제거.
+do $$
+begin
+  if exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='rider_locations') then
+    alter publication supabase_realtime drop table rider_locations;
+  end if;
+end $$;
 delete from rider_locations;
 alter table rider_locations drop constraint if exists rider_locations_pkey;
 alter table rider_locations add column if not exists device_id text;
@@ -22,6 +29,12 @@ alter table rider_locations alter column rider_id   drop not null;
 alter table rider_locations alter column rider_name drop not null;
 delete from rider_locations where device_id is null;
 alter table rider_locations add constraint rider_locations_pkey primary key (device_id);
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and tablename='rider_locations') then
+    alter publication supabase_realtime add table rider_locations;
+  end if;
+end $$;
 
 -- 3) location_pings: device_id 추가, rider_* nullable (앱이 라이더를 모름)
 alter table location_pings add column if not exists device_id text;
