@@ -196,19 +196,19 @@ export default function RidersPage() {
                 <td className="px-4 py-3">
                   {mapped ? (
                     <div className="flex items-center gap-2">
-                      <code className="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded" title={mapped}>{mapped.slice(0, 8)}</code>
-                      <button onClick={() => assign(mapped, null)} className="text-xs text-slate-400 hover:text-red-600">해제</button>
+                      <code className="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded break-all">{mapped}</code>
+                      <button onClick={() => assign(mapped, null)} className="text-xs text-slate-400 hover:text-red-600 whitespace-nowrap">해제</button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
                       <select
                         value=""
                         onChange={e => { if (e.target.value) assign(e.target.value, r.id) }}
-                        className="border border-slate-200 rounded-md px-1.5 py-1 text-xs text-slate-600 bg-white max-w-[10rem]"
+                        className="border border-slate-200 rounded-md px-1.5 py-1 text-xs text-slate-600 bg-white"
                       >
                         <option value="">기기 선택…</option>
                         {unassignedDevices.map(id => (
-                          <option key={id} value={id}>{id.slice(0, 8)} · {fmtAgo(lastSeen.get(id) ?? null) || '기록'}</option>
+                          <option key={id} value={id}>{id} · {fmtAgo(lastSeen.get(id) ?? null) || '기록'}</option>
                         ))}
                       </select>
                       <button onClick={() => assignManual(r)} className="text-xs text-blue-600 hover:underline whitespace-nowrap">직접 입력</button>
@@ -235,7 +235,7 @@ export default function RidersPage() {
           <ul className="flex flex-wrap gap-2">
             {unassignedDevices.map(id => (
               <li key={id} className="text-xs bg-white border border-amber-200 rounded-lg px-2 py-1 text-slate-600">
-                <code>{id.slice(0, 8)}</code>
+                <code className="break-all">{id}</code>
                 <span className="text-slate-400 ml-1.5">{fmtAgo(lastSeen.get(id) ?? null)}</span>
               </li>
             ))}
