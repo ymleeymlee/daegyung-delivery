@@ -1,6 +1,5 @@
 {
   "crons": [
-    { "path": "/api/daily-report", "schedule": "0 9 * * *" },
-    { "path": "/api/close",        "schedule": "59 14 * * *" }
+    { "path": "/api/close", "schedule": "59 14 * * *" }
   ]
 }
