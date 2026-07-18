@@ -6,7 +6,52 @@ import { supabase } from '@/lib/supabase'
 import type { RiderLocation, DeliveryTrip } from '@/types'
 import type { ArchiveResponse } from '@/app/api/location-archive/route'
 
-interface Ping { lat: number; lng: number; captured_at: string }
+interface Ping { lat: number; lng: number; captured_at: string; accuracy?: number | null }
+
+// 동선 렌더 필터 (앱 LocationService 와 동일 기준)
+const PATH_MAX_ACCURACY_M = 40      // 오차반경 이보다 크면 신뢰불가 → 점 제외
+const PATH_MAX_SPEED_MPS = 33.3     // 직전 점 대비 순간속도 이보다 크면(≈120km/h) 스파이크 → 점 제외
+const PATH_MAX_GAP_S = 60           // 시간갭 이보다 크면 추적끊김 → 선 끊기(직선 연결 방지)
+
+// 두 좌표 간 거리(m) — Haversine
+function distMeters(a: Ping, b: Ping): number {
+  const R = 6371000, rad = Math.PI / 180
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad
+  const la1 = a.lat * rad, la2 = b.lat * rad
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)))
+}
+
+/**
+ * raw pings → 그릴 수 있는 궤적 세그먼트들로 정제.
+ *  1) accuracy > 40m 점 제외
+ *  2) 직전 채택점 대비 속도 > 33m/s(텔레포트 스파이크) 점 제외
+ *  3) 시간갭 > 60s(추적끊김) 지점에서 선을 끊어 별도 세그먼트로 분리(갭 가로지르는 직선 방지)
+ * 반환: 세그먼트 배열(각 세그먼트는 시간순 Ping 배열) + 채택된 전체 점(마커/바운즈용)
+ */
+function cleanPathSegments(pts: Ping[]): { segments: Ping[][]; kept: Ping[] } {
+  const segments: Ping[][] = []
+  const kept: Ping[] = []
+  let cur: Ping[] = []
+  for (const p of pts) {
+    if (p.accuracy != null && p.accuracy > PATH_MAX_ACCURACY_M) continue  // ① 정확도 게이트
+    if (cur.length === 0) { cur = [p]; kept.push(p); continue }
+    const prev = cur[cur.length - 1]
+    const dt = (new Date(p.captured_at).getTime() - new Date(prev.captured_at).getTime()) / 1000
+    const dist = distMeters(prev, p)
+    const speed = dt > 0 ? dist / dt : 0
+    if (dt > PATH_MAX_GAP_S) {              // ③ 갭 → 선 끊기
+      if (cur.length >= 1) segments.push(cur)
+      cur = [p]; kept.push(p)
+    } else if (speed > PATH_MAX_SPEED_MPS) { // ② 스파이크 → 점 폐기(prev 유지)
+      continue
+    } else {
+      cur.push(p); kept.push(p)
+    }
+  }
+  if (cur.length >= 1) segments.push(cur)
+  return { segments, kept }
+}
 
 const KAKAO_KEY = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY
 
@@ -37,7 +82,7 @@ export default function TrackingPage() {
   const markersRef = useRef<Map<string, any>>(new Map()) // eslint-disable-line @typescript-eslint/no-explicit-any
   const warehouseCircleRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const warehouseLabelRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
-  const pathRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any 실시간 모드의 단일 라이더 궤적
+  const pathRef = useRef<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any 단일 라이더 궤적(스파이크/갭으로 끊긴 다중 세그먼트)
   const pathStartMarkerRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const fiveMinMarksRef = useRef<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any 트립 선택 시 5분 간격 라벨
   const archiveLayersRef = useRef<any[]>([]) // eslint-disable-line @typescript-eslint/no-explicit-any 아카이브 폴리라인/라벨 전부
@@ -237,7 +282,7 @@ export default function TrackingPage() {
 
   // 지도 위의 모든 라이더 오버레이(폴리라인·시작·5분 마크) 제거
   const clearRiderOverlays = useCallback(() => {
-    pathRef.current?.setMap(null); pathRef.current = null
+    for (const pl of pathRef.current) pl.setMap(null); pathRef.current = []
     pathStartMarkerRef.current?.setMap(null); pathStartMarkerRef.current = null
     for (const m of fiveMinMarksRef.current) m.setMap(null)
     fiveMinMarksRef.current = []
@@ -250,15 +295,21 @@ export default function TrackingPage() {
     if (!kakao || !map) return
     clearRiderOverlays()
     if (pts.length < 1) return
-    const path = pts.map(p => new kakao.maps.LatLng(p.lat, p.lng))
-    if (path.length >= 2) {
-      pathRef.current = new kakao.maps.Polyline({
-        path, strokeWeight: 4, strokeColor: '#7c3aed', strokeOpacity: 0.85, strokeStyle: 'solid',
+    // 스파이크(텔레포트)·저정확도 점 제거 + 추적끊김 구간에서 선 끊기
+    const { segments, kept } = cleanPathSegments(pts)
+    if (kept.length < 1) return
+    // 끊긴 구간마다 별도 폴리라인 (갭·스파이크를 직선으로 잇지 않음)
+    for (const seg of segments) {
+      if (seg.length < 2) continue
+      const pl = new kakao.maps.Polyline({
+        path: seg.map(p => new kakao.maps.LatLng(p.lat, p.lng)),
+        strokeWeight: 4, strokeColor: '#7c3aed', strokeOpacity: 0.85, strokeStyle: 'solid',
       })
-      pathRef.current.setMap(map)
+      pl.setMap(map)
+      pathRef.current.push(pl)
     }
     pathStartMarkerRef.current = new kakao.maps.CustomOverlay({
-      position: path[0], yAnchor: 1.2, zIndex: 4,
+      position: new kakao.maps.LatLng(kept[0].lat, kept[0].lng), yAnchor: 1.2, zIndex: 4,
       content: '<div style="background:#22c55e;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:9999px;white-space:nowrap;">시작</div>',
     })
     pathStartMarkerRef.current.setMap(map)
@@ -268,12 +319,12 @@ export default function TrackingPage() {
       const timeFmt = new Intl.DateTimeFormat('en-GB', {
         timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
       })
-      const first = new Date(pts[0].captured_at)
+      const first = new Date(kept[0].captured_at)
       first.setSeconds(0, 0)
       first.setMinutes(Math.floor(first.getMinutes() / 5) * 5)
       let nextMark = first.getTime()
       const STEP = 5 * 60 * 1000
-      for (const p of pts) {
+      for (const p of kept) {
         const t = new Date(p.captured_at).getTime()
         while (t >= nextMark) {
           const overlay = new kakao.maps.CustomOverlay({
@@ -289,7 +340,7 @@ export default function TrackingPage() {
 
     if (opts.fit) {
       const bounds = new kakao.maps.LatLngBounds()
-      for (const p of path) bounds.extend(p)
+      for (const p of kept) bounds.extend(new kakao.maps.LatLng(p.lat, p.lng))
       map.setBounds(bounds)
     }
   }, [clearRiderOverlays])
@@ -305,22 +356,32 @@ export default function TrackingPage() {
     setPathLoading(true)
     try {
       const startISO = new Date(`${todayKst()}T00:00:00+09:00`).toISOString()
-      const [pingsRes, tripsRes] = await Promise.all([
-        supabase.from('location_pings')
-          .select('lat,lng,captured_at')
-          .eq('device_id', deviceId)
-          .gte('captured_at', startISO)
-          .order('captured_at', { ascending: true })
-          .limit(20000),
-        supabase.from('delivery_trips')
-          .select('*')
-          .eq('device_id', deviceId)
-          .gte('started_at', startISO)
-          .order('started_at', { ascending: true }),
-      ])
-      if (pingsRes.error) throw pingsRes.error
+      // location_pings 는 서버가 1000행씩만 반환(db-max-rows) → 페이지네이션으로 오늘 전량 수집.
+      // (안 하면 오전 1000개만 그려지고 오후 동선이 통째로 누락됨)
+      const PAGE = 1000
+      const ptsPromise = (async () => {
+        const all: Ping[] = []
+        for (let from = 0; ; from += PAGE) {
+          const { data, error } = await supabase.from('location_pings')
+            .select('lat,lng,captured_at,accuracy')
+            .eq('device_id', deviceId)
+            .gte('captured_at', startISO)
+            .order('captured_at', { ascending: true })
+            .range(from, from + PAGE - 1)
+          if (error) throw error
+          const chunk = (data ?? []) as Ping[]
+          all.push(...chunk)
+          if (chunk.length < PAGE) break
+        }
+        return all
+      })()
+      const tripsPromise = supabase.from('delivery_trips')
+        .select('*')
+        .eq('device_id', deviceId)
+        .gte('started_at', startISO)
+        .order('started_at', { ascending: true })
+      const [pts, tripsRes] = await Promise.all([ptsPromise, tripsPromise])
       if (tripsRes.error && tripsRes.error.code !== '42P01') throw tripsRes.error  // 42P01 = 테이블 없음(마이그레이션 미적용)
-      const pts = (pingsRes.data ?? []) as Ping[]
       dayPingsRef.current = pts
       setTrips((tripsRes.data ?? []) as DeliveryTrip[])
       setPathPointCount(pts.length)
@@ -472,7 +533,7 @@ export default function TrackingPage() {
   // 모드 전환 시 실시간 단일 경로/시작 라벨 제거
   useEffect(() => {
     if (!isLive) {
-      pathRef.current?.setMap(null); pathRef.current = null
+      for (const pl of pathRef.current) pl.setMap(null); pathRef.current = []
       pathStartMarkerRef.current?.setMap(null); pathStartMarkerRef.current = null
       setPathDeviceId(null); setPathPointCount(0)
     }
