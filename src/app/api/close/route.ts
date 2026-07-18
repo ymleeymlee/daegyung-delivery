@@ -95,11 +95,11 @@ export async function GET(_req: NextRequest) {
     ])
 
     // 위치 테이블은 시트 기록됐으니 초기화 (핑 없으면 이미 비어있으니 스킵)
+    // TRUNCATE 로 공간 즉시 반환(DELETE 는 dead tuple 남아 autovacuum 전까지 부풀음).
+    // service_role 전용 RPC(reset_location_tables). anon 실행권한 없음.
     if (pings.length > 0) {
-      await Promise.all([
-        supabaseServer.from('location_pings').delete().not('id', 'is', null),
-        supabaseServer.from('rider_locations').delete().not('rider_id', 'is', null),
-      ])
+      const { error: resetErr } = await supabaseServer.rpc('reset_location_tables')
+      if (resetErr) throw resetErr
     }
 
     // 시트 저장(느린 Google API)은 응답 후 백그라운드 → 마감 즉시 완료
