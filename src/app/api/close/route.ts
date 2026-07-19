@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse, after } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
 import { buildGrids, writeSnapshot } from '@/lib/sheetSnapshot'
 import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing } from '@/types'
@@ -35,7 +35,8 @@ export async function GET(_req: NextRequest) {
     const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, { data: deviceRows }, pingRows] = await Promise.all([
       supabaseServer.from('app_state').select('*'),
       supabaseServer.from('riders').select('*').eq('is_active', true),
-      supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).eq('status', 'assigned'),
+      // assigned(진행중) + completed(앱이 도착·이탈 시 완료처리) 둘 다 시트에 기록. completed 만 빼면 배달 완료분이 통째로 누락됨.
+      supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).in('status', ['assigned', 'completed']),
       supabaseServer.from('gopoum_clients').select('*').order('created_at'),
       supabaseServer.from('gopoum_items').select('*'),
       supabaseServer.from('rider_devices').select('device_id,rider_id'),
@@ -53,12 +54,16 @@ export async function GET(_req: NextRequest) {
     const tomorrow = new Date(Date.UTC(y, mo - 1, d + 1)).toISOString().slice(0, 10)
     const closedUntil = new Date(`${tomorrow}T06:00:00+09:00`).toISOString()
     const tomorrow8am = new Date(`${tomorrow}T08:00:00+09:00`).toISOString()
+    const todayStartIso = new Date(`${kstDate}T00:00:00+09:00`).toISOString()
     const riders = (riderRows ?? []) as Rider[]
     const deliveries = (deliveryRows ?? []) as Delivery[]
     const clients = (clientRows ?? []) as GopoumClient[]
     const allItems = (itemRows ?? []) as GopoumItem[]
     const activeItems = allItems.filter(i => !i.archived_at)
-    const pings = pingRows
+    // 시트 그리드용: 아직 활성이거나 "오늘" 아카이브된 품목(마감 재시도/부분 실행 대비)까지 포함
+    const snapshotItems = allItems.filter(i => !i.archived_at || i.archived_at >= todayStartIso)
+    // 위치 그리드는 "오늘" 핑만 (truncate 누락으로 이전날 핑이 남아있어도 오늘 탭 오염 방지)
+    const pings = pingRows.filter(p => p.captured_at >= todayStartIso)
 
     // 앱은 device_id 로만 핑을 기록 → 기기↔라이더 매핑으로 rider_id/rider_name 을 채워 스냅샷에 반영
     const riderNameById = new Map(riders.map(r => [r.id, r.name]))
@@ -75,9 +80,18 @@ export async function GET(_req: NextRequest) {
     }
 
     // 스냅샷 그리드 (동기)
-    const snapshot = buildGrids(riders, deliveries, clients, activeItems, pings)
+    const snapshot = buildGrids(riders, deliveries, clients, snapshotItems, pings)
 
-    // 2) DB 정리 전부 병렬 (조회한 데이터로 잔여 계산 → 재조회 불필요)
+    // 1) 시트 먼저 기록 (배송·고품 기록 실패 시 throw). 파괴적 DB 작업 전에 확정해 데이터 소실 방지.
+    //    (구버전은 삭제→truncate→after(시트) 순서라, truncate 가 던지면 DB만 비고 시트엔 안 써져 그날 데이터가 통째로 소실됐음)
+    try {
+      await writeSnapshot(kstDate, snapshot)
+    } catch (e) {
+      // 시트 실패 → DB 는 손대지 않고 중단. 원인 해결 후 그대로 재시도 가능.
+      return NextResponse.json({ ok: false, stage: 'sheet', error: String(e) }, { status: 500 })
+    }
+
+    // 2) 시트 확정 후에만 DB 정리 (조회한 데이터로 잔여 계산 → 재조회 불필요)
     await Promise.all([
       // 배송 전체 삭제 (시트에 기록됨)
       supabaseServer.from('deliveries').delete().not('id', 'is', null),
@@ -94,19 +108,12 @@ export async function GET(_req: NextRequest) {
       supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }),
     ])
 
-    // 위치 테이블은 시트 기록됐으니 초기화 (핑 없으면 이미 비어있으니 스킵)
-    // TRUNCATE 로 공간 즉시 반환(DELETE 는 dead tuple 남아 autovacuum 전까지 부풀음).
-    // service_role 전용 RPC(reset_location_tables). anon 실행권한 없음.
-    if (pings.length > 0) {
+    // 3) 위치 테이블 초기화. 시트가 이미 확정됐으니 실패해도 비치명 — 마감은 성공 처리하고 다음 마감에 정리.
+    //    TRUNCATE 로 공간 즉시 반환(RPC reset_location_tables, security definer). 라이더 폰이 write 중이면 락 대기로 실패할 수 있음 → 삼켜서 마감 자체는 완료.
+    if (pingRows.length > 0) {
       const { error: resetErr } = await supabaseServer.rpc('reset_location_tables')
-      if (resetErr) throw resetErr
+      if (resetErr) console.error('reset_location_tables 실패(비치명, 다음 마감에 정리):', resetErr)
     }
-
-    // 시트 저장(느린 Google API)은 응답 후 백그라운드 → 마감 즉시 완료
-    after(async () => {
-      try { await writeSnapshot(kstDate, snapshot) }
-      catch (e) { console.error('시트 스냅샷 저장 실패:', e) }
-    })
 
     return NextResponse.json({ ok: true, date: kstDate, closedUntil })
   } catch (e) {

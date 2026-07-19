@@ -189,7 +189,14 @@ export async function writeSnapshot(dateStr: string, data: SnapshotData) {
     tasks.push({ name: '위치', run: () => writeLocationTab(year, month, day, data.locationGrid) })
   }
   const results = await Promise.allSettled(tasks.map(t => t.run()))
-  results.forEach((r, i) => {
-    if (r.status === 'rejected') console.error(`시트 저장 실패(${tasks[i].name}):`, r.reason)
-  })
+  const failed = results
+    .map((r, i) => ({ r, name: tasks[i].name }))
+    .filter(x => x.r.status === 'rejected') as { r: PromiseRejectedResult; name: string }[]
+  for (const f of failed) console.error(`시트 저장 실패(${f.name}):`, f.r.reason)
+  // 배송·고품은 반드시 기록돼야 하는 핵심 탭 — 실패하면 throw 해서 호출측(마감)이 DB 를 건드리지 않고 중단하게 함.
+  // (위치 탭은 실패해도 비치명: 원본 핑은 마감 성공 후 truncate 전까지 DB 에 남아있음)
+  const critical = failed.filter(f => f.name === '배송' || f.name === '고품')
+  if (critical.length > 0) {
+    throw new Error(`핵심 시트 기록 실패(${critical.map(f => f.name).join(', ')}): ${String(critical[0].r.reason)}`)
+  }
 }
