@@ -4,6 +4,8 @@ export interface Client {
   name: string
   address: string
   created_at: string
+  lat?: number | null   // 주소 지오코딩 좌표 (등록 시 웹에서 카카오로 1회 변환)
+  lng?: number | null
 }
 
 export interface Rider {
@@ -28,9 +30,12 @@ export interface Delivery {
   assigned_at: string | null
   rider_id: string | null
   sort_order: number
-  // 위치추적 ETA/지연용 (phase 2~3, 지금은 미사용 · optional로 두어 insert에 안 실림)
+  // 배송지 좌표 (업체 좌표 복사 · 앱 자동 도착감지용)
   dest_lat?: number | null
   dest_lng?: number | null
+  // 라이더가 배송지 반경에 진입한 시각. 카드에 "도착" 표시. 이탈 시 status=completed.
+  arrived_at?: string | null
+  // 위치추적 ETA/지연용 (지금은 미사용 · optional)
   eta_seconds?: number | null
   baseline_arrival_at?: string | null
 }

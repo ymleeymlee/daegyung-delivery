@@ -152,6 +152,9 @@ export default function DeliveryCard({
   const assignedTime = delivery.assigned_at
     ? new Date(delivery.assigned_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
     : null
+  const arrivedTime = delivery.arrived_at
+    ? new Date(delivery.arrived_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    : null
 
   function handleSetPickup(itemId: string, quantity: number) {
     if (onSetPickup) onSetPickup(itemId, delivery.id, riderName ?? '배송자', quantity)
@@ -200,6 +203,9 @@ export default function DeliveryCard({
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
           ) : (
             <span className="font-medium text-blue-600">배송 {assignedTime}</span>
+          )}
+          {arrivedTime && (
+            <span className="font-semibold text-emerald-600">도착 {arrivedTime}</span>
           )}
         </div>
       </div>

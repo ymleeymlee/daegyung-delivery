@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Client } from '@/types'
+import { geocodeAddress } from '@/lib/kakaoGeocode'
 import * as XLSX from 'xlsx'
 
 export default function ClientsPage() {
@@ -19,6 +20,8 @@ export default function ClientsPage() {
   const [uploadStatus, setUploadStatus] = useState('')
   const [showUploadChoice, setShowUploadChoice] = useState(false)
   const [showReplaceConfirm, setShowReplaceConfirm] = useState(false)
+  const [geocoding, setGeocoding] = useState(false)
+  const [geoStatus, setGeoStatus] = useState('')
   const uploadModeRef = useRef<'append' | 'replace'>('append')
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -54,7 +57,13 @@ export default function ClientsPage() {
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     if (!newName.trim()) return
-    await supabase.from('clients').insert({ code: newCode.trim(), name: newName.trim(), address: newAddress.trim() })
+    const address = newAddress.trim()
+    // 주소를 좌표로 1회 변환해 함께 저장 (앱 자동 도착감지용). 실패해도 등록은 진행.
+    const geo = address ? await geocodeAddress(address).catch(() => null) : null
+    await supabase.from('clients').insert({
+      code: newCode.trim(), name: newName.trim(), address,
+      lat: geo?.lat ?? null, lng: geo?.lng ?? null,
+    })
     setNewCode('')
     setNewName('')
     setNewAddress('')
@@ -63,9 +72,40 @@ export default function ClientsPage() {
   }
 
   async function handleUpdate(id: string) {
-    await supabase.from('clients').update({ code: editCode.trim(), name: editName.trim(), address: editAddress.trim() }).eq('id', id)
+    const address = editAddress.trim()
+    // 주소가 바뀌었으면 좌표 재변환 (기존 좌표 유지가 아니라 새 주소 기준으로 갱신)
+    const prev = clients.find(c => c.id === id)
+    const addressChanged = !prev || prev.address !== address
+    const geo = addressChanged && address ? await geocodeAddress(address).catch(() => null) : null
+    const patch: Record<string, unknown> = { code: editCode.trim(), name: editName.trim(), address }
+    if (addressChanged) { patch.lat = geo?.lat ?? null; patch.lng = geo?.lng ?? null }
+    await supabase.from('clients').update(patch).eq('id', id)
     setEditingId(null)
     fetchClients()
+  }
+
+  // 기존 업체 중 좌표 없는 것 일괄 지오코딩 (브라우저에서 카카오로 변환).
+  async function handleBackfillGeocode() {
+    const targets = clients.filter(c => (c.lat == null || c.lng == null) && c.address?.trim())
+    if (targets.length === 0) { setGeoStatus('좌표 없는 업체가 없습니다.'); setTimeout(() => setGeoStatus(''), 3000); return }
+    setGeocoding(true)
+    let ok = 0, fail = 0
+    for (let i = 0; i < targets.length; i++) {
+      const c = targets[i]
+      setGeoStatus(`좌표 생성 중… ${i + 1}/${targets.length} (성공 ${ok} · 실패 ${fail})`)
+      const geo = await geocodeAddress(c.address).catch(() => null)
+      if (geo) {
+        await supabase.from('clients').update({ lat: geo.lat, lng: geo.lng }).eq('id', c.id)
+        ok++
+      } else {
+        fail++
+      }
+      await new Promise(r => setTimeout(r, 60)) // 카카오 호출 간 약간의 간격
+    }
+    setGeocoding(false)
+    setGeoStatus(`완료: 성공 ${ok}개${fail > 0 ? ` · 실패 ${fail}개(주소 확인 필요)` : ''}`)
+    fetchClients()
+    setTimeout(() => setGeoStatus(''), 6000)
   }
 
   async function handleDelete(id: string) {
@@ -218,9 +258,22 @@ export default function ClientsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-slate-800">거래처 관리</h1>
         <div className="flex items-center gap-2">
-          {uploadStatus && (
-            <span className="text-sm text-blue-600 font-medium">{uploadStatus}</span>
+          {(uploadStatus || geoStatus) && (
+            <span className="text-sm text-blue-600 font-medium">{geoStatus || uploadStatus}</span>
           )}
+          {!geoStatus && !uploadStatus && (
+            <span className="text-xs text-slate-400">
+              좌표 {clients.filter(c => c.lat != null && c.lng != null).length}/{clients.length}
+            </span>
+          )}
+          <button
+            onClick={handleBackfillGeocode}
+            disabled={geocoding}
+            className="flex items-center gap-1 border border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-sm px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="좌표 없는 업체를 카카오로 일괄 지오코딩"
+          >
+            {geocoding ? '좌표 생성 중…' : '📍 좌표 일괄 생성'}
+          </button>
           <button
             onClick={() => setShowUploadChoice(true)}
             className="flex items-center gap-1 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm px-3 py-1.5 rounded-xl transition-colors"

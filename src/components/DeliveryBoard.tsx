@@ -80,6 +80,8 @@ export default function DeliveryBoard() {
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
+  // 거래처 id → 좌표 (배송 생성 시 dest_lat/lng 로 복사 → 앱 자동 도착감지)
+  const [coordById, setCoordById] = useState<Map<string, { lat: number; lng: number }>>(new Map())
   const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
   const [loading, setLoading] = useState(true)
   const [queueOpen, setQueueOpen] = useState(false)   // 대기열 접기: 기본 숨김
@@ -88,16 +90,19 @@ export default function DeliveryBoard() {
     const [{ data: d }, { data: r }, { data: c }] = await Promise.all([
       supabase.from('deliveries').select('*').not('status', 'in', '("completed")').order('sort_order'),
       supabase.from('riders').select('*').eq('is_active', true).order('created_at'),
-      supabase.from('clients').select('id, code'),
+      supabase.from('clients').select('id, code, lat, lng'),
     ])
     setDeliveries(d ?? [])
     setRiders(r ?? [])
-    // 거래처 id → 업체번호 매핑 (고품 매칭용)
+    // 거래처 id → 업체번호 매핑 (고품 매칭용) + 좌표 매핑 (배송 도착감지용)
     const map = new Map<string, string>()
-    for (const cl of (c ?? []) as { id: string; code: string | null }[]) {
+    const coords = new Map<string, { lat: number; lng: number }>()
+    for (const cl of (c ?? []) as { id: string; code: string | null; lat: number | null; lng: number | null }[]) {
       if (cl.code?.trim()) map.set(cl.id, cl.code.trim())
+      if (cl.lat != null && cl.lng != null) coords.set(cl.id, { lat: cl.lat, lng: cl.lng })
     }
     setCodeById(map)
+    setCoordById(coords)
   }, [])
 
   const fetchGopoum = useCallback(async () => {
@@ -171,10 +176,12 @@ export default function DeliveryBoard() {
     if (isClosedNow(appState)) { alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return }
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order))
     const now = new Date().toISOString()
+    const coord = clientId ? coordById.get(clientId) : undefined
     const row: Delivery = {
       id: crypto.randomUUID(), client_id: clientId ?? null, client_name: clientName,
       client_address: clientAddress, status: 'waiting', created_at: now,
       assigned_at: null, rider_id: null, sort_order: maxOrder + 1,
+      dest_lat: coord?.lat ?? null, dest_lng: coord?.lng ?? null,
     }
     setDeliveries(prev => [...prev, row])
     supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })
@@ -185,10 +192,12 @@ export default function DeliveryBoard() {
     if (isClosedNow(appState)) { alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return }
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && d.status === 'assigned').map(d => d.sort_order))
     const now = new Date().toISOString()
+    const coord = clientId ? coordById.get(clientId) : undefined
     const row: Delivery = {
       id: crypto.randomUUID(), client_id: clientId ?? null, client_name: clientName,
       client_address: clientAddress, status: 'assigned', created_at: now,
       assigned_at: now, rider_id: riderId, sort_order: maxOrder + 1,
+      dest_lat: coord?.lat ?? null, dest_lng: coord?.lng ?? null,
     }
     setDeliveries(prev => [...prev, row])
     supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })
