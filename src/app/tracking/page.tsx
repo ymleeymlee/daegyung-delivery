@@ -117,6 +117,8 @@ export default function TrackingPage() {
   const [archive, setArchive] = useState<ArchiveResponse | null>(null)
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
+  // 아카이브: 그 날짜의 배송출발~본사복귀 구간(delivery_trips, device 기준). 동선 구간분리에 사용.
+  const [archiveTripsRaw, setArchiveTripsRaw] = useState<{ deviceId: string; start: number; end: number }[]>([])
 
   // 마감된 날은 오늘이라도 라이브가 아니라 아카이브(시트)에서 로드
   // (마감 시 location_pings 가 비워지므로 Supabase 라이브로는 오늘 동선이 안 보임)
@@ -523,22 +525,42 @@ export default function TrackingPage() {
 
   useEffect(() => { syncMarkers() }, [syncMarkers, sdkReady])
 
-  // === 아카이브 모드 진입 시 시트에서 로드 ===
+  // === 아카이브 모드 진입 시 시트(동선) + 그 날짜 trip 구간 로드 ===
   useEffect(() => {
     if (isLive) {
       setArchive(null)
+      setArchiveTripsRaw([])
       return
     }
     let active = true
     setArchiveLoading(true)
+    const dayStartMs = new Date(`${viewDate}T00:00:00+09:00`).getTime()
+    const dayStartISO = new Date(dayStartMs).toISOString()
+    const dayEndISO = new Date(dayStartMs + 86400000).toISOString()
     ;(async () => {
       try {
-        const res = await fetch(`/api/location-archive?date=${viewDate}`)
+        const [res, tripsRes] = await Promise.all([
+          fetch(`/api/location-archive?date=${viewDate}`),
+          supabase.from('delivery_trips')
+            .select('device_id,started_at,ended_at')
+            .gte('started_at', dayStartISO)
+            .lt('started_at', dayEndISO),
+        ])
         if (!res.ok) throw new Error(await res.text())
         const json = await res.json() as ArchiveResponse
-        if (active) setArchive(json)
+        if (!active) return
+        setArchive(json)
+        // trip 구간 (배송출발=started_at ~ 본사복귀=ended_at, 미복귀면 그날 끝까지)
+        const trips = (tripsRes.data ?? []) as { device_id: string | null; started_at: string; ended_at: string | null }[]
+        setArchiveTripsRaw(trips
+          .filter(t => t.device_id)
+          .map(t => ({
+            deviceId: t.device_id!,
+            start: new Date(t.started_at).getTime(),
+            end: t.ended_at ? new Date(t.ended_at).getTime() : dayStartMs + 86400000,
+          })))
       } catch (e) {
-        if (active) { setArchive({ date: viewDate, found: false, riders: [], totalPoints: 0 }); alert('아카이브 로드 실패: ' + String(e)) }
+        if (active) { setArchive({ date: viewDate, found: false, riders: [], totalPoints: 0 }); setArchiveTripsRaw([]); alert('아카이브 로드 실패: ' + String(e)) }
       } finally {
         if (active) setArchiveLoading(false)
       }
@@ -555,7 +577,7 @@ export default function TrackingPage() {
     }
   }, [isLive])
 
-  // === 아카이브 폴리라인 렌더링 ===
+  // === 아카이브 폴리라인 렌더링 (배송출발~본사복귀 구간별 분리 + 5분 마킹) ===
   useEffect(() => {
     const kakao = window.kakao
     const map = mapRef.current
@@ -565,29 +587,78 @@ export default function TrackingPage() {
     archiveLayersRef.current = []
     if (!archive || !archive.found || archive.riders.length === 0) return
 
+    // 기기→라이더 이름별 trip 시간범위 (동선을 배송출발~본사복귀 구간으로 나누기 위함)
+    const tripsByName = new Map<string, { start: number; end: number }[]>()
+    for (const t of archiveTripsRaw) {
+      const name = deviceMap.get(t.deviceId) ?? `미지정 (${t.deviceId.slice(0, 8)})`
+      if (!tripsByName.has(name)) tripsByName.set(name, [])
+      tripsByName.get(name)!.push({ start: t.start, end: t.end })
+    }
+    const timeFmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+    })
+    const STEP = 5 * 60 * 1000
+
     const bounds = new kakao.maps.LatLngBounds()
     archive.riders.forEach((r, idx) => {
       if (r.points.length === 0) return
       const color = PATH_PALETTE[idx % PATH_PALETTE.length]
-      const path = r.points.map(p => new kakao.maps.LatLng(p.lat, p.lng))
-      for (const p of path) bounds.extend(p)
-      if (path.length >= 2) {
-        const poly = new kakao.maps.Polyline({
-          path, strokeWeight: 4, strokeColor: color, strokeOpacity: 0.85, strokeStyle: 'solid',
-        })
-        poly.setMap(map)
-        archiveLayersRef.current.push(poly)
+      const pts = [...r.points].sort((a, b) => a.captured_at.localeCompare(b.captured_at))
+      for (const p of pts) bounds.extend(new kakao.maps.LatLng(p.lat, p.lng))
+      // trip 있으면 배송출발~본사복귀 구간별로, 없으면 전체를 한 구간으로
+      const ranges = tripsByName.get(r.rider_name)
+      const segments: { lat: number; lng: number; captured_at: string }[][] =
+        ranges && ranges.length
+          ? ranges
+              .map(rg => pts.filter(p => {
+                const t = new Date(p.captured_at).getTime()
+                return t >= rg.start && t <= rg.end
+              }))
+              .filter(s => s.length > 0)
+          : [pts]
+
+      for (const seg of segments) {
+        if (seg.length >= 2) {
+          const poly = new kakao.maps.Polyline({
+            path: seg.map(p => new kakao.maps.LatLng(p.lat, p.lng)),
+            strokeWeight: 4, strokeColor: color, strokeOpacity: 0.85, strokeStyle: 'solid',
+          })
+          poly.setMap(map)
+          archiveLayersRef.current.push(poly)
+        }
+        // 5분 단위 시각 마킹 (구간 첫 시각을 5분 경계로 내림 후 5분마다)
+        if (seg.length > 0 && seg[0].captured_at) {
+          const first = new Date(seg[0].captured_at)
+          if (!Number.isNaN(first.getTime())) {
+            first.setSeconds(0, 0)
+            first.setMinutes(Math.floor(first.getMinutes() / 5) * 5)
+            let nextMark = first.getTime()
+            for (const p of seg) {
+              const t = new Date(p.captured_at).getTime()
+              while (t >= nextMark) {
+                const overlay = new kakao.maps.CustomOverlay({
+                  position: new kakao.maps.LatLng(p.lat, p.lng), yAnchor: 0.5, zIndex: 3,
+                  content: `<div style="background:#fff;border:2px solid ${color};color:${color};font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">${timeFmt.format(new Date(nextMark))}</div>`,
+                })
+                overlay.setMap(map)
+                archiveLayersRef.current.push(overlay)
+                nextMark += STEP
+              }
+            }
+          }
+        }
       }
+
       // 시작점 라벨 (라이더 색)
       const startLabel = new kakao.maps.CustomOverlay({
-        position: path[0], yAnchor: 1.2,
+        position: new kakao.maps.LatLng(pts[0].lat, pts[0].lng), yAnchor: 1.2,
         content: `<div style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:9999px;white-space:nowrap;">${r.rider_name}</div>`,
       })
       startLabel.setMap(map)
       archiveLayersRef.current.push(startLabel)
     })
     if (archive.totalPoints > 0) map.setBounds(bounds)
-  }, [archive])
+  }, [archive, archiveTripsRaw, deviceMap])
 
   // 아카이브 라이더 이름별 색상 (패널에도 표시)
   const archiveColorOf = useMemo(() => {

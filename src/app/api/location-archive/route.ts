@@ -16,6 +16,15 @@ export interface ArchiveResponse {
   totalPoints: number
 }
 
+// 시트 측정시각("YY-MM-DD HH:MM:SS", KST) → 파싱 가능한 ISO. 5분마킹·구간분리용.
+function sheetTimeToIso(s?: string): string {
+  if (!s) return ''
+  const m = s.trim().match(/^(\d{2})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/)
+  if (!m) return s
+  const [, yy, mo, dd, hh, mi, ss] = m
+  return `20${yy}-${mo}-${dd}T${hh}:${mi}:${ss}+09:00`
+}
+
 // GET /api/location-archive?date=YYYY-MM-DD  → 위치-MM 시트 MM-DD 탭에서 로드
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get('date')
@@ -38,7 +47,7 @@ export async function GET(req: NextRequest) {
     const lng = parseFloat(lngStr)
     if (!name || Number.isNaN(lat) || Number.isNaN(lng)) continue
     if (!byRider.has(name)) byRider.set(name, { rider_name: name, points: [] })
-    byRider.get(name)!.points.push({ lat, lng, captured_at: capturedAt ?? '' })
+    byRider.get(name)!.points.push({ lat, lng, captured_at: sheetTimeToIso(capturedAt) })
   }
   const riders = [...byRider.values()].sort((a, b) => a.rider_name.localeCompare(b.rider_name, 'ko'))
   const totalPoints = riders.reduce((s, r) => s + r.points.length, 0)
