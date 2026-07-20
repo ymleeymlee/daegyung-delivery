@@ -88,7 +88,8 @@ export default function DeliveryBoard() {
 
   const fetchAll = useCallback(async () => {
     const [{ data: d }, { data: r }, { data: c }] = await Promise.all([
-      supabase.from('deliveries').select('*').not('status', 'in', '("completed")').order('sort_order'),
+      // completed 포함 — 완료 카드도 보드에 '완료'로 계속 표시(마감 때까지 유지·기록). waiting/assigned/completed 전부.
+      supabase.from('deliveries').select('*').order('sort_order'),
       supabase.from('riders').select('*').eq('is_active', true).order('created_at'),
       supabase.from('clients').select('id, code, lat, lng'),
     ])
@@ -304,7 +305,15 @@ export default function DeliveryBoard() {
   const quickRiders = riders.filter(r => r.is_quick)
 
   function getRiderDeliveries(riderId: string) {
-    return deliveries.filter(d => d.rider_id === riderId && d.status === 'assigned').sort((a, b) => a.sort_order - b.sort_order)
+    // 배정 + 완료 모두 표시. 완료 카드는 아래로(진행 중이 위).
+    return deliveries
+      .filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed'))
+      .sort((a, b) => {
+        const ca = a.status === 'completed' ? 1 : 0
+        const cb = b.status === 'completed' ? 1 : 0
+        if (ca !== cb) return ca - cb
+        return a.sort_order - b.sort_order
+      })
   }
 
   const cardProps = {

@@ -135,6 +135,7 @@ export default function DeliveryCard({
   gopoumItems, gopoumClientId, riderName, onSetPickup,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
+  const isCompleted = delivery.status === 'completed'
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
   const gItems = gopoumItems ?? []
@@ -176,16 +177,20 @@ export default function DeliveryCard({
       <div
         onClick={handleClick}
         className={`relative overflow-visible rounded-xl shadow-sm border p-3 w-48 select-none flex-shrink-0 transition-all cursor-pointer ${
-          isGopoumCard
-            ? isSelected ? 'bg-amber-50 border-blue-500 ring-2 ring-blue-500' : 'bg-amber-50 border-amber-300 hover:border-amber-400'
-            : isSelected ? 'bg-white border-blue-500 ring-2 ring-blue-500' : 'bg-white border-slate-200 hover:border-slate-300'
+          isCompleted
+            ? 'bg-slate-100 border-slate-300'
+            : isGopoumCard
+              ? isSelected ? 'bg-amber-50 border-blue-500 ring-2 ring-blue-500' : 'bg-amber-50 border-amber-300 hover:border-amber-400'
+              : isSelected ? 'bg-white border-blue-500 ring-2 ring-blue-500' : 'bg-white border-slate-200 hover:border-slate-300'
         }`}
       >
-        {/* 삭제 버튼 */}
-        <button
-          onClick={(e) => { e.stopPropagation(); if (!window.confirm('배송을 삭제하시겠습니까?')) return; onDelete(delivery) }}
-          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 flex items-center justify-center text-xs transition-colors shadow-sm"
-        >×</button>
+        {/* 삭제 버튼 (완료 카드는 실수 삭제 방지 위해 숨김 — 마감 때 시트 기록됨) */}
+        {!isCompleted && (
+          <button
+            onClick={(e) => { e.stopPropagation(); if (!window.confirm('배송을 삭제하시겠습니까?')) return; onDelete(delivery) }}
+            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 flex items-center justify-center text-xs transition-colors shadow-sm"
+          >×</button>
+        )}
 
         {/* 고품 배지 */}
         {isGopoumCard && (
@@ -196,16 +201,18 @@ export default function DeliveryCard({
           </div>
         )}
 
-        <p className="font-semibold text-sm truncate text-slate-800">{delivery.client_name}</p>
+        <p className={`font-semibold text-sm truncate ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
 
         <div className="mt-1 flex items-center gap-2 text-xs whitespace-nowrap">
           {delivery.status === 'waiting' ? (
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
+          ) : isCompleted ? (
+            <span className="font-bold text-slate-500">✓ 완료</span>
           ) : (
             <span className="font-medium text-blue-600">배송 {assignedTime}</span>
           )}
           {arrivedTime && (
-            <span className="font-semibold text-emerald-600">도착 {arrivedTime}</span>
+            <span className={`font-semibold ${isCompleted ? 'text-slate-400' : 'text-emerald-600'}`}>도착 {arrivedTime}</span>
           )}
         </div>
       </div>
