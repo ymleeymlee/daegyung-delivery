@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
+import { fetchAppState, isClosedNow, type AppState } from '@/lib/appState'
 import type { RiderLocation, DeliveryTrip } from '@/types'
 import type { ArchiveResponse } from '@/app/api/location-archive/route'
 
@@ -115,8 +116,11 @@ export default function TrackingPage() {
   const [viewDate, setViewDate] = useState<string>(todayKst())
   const [archive, setArchive] = useState<ArchiveResponse | null>(null)
   const [archiveLoading, setArchiveLoading] = useState(false)
+  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
 
-  const isLive = viewDate === todayKst()
+  // 마감된 날은 오늘이라도 라이브가 아니라 아카이브(시트)에서 로드
+  // (마감 시 location_pings 가 비워지므로 Supabase 라이브로는 오늘 동선이 안 보임)
+  const isLive = viewDate === todayKst() && !isClosedNow(appState)
 
   // device_id → 표시 이름. 매핑되면 라이더 이름, 아니면 "미지정 (앞8자)".
   const nameOf = useCallback((deviceId: string) =>
@@ -145,6 +149,18 @@ export default function TrackingPage() {
     const ch = supabase
       .channel('rider-devices-map')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_devices' }, () => void load())
+      .subscribe()
+    return () => { active = false; supabase.removeChannel(ch) }
+  }, [])
+
+  // 마감 상태 로드 + 실시간 반영 (마감되면 오늘도 아카이브 모드로 전환)
+  useEffect(() => {
+    let active = true
+    const load = async () => { const s = await fetchAppState(); if (active) setAppState(s) }
+    void load()
+    const ch = supabase
+      .channel('tracking-appstate')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state' }, () => void load())
       .subscribe()
     return () => { active = false; supabase.removeChannel(ch) }
   }, [])
@@ -644,7 +660,7 @@ export default function TrackingPage() {
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isLive ? 'bg-red-100 text-red-600' : 'bg-slate-200 text-slate-600'}`}>
               {isLive ? '실시간' : '아카이브'}
             </span>
-            {!isLive && (
+            {viewDate !== todayKst() && (
               <button
                 onClick={() => setViewDate(todayKst())}
                 className="text-xs text-blue-600 hover:underline"
