@@ -165,7 +165,8 @@ export default function DeliveryCard({
   // 그 외(대기열 카드 / 선택 진행 중)는 기존 선택·배정 로직으로.
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation()
-    if (delivery.status === 'assigned' && hasGopoum && !hasSelection) {
+    // 배정·완료 카드 모두: 선택 중이 아니면 카드가 곧 고품 입력 버튼 (완료 후에도 고품 수정 가능)
+    if ((delivery.status === 'assigned' || delivery.status === 'completed') && hasGopoum && !hasSelection) {
       setShowModal(true)
       return
     }
@@ -203,16 +204,17 @@ export default function DeliveryCard({
 
         <p className={`font-semibold text-sm truncate ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
 
-        <div className="mt-1 flex items-center gap-2 text-xs whitespace-nowrap">
+        <div className="mt-1 flex items-center justify-between gap-2 text-xs whitespace-nowrap">
           {delivery.status === 'waiting' ? (
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
-          ) : isCompleted ? (
-            <span className="font-bold text-slate-500">✓ 완료</span>
           ) : (
-            <span className="font-medium text-blue-600">배송 {assignedTime}</span>
-          )}
-          {arrivedTime && (
-            <span className={`font-semibold ${isCompleted ? 'text-slate-400' : 'text-emerald-600'}`}>도착 {arrivedTime}</span>
+            <>
+              {/* 왼쪽: 배송(배정) 시각 · 오른쪽: 도착 시각 */}
+              <span className={`font-medium ${isCompleted ? 'text-slate-500' : 'text-blue-600'}`}>배송 {assignedTime ?? '-'}</span>
+              {arrivedTime && (
+                <span className={`font-semibold ${isCompleted ? 'text-slate-500' : 'text-emerald-600'}`}>도착 {arrivedTime}</span>
+              )}
+            </>
           )}
         </div>
       </div>
