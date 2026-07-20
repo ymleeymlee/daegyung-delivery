@@ -150,12 +150,12 @@ export default function DeliveryCard({
   const isGopoumCard = hasGopoum
   const collectedByMe = myCount > 0                              // 내가 하나라도 수거했으면 초록
 
-  const assignedTime = delivery.assigned_at
-    ? new Date(delivery.assigned_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-    : null
-  const arrivedTime = delivery.arrived_at
-    ? new Date(delivery.arrived_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-    : null
+  const hhmm = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : null
+  const assignedTime = hhmm(delivery.assigned_at)   // 배정
+  const departedTime = hhmm(delivery.departed_at)   // 배송출발(본사 이탈)
+  const arrivedTime = hhmm(delivery.arrived_at)     // 배송완료(배송지 도착)
+  const returnedTime = hhmm(delivery.returned_at)   // 본사복귀(본사 도착)
 
   function handleSetPickup(itemId: string, quantity: number) {
     if (onSetPickup) onSetPickup(itemId, delivery.id, riderName ?? '배송자', quantity)
@@ -204,19 +204,25 @@ export default function DeliveryCard({
 
         <p className={`font-semibold text-sm truncate ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
 
-        <div className="mt-1 flex items-center justify-between gap-2 text-xs whitespace-nowrap">
-          {delivery.status === 'waiting' ? (
+        {delivery.status === 'waiting' ? (
+          <div className="mt-1 text-xs whitespace-nowrap">
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
-          ) : (
-            <>
-              {/* 왼쪽: 배송(배정) 시각 · 오른쪽: 도착 시각 */}
-              <span className={`font-medium ${isCompleted ? 'text-slate-500' : 'text-blue-600'}`}>배송 {assignedTime ?? '-'}</span>
+          </div>
+        ) : (
+          <div className="mt-1 flex flex-col gap-0.5 text-xs whitespace-nowrap">
+            {/* 배정 */}
+            {assignedTime && <span className="text-slate-400">배정 {assignedTime}</span>}
+            {/* 배송출발(왼쪽) · 배송완료(오른쪽) */}
+            <div className="flex items-center justify-between gap-2">
+              <span className={`font-medium ${isCompleted ? 'text-slate-500' : 'text-blue-600'}`}>배송출발 {departedTime ?? '-'}</span>
               {arrivedTime && (
-                <span className={`font-semibold ${isCompleted ? 'text-slate-500' : 'text-emerald-600'}`}>도착 {arrivedTime}</span>
+                <span className={`font-semibold ${isCompleted ? 'text-slate-500' : 'text-emerald-600'}`}>배송완료 {arrivedTime}</span>
               )}
-            </>
-          )}
-        </div>
+            </div>
+            {/* 본사복귀(그 밑에) */}
+            {returnedTime && <span className="text-slate-400">본사복귀 {returnedTime}</span>}
+          </div>
+        )}
       </div>
 
       {showModal && gopoumItems && (

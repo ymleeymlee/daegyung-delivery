@@ -33,8 +33,12 @@ export interface Delivery {
   // 배송지 좌표 (업체 좌표 복사 · 앱 자동 도착감지용)
   dest_lat?: number | null
   dest_lng?: number | null
-  // 라이더가 배송지 반경에 진입한 시각. 카드에 "도착" 표시. 이탈 시 status=completed.
+  // 배송출발(본사 이탈) 시각. 앱이 지오펜스 이탈 시 기록.
+  departed_at?: string | null
+  // 배송완료 = 배송지 도착 시각. 라이더가 배송지 반경에 진입한 시각. 이탈 시 status=completed.
   arrived_at?: string | null
+  // 본사복귀(본사 도착) 시각. 앱이 지오펜스 진입 시 기록.
+  returned_at?: string | null
   // 위치추적 ETA/지연용 (지금은 미사용 · optional)
   eta_seconds?: number | null
   baseline_arrival_at?: string | null

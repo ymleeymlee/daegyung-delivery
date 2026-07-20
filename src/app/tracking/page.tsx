@@ -237,14 +237,14 @@ export default function TrackingPage() {
         const t = payload.new as DeliveryTrip
         if (!t.device_id) return
         setActiveTripDeviceIds(s => new Set(s).add(t.device_id!))
-        pushToast(`🚚 ${nameOfRef.current(t.device_id)} 본사 출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
+        pushToast(`🚚 ${nameOfRef.current(t.device_id)} 배송출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'delivery_trips' }, payload => {
         const t = payload.new as DeliveryTrip
         if (!t.ended_at || !t.device_id) return
         setActiveTripDeviceIds(s => { const n = new Set(s); n.delete(t.device_id!); return n })
         const dur = Math.round((new Date(t.ended_at).getTime() - new Date(t.started_at).getTime()) / 60000)
-        pushToast(`🏁 ${nameOfRef.current(t.device_id)} 본사 도착 · ${dur}분`, 'end')
+        pushToast(`🏁 ${nameOfRef.current(t.device_id)} 본사복귀 · ${dur}분`, 'end')
       })
       .subscribe()
     return () => { active = false; supabase.removeChannel(ch) }
@@ -756,7 +756,7 @@ export default function TrackingPage() {
                             )}
                             {activeTripDeviceIds.has(l.device_id) && (
                               <span className="text-[10px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full leading-none">
-                                🚚 본사 출발
+                                🚚 배송출발
                               </span>
                             )}
                           </div>
