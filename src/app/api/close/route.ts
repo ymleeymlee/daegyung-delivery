@@ -108,11 +108,16 @@ export async function GET(_req: NextRequest) {
       supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }),
     ])
 
-    // 3) 위치 테이블 초기화. 시트가 이미 확정됐으니 실패해도 비치명 — 마감은 성공 처리하고 다음 마감에 정리.
-    //    TRUNCATE 로 공간 즉시 반환(RPC reset_location_tables, security definer). 라이더 폰이 write 중이면 락 대기로 실패할 수 있음 → 삼켜서 마감 자체는 완료.
+    // 3) 위치 테이블 정리. 시트가 이미 확정됐으니 실패해도 비치명 — 마감은 성공 처리하고 다음 마감에 정리.
+    //    anon/service 모두 이 테이블 DELETE 권한 보유 → security-definer RPC(service_role 전용, anon 폴백 시 permission denied) 의존 제거하고 직접 삭제.
+    //    (DELETE 는 dead tuple 남지만 하루 수천 행 수준이라 autovacuum 으로 충분)
     if (pingRows.length > 0) {
-      const { error: resetErr } = await supabaseServer.rpc('reset_location_tables')
-      if (resetErr) console.error('reset_location_tables 실패(비치명, 다음 마감에 정리):', resetErr)
+      const [pingsDel, locsDel] = await Promise.all([
+        supabaseServer.from('location_pings').delete().not('id', 'is', null),
+        supabaseServer.from('rider_locations').delete().not('device_id', 'is', null),
+      ])
+      if (pingsDel.error) console.error('location_pings 삭제 실패(비치명):', pingsDel.error)
+      if (locsDel.error) console.error('rider_locations 삭제 실패(비치명):', locsDel.error)
     }
 
     return NextResponse.json({ ok: true, date: kstDate, closedUntil })
