@@ -2,13 +2,13 @@ import { supabaseServer } from '@/lib/supabaseServer'
 import { writeDeliveryTab, writeGopoumTab, writeLocationTab } from '@/lib/googleSheets'
 import type { Delivery, Rider, GopoumClient, GopoumItem, LocationPing } from '@/types'
 
-function kstTime(iso: string | null) {
+function kstTime(iso: string | null | undefined) {
   if (!iso) return ''
   return new Intl.DateTimeFormat('ko-KR', {
     timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(iso))
 }
-function kstYMD(iso: string | null) {
+function kstYMD(iso: string | null | undefined) {
   if (!iso) return ''
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul', year: '2-digit', month: '2-digit', day: '2-digit',
@@ -25,7 +25,7 @@ function orderRiders(riders: Rider[]): Rider[] {
   })
 }
 
-const DCOLS = 4 // 라이더당: 상호|주소|주문시각|배정시각 (일별 탭이라 날짜열 불필요)
+const DCOLS = 6 // 라이더당: 상호|주소|배정|배송출발|배송완료|본사복귀 (일별 탭이라 날짜열 불필요)
 
 // 배송 현황 그리드 (전체 라이더 가로)
 function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] {
@@ -38,7 +38,8 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
   riders.forEach((rd, k) => set(0, k * DCOLS, rd.name))
   riders.forEach((_, k) => {
     const b = k * DCOLS
-    set(1, b, '상호'); set(1, b + 1, '주소'); set(1, b + 2, '주문시각'); set(1, b + 3, '배정시각')
+    set(1, b, '상호'); set(1, b + 1, '주소')
+    set(1, b + 2, '배정'); set(1, b + 3, '배송출발'); set(1, b + 4, '배송완료'); set(1, b + 5, '본사복귀')
   })
   const byRider = new Map<string, Delivery[]>()
   for (const rd of riders) {
@@ -54,8 +55,10 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
       const b = k * DCOLS
       set(2 + i, b, d.client_name)
       set(2 + i, b + 1, d.client_address)
-      set(2 + i, b + 2, kstTime(d.created_at))
-      set(2 + i, b + 3, kstTime(d.assigned_at))
+      set(2 + i, b + 2, kstTime(d.assigned_at))   // 배정
+      set(2 + i, b + 3, kstTime(d.departed_at))   // 배송출발
+      set(2 + i, b + 4, kstTime(d.arrived_at))    // 배송완료
+      set(2 + i, b + 5, kstTime(d.returned_at))   // 본사복귀
     })
   }
   for (let r = 0; r <= 1 + maxRows; r++) if (!grid[r]) grid[r] = new Array(cols).fill('')
