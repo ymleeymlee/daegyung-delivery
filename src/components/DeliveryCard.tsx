@@ -210,16 +210,12 @@ export default function DeliveryCard({
           </div>
         ) : (
           <div className="mt-1 flex flex-col gap-0.5 text-xs whitespace-nowrap">
-            {/* 배정 */}
+            {/* 4줄: 배정 / 배송출발 / 배송완료 / 본사복귀 */}
             {assignedTime && <span className="text-slate-400">배정 {assignedTime}</span>}
-            {/* 배송출발(왼쪽) · 배송완료(오른쪽) */}
-            <div className="flex items-center justify-between gap-2">
-              <span className={`font-medium ${isCompleted ? 'text-slate-500' : 'text-blue-600'}`}>배송출발 {departedTime ?? '-'}</span>
-              {arrivedTime && (
-                <span className={`font-semibold ${isCompleted ? 'text-slate-500' : 'text-emerald-600'}`}>배송완료 {arrivedTime}</span>
-              )}
-            </div>
-            {/* 본사복귀(그 밑에) */}
+            <span className={`font-medium ${isCompleted ? 'text-slate-500' : 'text-blue-600'}`}>배송출발 {departedTime ?? '-'}</span>
+            {arrivedTime && (
+              <span className={`font-semibold ${isCompleted ? 'text-slate-500' : 'text-emerald-600'}`}>배송완료 {arrivedTime}</span>
+            )}
             {returnedTime && <span className="text-slate-400">본사복귀 {returnedTime}</span>}
           </div>
         )}
