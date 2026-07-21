@@ -13,6 +13,7 @@ interface Ping { lat: number; lng: number; captured_at: string; accuracy?: numbe
 const PATH_MAX_ACCURACY_M = 40      // 오차반경 이보다 크면 신뢰불가 → 점 제외
 const PATH_MAX_SPEED_MPS = 33.3     // 직전 점 대비 순간속도 이보다 크면(≈120km/h) 스파이크 → 점 제외
 const PATH_MAX_GAP_S = 60           // 시간갭 이보다 크면 추적끊김 → 선 끊기(직선 연결 방지)
+const SAME_SPOT_M = 10             // 5분 마킹: 직전 마크와 이 거리 이내면 정지로 보고 라벨 안 겹침(최초 시각만)
 
 // 두 좌표 간 거리(m) — Haversine
 function distMeters(a: Ping, b: Ping): number {
@@ -342,15 +343,21 @@ export default function TrackingPage() {
       first.setMinutes(Math.floor(first.getMinutes() / 5) * 5)
       let nextMark = first.getTime()
       const STEP = 5 * 60 * 1000
+      // 정지 중엔 같은 좌표에 5분 라벨이 겹겹이 쌓임 → 직전 마크와 SAME_SPOT_M 이내면 건너뛰어
+      // 그 위치의 최초(가장 이른 5분) 시각 하나만 남긴다. 이동하면(>SAME_SPOT_M) 다시 5분 단위로 찍음.
+      let lastMark: Ping | null = null
       for (const p of kept) {
         const t = new Date(p.captured_at).getTime()
         while (t >= nextMark) {
-          const overlay = new kakao.maps.CustomOverlay({
-            position: new kakao.maps.LatLng(p.lat, p.lng), yAnchor: 0.5, zIndex: 3,
-            content: `<div style="background:#fff;border:2px solid #7c3aed;color:#7c3aed;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">${timeFmt.format(new Date(nextMark))}</div>`,
-          })
-          overlay.setMap(map)
-          fiveMinMarksRef.current.push(overlay)
+          if (!lastMark || distMeters(lastMark, p) > SAME_SPOT_M) {
+            const overlay = new kakao.maps.CustomOverlay({
+              position: new kakao.maps.LatLng(p.lat, p.lng), yAnchor: 0.5, zIndex: 3,
+              content: `<div style="background:#fff;border:2px solid #7c3aed;color:#7c3aed;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">${timeFmt.format(new Date(nextMark))}</div>`,
+            })
+            overlay.setMap(map)
+            fiveMinMarksRef.current.push(overlay)
+            lastMark = p
+          }
           nextMark += STEP
         }
       }
@@ -633,15 +640,20 @@ export default function TrackingPage() {
             first.setSeconds(0, 0)
             first.setMinutes(Math.floor(first.getMinutes() / 5) * 5)
             let nextMark = first.getTime()
+            // 정지 구간 라벨 겹침 방지: 직전 마크와 SAME_SPOT_M 이내면 최초 시각 하나만 남김(이동하면 다시 5분 단위).
+            let lastMark: Ping | null = null
             for (const p of seg) {
               const t = new Date(p.captured_at).getTime()
               while (t >= nextMark) {
-                const overlay = new kakao.maps.CustomOverlay({
-                  position: new kakao.maps.LatLng(p.lat, p.lng), yAnchor: 0.5, zIndex: 3,
-                  content: `<div style="background:#fff;border:2px solid ${color};color:${color};font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">${timeFmt.format(new Date(nextMark))}</div>`,
-                })
-                overlay.setMap(map)
-                archiveLayersRef.current.push(overlay)
+                if (!lastMark || distMeters(lastMark, p) > SAME_SPOT_M) {
+                  const overlay = new kakao.maps.CustomOverlay({
+                    position: new kakao.maps.LatLng(p.lat, p.lng), yAnchor: 0.5, zIndex: 3,
+                    content: `<div style="background:#fff;border:2px solid ${color};color:${color};font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">${timeFmt.format(new Date(nextMark))}</div>`,
+                  })
+                  overlay.setMap(map)
+                  archiveLayersRef.current.push(overlay)
+                  lastMark = p
+                }
                 nextMark += STEP
               }
             }
