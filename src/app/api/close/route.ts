@@ -6,6 +6,15 @@ import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing } from '@/
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+// 마감은 크론 전용 (매일 23:59 KST). URL 직접 접근 차단.
+// CRON_SECRET 설정 시 Vercel 크론이 보내는 Authorization: Bearer 헤더로 인증(권장).
+// 미설정 시엔 Vercel 크론 전용 헤더(x-vercel-cron)로 최소 방어(외부 요청엔 없음).
+function fromCron(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET
+  if (secret) return req.headers.get('authorization') === `Bearer ${secret}`
+  return req.headers.get('x-vercel-cron') != null
+}
+
 // location_pings 전량 조회 (Supabase 기본 1000줄 한도 우회). 라이더 8h × 5s = 5,760/명.
 async function fetchAllPings(): Promise<LocationPing[]> {
   const PAGE = 1000
@@ -28,7 +37,10 @@ async function fetchAllPings(): Promise<LocationPing[]> {
 // - 배송: 대기/배정 → completed (보드 비움)
 // - 고품: 수거된 품목 archived(현황에서 제거), 미수거는 유지
 // - closed_until = 다음날 06:00 KST 저장 → 그 전까지 마감 상태
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  if (!fromCron(req)) {
+    return NextResponse.json({ ok: false, error: 'forbidden (cron only)' }, { status: 403 })
+  }
   try {
     // 1) 현황 + 상태 조회를 한 번에 병렬 — 스냅샷/잔여/날짜 계산에 공유
     // location_pings 는 페이지네이션 필요할 수 있어 별도 헬퍼로 (라이더 8h × 5초 = 5,760/명)

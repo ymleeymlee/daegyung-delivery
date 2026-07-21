@@ -15,8 +15,8 @@ function fmtKstDate(d: Date) {
 
 export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [maekamLoading, setMaekamLoading] = useState(false)
-  const [maekamDone, setMaekamDone] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [updateDone, setUpdateDone] = useState(false)
   const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null })
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -43,24 +43,27 @@ export default function Nav() {
 
   const closed = isClosedNow(state)
   const displayDate = fmtKstDate(effNow(state.offset))
+  // 23:55~24:00 은 자동 마감(23:59) 준비시간 → 업데이트 비활성 (1분 타이머로 재평가됨)
+  const kstHM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(effNow(state.offset))
+  const [bh, bm] = kstHM.split(':').map(Number)
+  const blockWindow = bh === 23 && bm >= 55
 
-  async function handleMaekam() {
-    if (closed) return
-    if (!confirm('오늘 마감을 실행하시겠습니까?\n\n· 배송 현황이 초기화됩니다\n· 수거한 고품은 정리되고 미수거만 남습니다\n· 오늘 기록이 시트에 확정됩니다')) return
-    setMaekamLoading(true)
+  // 업데이트: DB 는 그대로 두고 현재 내용을 각 시트에 덮어쓰기. 마감 아님·반복 가능.
+  async function handleUpdate() {
+    if (blockWindow) { alert('23:55~24:00 은 자동 마감 준비 시간이라 업데이트가 잠시 막힙니다.'); return }
+    setUpdating(true)
     try {
-      const res = await fetch('/api/close')
+      const res = await fetch('/api/update-sheets')
       if (res.ok) {
-        await refresh()
-        setMaekamDone(true)
-        setTimeout(() => setMaekamDone(false), 4000)
+        setUpdateDone(true)
+        setTimeout(() => setUpdateDone(false), 4000)
       } else {
-        alert('마감 실패: ' + (await res.text()))
+        alert('업데이트 실패: ' + (await res.text()))
       }
     } catch {
-      alert('마감 실패')
+      alert('업데이트 실패')
     }
-    setMaekamLoading(false)
+    setUpdating(false)
   }
 
   async function handleNextDay() {
@@ -108,18 +111,22 @@ export default function Nav() {
 
       {/* 우측: 날짜 + 마감 + 테스트 */}
       <div className="ml-auto flex items-center gap-3">
-        {maekamDone && (
-          <span className="text-sm font-semibold text-green-600 animate-pulse">✓ 마감되었습니다</span>
+        {updateDone && (
+          <span className="text-sm font-semibold text-green-600 animate-pulse">✓ 시트 업데이트됨</span>
+        )}
+        {closed && !updateDone && (
+          <span className="text-xs font-medium text-slate-400" title="매일 23:59 자동 마감됨 (다음날 06시 해제)">🔒 자동마감됨</span>
         )}
         <span className={`text-sm font-medium ${state.offset > 0 ? 'text-purple-600' : 'text-slate-500'}`}>
           {displayDate}{state.offset > 0 ? ` (+${state.offset})` : ''}
         </span>
         <button
-          onClick={handleMaekam}
-          disabled={maekamLoading || closed}
-          className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          onClick={handleUpdate}
+          disabled={updating || blockWindow}
+          title="현재 내용을 배송·고품·위치 시트에 덮어쓰기 (마감 아님 · 언제든 반복 가능)"
+          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {maekamLoading ? '마감 중...' : closed ? '마감됨' : '마감'}
+          {updating ? '업데이트 중...' : blockWindow ? '마감 준비중' : '업데이트'}
         </button>
         {/* 테스트용: 다음날로 강제 이동 */}
         <button
