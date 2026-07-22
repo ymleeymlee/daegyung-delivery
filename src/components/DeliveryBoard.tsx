@@ -191,7 +191,8 @@ export default function DeliveryBoard() {
   // 이름블럭 아래 + 버튼: 선택한 업체를 해당 라이더에 바로 배정 상태로 추가
   function handleAddToRider(riderId: string, clientName: string, clientAddress: string, clientId?: string) {
     if (isClosedNow(appState)) { alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return }
-    const maxOrder = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && d.status === 'assigned').map(d => d.sort_order))
+    // 완료 카드도 라이더 열에 남아 자리를 차지하므로 max 계산에 포함 → 항상 맨 아래로.
+    const maxOrder = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed')).map(d => d.sort_order))
     const now = new Date().toISOString()
     const coord = clientId ? coordById.get(clientId) : undefined
     const row: Delivery = {
@@ -257,7 +258,8 @@ export default function DeliveryBoard() {
       .filter((d): d is Delivery => !!d && !(d.rider_id === riderId && d.status === 'assigned'))
     if (targets.length === 0) { setSelectedIds([]); return }
     const now = new Date().toISOString()
-    const base = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && d.status === 'assigned').map(d => d.sort_order))
+    // 완료 카드도 자리를 차지하므로 포함 → 배정 카드가 완료 카드 사이에 끼지 않고 맨 아래로.
+    const base = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed')).map(d => d.sort_order))
     const orderMap = new Map(targets.map((d, i) => [d.id, base + i + 1]))
     setDeliveries(prev => prev.map(d => orderMap.has(d.id)
       ? { ...d, rider_id: riderId, status: 'assigned', assigned_at: now, sort_order: orderMap.get(d.id)! } : d))
