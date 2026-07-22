@@ -21,13 +21,16 @@ export default function RiderAddModal({ riderName, onPick, onClose }: Props) {
   useEffect(() => { inputRef.current?.focus() }, [])
 
   useEffect(() => {
-    const q = code.trim()
-    if (!q) { setResults([]); return }
+    // 업체번호 접두 검색: 입력값(선행 0 제거)이 코드의 선행 0을 뗀 값의 접두인 것만.
+    // 예) '40' → 0040(=40)·0400·0401 매치, 0140 제외. code.asc 정렬로 0040 먼저.
+    const digits = code.replace(/\D/g, '').replace(/^0+/, '')
+    if (!digits) { setResults([]); return }
     const timer = setTimeout(async () => {
       const { data } = await supabase
         .from('clients')
         .select('*')
-        .ilike('code', `%${q}%`)
+        .filter('code', 'match', `^0*${digits}`)
+        .order('code', { ascending: true })
         .limit(50)
       setResults(data ?? [])
     }, 180)

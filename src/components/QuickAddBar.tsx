@@ -24,12 +24,16 @@ export default function QuickAddBar({ onAdd }: Props) {
   useEffect(() => {
     const q = term.trim()
     if (!q) { setResults([]); setOpen(false); return }
+    // 업체번호 검색: 입력값(선행 0 제거)이 코드의 선행 0을 뗀 값의 접두인 것만.
+    // 예) '40' → 0040(=40)·0400·0401 매치, 0140 제외. 번호 오름차순(code.asc)이라 0040 먼저.
+    const codeDigits = searchCol === 'code' ? q.replace(/\D/g, '').replace(/^0+/, '') : ''
+    if (searchCol === 'code' && !codeDigits) { setResults([]); setOpen(false); return }
     const timer = setTimeout(async () => {
-      const { data } = await supabase
-        .from('clients')
-        .select('*')
-        .ilike(searchCol, `%${q}%`)
-        .limit(50)
+      const base = supabase.from('clients').select('*')
+      const query = searchCol === 'code'
+        ? base.filter('code', 'match', `^0*${codeDigits}`).order('code', { ascending: true })
+        : base.ilike(searchCol, `%${q}%`)
+      const { data } = await query.limit(50)
       setResults(data ?? [])
       setOpen(true)
     }, 180)
