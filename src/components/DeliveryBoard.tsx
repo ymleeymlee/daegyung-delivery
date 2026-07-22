@@ -305,15 +305,11 @@ export default function DeliveryBoard() {
   const quickRiders = riders.filter(r => r.is_quick)
 
   function getRiderDeliveries(riderId: string) {
-    // 배정 + 완료 모두 표시. 완료 카드는 아래로(진행 중이 위).
+    // 배정 + 완료 모두 표시. 쌓인 순서(sort_order = 생성 순) 그대로 —
+    // 완료돼도 위치를 아래로 밀지 않고 제자리 유지(생성 순서 보존).
     return deliveries
       .filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed'))
-      .sort((a, b) => {
-        const ca = a.status === 'completed' ? 1 : 0
-        const cb = b.status === 'completed' ? 1 : 0
-        if (ca !== cb) return ca - cb
-        return a.sort_order - b.sort_order
-      })
+      .sort((a, b) => a.sort_order - b.sort_order)
   }
 
   const cardProps = {
