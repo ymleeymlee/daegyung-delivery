@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readLocationTab } from '@/lib/googleSheets'
+import { supabaseServer } from '@/lib/supabaseServer'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -25,14 +26,22 @@ function sheetTimeToIso(s?: string): string {
   return `20${yy}-${mo}-${dd}T${hh}:${mi}:${ss}+09:00`
 }
 
-// GET /api/location-archive?date=YYYY-MM-DD  → 위치-MM 시트 MM-DD 탭에서 로드
+// GET /api/location-archive?date=YYYY-MM-DD&branch=as  → 해당 지점 폴더의 위치-MM 시트 MM-DD 탭에서 로드
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get('date')
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: 'date 파라미터가 필요합니다 (YYYY-MM-DD).' }, { status: 400 })
   }
+  // 시트는 지점 폴더별로 분리 저장되므로 어느 지점을 읽을지 알아야 한다.
+  const branchCode = req.nextUrl.searchParams.get('branch')
+  const { data: branchRows } = await supabaseServer.from('branches').select('code,label').order('sort_order')
+  const branches = (branchRows ?? []) as { code: string; label: string }[]
+  const branchFolder = branches.find(b => b.code === branchCode)?.label ?? branches[0]?.label
+  if (!branchFolder) {
+    return NextResponse.json({ error: '지점 정보를 찾을 수 없습니다.' }, { status: 400 })
+  }
   const [year, month, day] = date.split('-')
-  const grid = await readLocationTab(year, month, day)
+  const grid = await readLocationTab(branchFolder, year, month, day)
 
   if (grid === null) {
     return NextResponse.json({ date, found: false, riders: [], totalPoints: 0 } satisfies ArchiveResponse)

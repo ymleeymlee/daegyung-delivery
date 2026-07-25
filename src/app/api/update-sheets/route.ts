@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
-import { buildGrids, writeSnapshot } from '@/lib/sheetSnapshot'
-import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing } from '@/types'
+import { buildGridsByBranch, writeSnapshot } from '@/lib/sheetSnapshot'
+import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing, Branch } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -29,13 +29,14 @@ async function fetchTodayPings(sinceIso: string): Promise<LocationPing[]> {
 // (자정을 넘겨 실행하면 유효 날짜가 다음날이 되어 자동으로 다음날 탭에 기록됨)
 export async function GET() {
   try {
-    const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, { data: deviceRows }] = await Promise.all([
+    const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, { data: deviceRows }, { data: branchRows }] = await Promise.all([
       supabaseServer.from('app_state').select('*'),
       supabaseServer.from('riders').select('*').eq('is_active', true),
       supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).in('status', ['assigned', 'completed']),
       supabaseServer.from('gopoum_clients').select('*').order('created_at'),
       supabaseServer.from('gopoum_items').select('*'),
       supabaseServer.from('rider_devices').select('device_id,rider_id'),
+      supabaseServer.from('branches').select('*').order('sort_order'),
     ])
 
     const m: Record<string, string> = {}
@@ -72,9 +73,27 @@ export async function GET() {
       else if (!p.rider_name) p.rider_name = p.device_id ? `미지정(${p.device_id.slice(0, 8)})` : '미지정'
     }
 
-    const snapshot = buildGrids(riders, deliveries, clients, snapshotItems, pings)
-    await writeSnapshot(kstDate, snapshot)   // 배송·고품 기록 실패 시 throw
-    return NextResponse.json({ ok: true, date: kstDate })
+    // 지점별로 갈라 각 지점 폴더(예: 안산/2026, 강남/2026)에 한 번에 기록.
+    const branches = (branchRows ?? []) as Branch[]
+    if (branches.length === 0) throw new Error('등록된 지점이 없습니다 (지점 관리에서 추가하세요)')
+    const perBranch = buildGridsByBranch(branches, riders, deliveries, clients, snapshotItems, pings)
+
+    // 한 지점이 실패해도 나머지는 기록되게 (실패 지점은 응답에 담아 알림)
+    const results = await Promise.allSettled(
+      perBranch.map(b => writeSnapshot(b.label, kstDate, b.data)),
+    )
+    const failed = results
+      .map((r, i) => ({ r, label: perBranch[i].label }))
+      .filter(x => x.r.status === 'rejected') as { r: PromiseRejectedResult; label: string }[]
+    const updated = perBranch.filter((_, i) => results[i].status === 'fulfilled').map(b => b.label)
+
+    if (failed.length > 0) {
+      return NextResponse.json({
+        ok: false, date: kstDate, updated,
+        error: failed.map(f => `${f.label}: ${String(f.r.reason)}`).join(' / '),
+      }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, date: kstDate, updated })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
   }

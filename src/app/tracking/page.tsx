@@ -564,7 +564,7 @@ export default function TrackingPage() {
     ;(async () => {
       try {
         const [res, tripsRes] = await Promise.all([
-          fetch(`/api/location-archive?date=${viewDate}`),
+          fetch(`/api/location-archive?date=${viewDate}&branch=${branch}`),
           supabase.from('delivery_trips')
             .select('device_id,started_at,ended_at')
             .gte('started_at', dayStartISO)
@@ -590,7 +590,7 @@ export default function TrackingPage() {
       }
     })()
     return () => { active = false }
-  }, [viewDate, isLive])
+  }, [viewDate, isLive, branch])
 
   // 모드 전환 시 실시간 단일 경로/시작 라벨 제거
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
-import { buildGrids, writeSnapshot } from '@/lib/sheetSnapshot'
-import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing } from '@/types'
+import { buildGridsByBranch, writeSnapshot } from '@/lib/sheetSnapshot'
+import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing, Branch } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
       supabaseServer.from('rider_devices').select('device_id,rider_id'),
       fetchAllPings(),
     ])
+    const { data: branchRows } = await supabaseServer.from('branches').select('*').order('sort_order')
 
     // 유효 날짜(offset 반영) 계산
     const m: Record<string, string> = {}
@@ -91,13 +92,18 @@ export async function GET(req: NextRequest) {
       else if (!p.rider_name) p.rider_name = p.device_id ? `미지정(${p.device_id.slice(0, 8)})` : '미지정'
     }
 
-    // 스냅샷 그리드 (동기)
-    const snapshot = buildGrids(riders, deliveries, clients, snapshotItems, pings)
+    // 스냅샷 그리드 (동기). 지점별로 갈라 각 지점 폴더(안산/2026, 강남/2026 …)에 기록.
+    const branches = (branchRows ?? []) as Branch[]
+    if (branches.length === 0) {
+      return NextResponse.json({ ok: false, stage: 'sheet', error: '등록된 지점이 없습니다' }, { status: 500 })
+    }
+    const perBranch = buildGridsByBranch(branches, riders, deliveries, clients, snapshotItems, pings)
 
     // 1) 시트 먼저 기록 (배송·고품 기록 실패 시 throw). 파괴적 DB 작업 전에 확정해 데이터 소실 방지.
     //    (구버전은 삭제→truncate→after(시트) 순서라, truncate 가 던지면 DB만 비고 시트엔 안 써져 그날 데이터가 통째로 소실됐음)
+    //    지점이 하나라도 실패하면 DB 를 건드리지 않고 중단 — 그 지점 데이터가 시트에 없는 채로 삭제되면 안 되므로.
     try {
-      await writeSnapshot(kstDate, snapshot)
+      for (const b of perBranch) await writeSnapshot(b.label, kstDate, b.data)
     } catch (e) {
       // 시트 실패 → DB 는 손대지 않고 중단. 원인 해결 후 그대로 재시도 가능.
       return NextResponse.json({ ok: false, stage: 'sheet', error: String(e) }, { status: 500 })

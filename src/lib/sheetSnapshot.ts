@@ -180,26 +180,58 @@ export function buildGrids(
   }
 }
 
+export interface BranchSnapshot {
+  code: string
+  label: string      // 구글드라이브 지점 폴더명과 동일 ('안산','강남')
+  data: SnapshotData
+}
+
+// 지점별로 데이터를 갈라 각각의 그리드를 만든다. 시트도 지점 폴더별로 따로 기록되므로
+// 한 번 호출로 안산·강남(향후 추가 지점 포함) 전부를 만들어 낸다.
+export function buildGridsByBranch(
+  branches: { code: string; label: string }[],
+  riders: Rider[],
+  deliveries: Delivery[],
+  clients: GopoumClient[],
+  activeItems: GopoumItem[],
+  pings: LocationPing[] = [],
+): BranchSnapshot[] {
+  const branchByRiderId = new Map(riders.map(r => [r.id, r.location ?? '']))
+  return branches.map(b => {
+    const bRiders = riders.filter(r => (r.location ?? '') === b.code)
+    const bDeliveries = deliveries.filter(d => (d.branch ?? '') === b.code)
+    const bClients = clients.filter(c => (c.branch ?? '') === b.code)
+    const bClientIds = new Set(bClients.map(c => c.id))
+    const bItems = activeItems.filter(i => bClientIds.has(i.gopoum_client_id))
+    // 라이더가 매핑 안 된 핑(미지정 기기)은 소속 지점을 알 수 없어 누락 방지 차원에서 모든 지점 탭에 남긴다.
+    const bPings = pings.filter(p => {
+      const loc = p.rider_id ? branchByRiderId.get(p.rider_id) : undefined
+      return loc === undefined || loc === b.code
+    })
+    return { code: b.code, label: b.label, data: buildGrids(bRiders, bDeliveries, bClients, bItems, bPings) }
+  })
+}
+
 // 그리드를 그날 탭(MM-DD)에 저장 (느림 — Google Sheets API). 백그라운드 실행용.
 // 하나 실패해도 나머지는 시도되도록 allSettled 사용 (예: 위치-MM 문서 없을 때).
-export async function writeSnapshot(dateStr: string, data: SnapshotData) {
+export async function writeSnapshot(branchFolder: string, dateStr: string, data: SnapshotData) {
   const year = dateStr.slice(0, 4), month = dateStr.slice(5, 7), day = dateStr.slice(8, 10)
   const tasks: { name: string; run: () => Promise<void> }[] = [
-    { name: '배송', run: () => writeDeliveryTab(year, month, day, data.deliveryGrid) },
-    { name: '고품', run: () => writeGopoumTab(year, month, day, data.gopoumGrid) },
+    { name: '배송', run: () => writeDeliveryTab(branchFolder, year, month, day, data.deliveryGrid) },
+    { name: '고품', run: () => writeGopoumTab(branchFolder, year, month, day, data.gopoumGrid) },
   ]
   if (data.locationGrid.length > 0) {
-    tasks.push({ name: '위치', run: () => writeLocationTab(year, month, day, data.locationGrid) })
+    tasks.push({ name: '위치', run: () => writeLocationTab(branchFolder, year, month, day, data.locationGrid) })
   }
   const results = await Promise.allSettled(tasks.map(t => t.run()))
   const failed = results
     .map((r, i) => ({ r, name: tasks[i].name }))
     .filter(x => x.r.status === 'rejected') as { r: PromiseRejectedResult; name: string }[]
-  for (const f of failed) console.error(`시트 저장 실패(${f.name}):`, f.r.reason)
+  for (const f of failed) console.error(`시트 저장 실패(${branchFolder}/${f.name}):`, f.r.reason)
   // 배송·고품은 반드시 기록돼야 하는 핵심 탭 — 실패하면 throw 해서 호출측(마감)이 DB 를 건드리지 않고 중단하게 함.
   // (위치 탭은 실패해도 비치명: 원본 핑은 마감 성공 후 truncate 전까지 DB 에 남아있음)
   const critical = failed.filter(f => f.name === '배송' || f.name === '고품')
   if (critical.length > 0) {
-    throw new Error(`핵심 시트 기록 실패(${critical.map(f => f.name).join(', ')}): ${String(critical[0].r.reason)}`)
+    throw new Error(`핵심 시트 기록 실패(${branchFolder} — ${critical.map(f => f.name).join(', ')}): ${String(critical[0].r.reason)}`)
   }
 }

@@ -56,11 +56,14 @@ export default function Nav() {
     setUpdating(true)
     try {
       const res = await fetch('/api/update-sheets')
+      const json = await res.json().catch(() => null) as { error?: string; updated?: string[] } | null
       if (res.ok) {
         setUpdateDone(true)
         setTimeout(() => setUpdateDone(false), 4000)
       } else {
-        alert('업데이트 실패: ' + (await res.text()))
+        // 일부 지점만 실패했을 수 있어 성공한 지점도 함께 안내
+        const done = json?.updated?.length ? `\n(성공: ${json.updated.join(', ')})` : ''
+        alert('업데이트 실패: ' + (json?.error ?? res.statusText) + done)
       }
     } catch {
       alert('업데이트 실패')
