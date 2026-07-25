@@ -106,6 +106,7 @@ export interface GopoumClient {
   total_quantity: number
   created_at: string
   started_at: string | null
+  branch: string     // 지점 코드 (branches.code)
 }
 
 export interface GopoumPickup {

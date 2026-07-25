@@ -111,14 +111,14 @@ export default function DeliveryBoard() {
 
   const fetchGopoum = useCallback(async () => {
     const [{ data: gClients }, { data: gItems }] = await Promise.all([
-      supabase.from('gopoum_clients').select('*'),
+      supabase.from('gopoum_clients').select('*').eq('branch', branch),
       supabase.from('gopoum_items').select('*'),
     ])
     setGopoumClients(gClients ?? [])
     const allItems = gItems ?? []
     // 마감 안 된 아이템만
     setGopoumItems(allItems.filter((i: { archived_at: string | null }) => !i.archived_at))
-  }, [])
+  }, [branch])
 
   const refreshAppState = useCallback(async () => { setAppState(await fetchAppState()) }, [])
 

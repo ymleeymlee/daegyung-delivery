@@ -156,7 +156,7 @@ export default function TrackingPage() {
       const b = new Map<string, string>()
       for (const d of (devs ?? []) as { device_id: string; rider_id: string | null }[]) {
         if (d.rider_id && rn.has(d.rider_id)) m.set(d.device_id, rn.get(d.rider_id)!)
-        if (d.rider_id && rb.has(d.rider_id)) b.set(d.device_id, rb.get(d.rider_id)!)
+        if (d.rider_id && rb.has(d.rider_id) && rb.get(d.rider_id)) b.set(d.device_id, rb.get(d.rider_id)!)
       }
       setDeviceMap(m)
       setDeviceBranch(b)

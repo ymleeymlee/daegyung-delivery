@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { GopoumClient, GopoumItem } from '@/types'
+import { useBranch } from '@/lib/branch'
 
 function todayKst() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
@@ -86,6 +87,7 @@ function GopoumHistoryCard({ gc, items }: { gc: GopoumClient; items: GopoumItem[
 }
 
 export default function GopoumRecordsPage() {
+  const { branch } = useBranch()
   const [date, setDate] = useState(todayKst)
   const [dayData, setDayData] = useState<DayData[]>([])
   const [loading, setLoading] = useState(false)
@@ -99,7 +101,7 @@ export default function GopoumRecordsPage() {
     // 마감된(archived) 아이템을 마감일 기준으로 조회
     const [{ data: items }, { data: clients }] = await Promise.all([
       supabase.from('gopoum_items').select('*').gte('archived_at', startIso).lt('archived_at', endIso),
-      supabase.from('gopoum_clients').select('*'),
+      supabase.from('gopoum_clients').select('*').eq('branch', branch),
     ])
 
     const clientMap = new Map<string, GopoumClient>()
@@ -118,9 +120,9 @@ export default function GopoumRecordsPage() {
 
     setDayData(result)
     setLoading(false)
-  }, [])
+  }, [branch])
 
-  useEffect(() => { fetchRecords(date) }, [date, fetchRecords])
+  useEffect(() => { fetchRecords(date) }, [date, branch, fetchRecords])
 
   function downloadExcel() {
     const stamp = date.replace(/-/g, '_')

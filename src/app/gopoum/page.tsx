@@ -218,14 +218,14 @@ export default function GopoumPage() {
 
   const fetchData = useCallback(async () => {
     const [{ data: gClients }, { data: gItems }] = await Promise.all([
-      supabase.from('gopoum_clients').select('*').order('created_at', { ascending: true }),
+      supabase.from('gopoum_clients').select('*').eq('branch', branch).order('created_at', { ascending: true }),
       supabase.from('gopoum_items').select('*'),
     ])
     setGopoumClients(gClients ?? [])
     // 마감 안 된 아이템만 표시 (미수거 + 오늘 수거했지만 아직 마감 전)
     const allItems = gItems ?? []
     setGopoumItems(allItems.filter(i => !i.archived_at))
-  }, [])
+  }, [branch])
 
   // 실시간 재조회 디바운스: 수량 +/- 연타 시 오래된 서버 응답이 낙관적 값을 덮어써 숫자가 튀는 현상 방지
   const fetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -272,6 +272,7 @@ export default function GopoumPage() {
       client_name: inputName.trim(),
       total_quantity: 0,
       started_at: null,
+      branch,
     })
     setAdding(false)
     if (!error) { setInputCode(''); setInputName(''); setSuggestions([]); setShowSugg(false) }
