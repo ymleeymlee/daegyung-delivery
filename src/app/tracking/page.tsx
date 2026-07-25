@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
 import { fetchAppState, isClosedNow, type AppState } from '@/lib/appState'
+import { useBranch } from '@/lib/branch'
 import type { RiderLocation, DeliveryTrip } from '@/types'
 import type { ArchiveResponse } from '@/app/api/location-archive/route'
 
@@ -79,6 +80,7 @@ function fmtAgo(iso: string) {
 }
 
 export default function TrackingPage() {
+  const { branch } = useBranch()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<Map<string, any>>(new Map()) // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -110,6 +112,8 @@ export default function TrackingPage() {
   const [activeTripDeviceIds, setActiveTripDeviceIds] = useState<Set<string>>(new Set())
   // device_id → 라이더 이름 매핑 (웹 /riders 에서 지정). 미지정이면 짧은 기기ID 표시.
   const [deviceMap, setDeviceMap] = useState<Map<string, string>>(new Map())
+  // device_id → 라이더 지점(location) 매핑. 지점별 지도 필터링용.
+  const [deviceBranch, setDeviceBranch] = useState<Map<string, string>>(new Map())
   // 배송 출발/완료 토스트 알림
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: 'start' | 'end' }[]>([])
 
@@ -128,6 +132,11 @@ export default function TrackingPage() {
   // device_id → 표시 이름. 매핑되면 라이더 이름, 아니면 "미지정 (앞8자)".
   const nameOf = useCallback((deviceId: string) =>
     deviceMap.get(deviceId) ?? `미지정 (${deviceId.slice(0, 8)})`, [deviceMap])
+
+  // 현재 지점 라이더의 위치만 표시. 라이더가 아직 지정 안 된 기기(미지정)는 지점을 알 수 없으므로 계속 표시.
+  const visibleLocations = useMemo(() =>
+    locations.filter(l => !deviceBranch.has(l.device_id) || deviceBranch.get(l.device_id) === branch),
+    [locations, deviceBranch, branch])
   // 최신 resolver 참조 (구독 재등록 없이 이름 해석용)
   const nameOfRef = useRef(nameOf)
   useEffect(() => { nameOfRef.current = nameOf }, [nameOf])
@@ -138,15 +147,19 @@ export default function TrackingPage() {
     const load = async () => {
       const [{ data: devs }, { data: riders }] = await Promise.all([
         supabase.from('rider_devices').select('device_id,rider_id'),
-        supabase.from('riders').select('id,name'),
+        supabase.from('riders').select('id,name,location'),
       ])
       if (!active) return
       const rn = new Map<string, string>((riders ?? []).map((r: { id: string; name: string }) => [r.id, r.name]))
+      const rb = new Map<string, string>((riders ?? []).map((r: { id: string; location: string }) => [r.id, r.location]))
       const m = new Map<string, string>()
+      const b = new Map<string, string>()
       for (const d of (devs ?? []) as { device_id: string; rider_id: string | null }[]) {
         if (d.rider_id && rn.has(d.rider_id)) m.set(d.device_id, rn.get(d.rider_id)!)
+        if (d.rider_id && rb.has(d.rider_id)) b.set(d.device_id, rb.get(d.rider_id)!)
       }
       setDeviceMap(m)
+      setDeviceBranch(b)
     }
     void load()
     const ch = supabase
@@ -186,20 +199,24 @@ export default function TrackingPage() {
   }, [sdkReady])
 
   // 창고 설정 + 초기 위치 로드 + 실시간 구독 (실시간은 항상 유지, 아카이브 모드에선 렌더만 숨김)
+  // 창고좌표/지오펜스는 지점별 접미사 키(warehouse_lat__as 등) 사용. branch 바뀌면 재조회.
   useEffect(() => {
     let active = true
+    const latKey = `warehouse_lat__${branch}`
+    const lngKey = `warehouse_lng__${branch}`
+    const radiusKey = `geofence_radius_m__${branch}`
     ;(async () => {
       const [{ data: cfg }, { data: locs }] = await Promise.all([
-        supabase.from('app_state').select('*').in('key', ['warehouse_lat', 'warehouse_lng', 'geofence_radius_m']),
+        supabase.from('app_state').select('*').in('key', [latKey, lngKey, radiusKey]),
         supabase.from('rider_locations').select('*'),
       ])
       if (!active) return
       const m: Record<string, string> = {}
       for (const r of (cfg ?? []) as { key: string; value: string }[]) m[r.key] = r.value
       setWarehouse({
-        lat: parseFloat(m.warehouse_lat || '37.4787'),
-        lng: parseFloat(m.warehouse_lng || '127.0664'),
-        radius: parseFloat(m.geofence_radius_m || '100'),
+        lat: parseFloat(m[latKey] || '37.4787'),
+        lng: parseFloat(m[lngKey] || '127.0664'),
+        radius: parseFloat(m[radiusKey] || '100'),
       })
       setLocations((locs ?? []) as RiderLocation[])
     })()
@@ -224,7 +241,7 @@ export default function TrackingPage() {
 
     const tick = setInterval(() => forceTick(t => t + 1), 15000)
     return () => { active = false; supabase.removeChannel(ch); clearInterval(tick) }
-  }, [])
+  }, [branch])
 
   // 진행 중 trip 초기 로드 + delivery_trips 실시간 구독 → 토스트 + 배송중 인디케이터
   useEffect(() => {
@@ -451,20 +468,20 @@ export default function TrackingPage() {
   // 드래그 종료(마우스업/터치엔드/키업) 시 저장
   const saveRadius = useCallback(async (r: number) => {
     try {
-      const { error } = await supabase.from('app_state').upsert({ key: 'geofence_radius_m', value: String(r) })
+      const { error } = await supabase.from('app_state').upsert({ key: `geofence_radius_m__${branch}`, value: String(r) })
       if (error) throw error
       setWarehouse(w => (w ? { ...w, radius: r } : w))
     } catch (e) {
       alert('반경 저장 실패: ' + String(e))
     }
-  }, [])
+  }, [branch])
 
   const saveWarehouse = useCallback(async (lat: number, lng: number) => {
     setSaving(true)
     try {
       const { error } = await supabase.from('app_state').upsert([
-        { key: 'warehouse_lat', value: String(lat) },
-        { key: 'warehouse_lng', value: String(lng) },
+        { key: `warehouse_lat__${branch}`, value: String(lat) },
+        { key: `warehouse_lng__${branch}`, value: String(lng) },
       ])
       if (error) throw error
       const kakao = window.kakao
@@ -479,7 +496,7 @@ export default function TrackingPage() {
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [branch])
 
   // 주소 문자열 → 좌표 변환(카카오 지오코더) 후 본사 위치 저장
   const searchAddress = useCallback(() => {
@@ -513,7 +530,7 @@ export default function TrackingPage() {
       return
     }
     const seen = new Set<string>()
-    for (const l of locations) {
+    for (const l of visibleLocations) {
       seen.add(l.device_id)
       const pos = new kakao.maps.LatLng(l.lat, l.lng)
       const html = `<div style="background:#f97316;color:#fff;font-size:15px;font-weight:800;padding:5px 12px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);">${nameOf(l.device_id)}</div>`
@@ -528,7 +545,7 @@ export default function TrackingPage() {
     for (const [id, overlay] of markersRef.current) {
       if (!seen.has(id)) { overlay.setMap(null); markersRef.current.delete(id) }
     }
-  }, [locations, isLive, nameOf])
+  }, [visibleLocations, isLive, nameOf])
 
   useEffect(() => { syncMarkers() }, [syncMarkers, sdkReady])
 
@@ -818,17 +835,17 @@ export default function TrackingPage() {
               {isLive ? '운행 중' : `${viewDate} 동선`}
             </span>
             <span className={`${isLive ? 'bg-red-100 text-red-600' : 'bg-purple-100 text-purple-600'} text-xs font-bold px-2 py-0.5 rounded-full`}>
-              {isLive ? locations.length : (archive?.riders.length ?? 0)}
+              {isLive ? visibleLocations.length : (archive?.riders.length ?? 0)}
             </span>
           </div>
 
           {isLive ? (
             // 실시간 목록
-            locations.length === 0 ? (
+            visibleLocations.length === 0 ? (
               <p className="px-4 py-4 text-xs text-slate-400 italic text-center">위치 전송 중인 기기 없음</p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {[...locations].sort((a, b) => nameOf(a.device_id).localeCompare(nameOf(b.device_id), 'ko')).map(l => {
+                {[...visibleLocations].sort((a, b) => nameOf(a.device_id).localeCompare(nameOf(b.device_id), 'ko')).map(l => {
                   const isActive = pathDeviceId === l.device_id
                   const unassigned = !deviceMap.has(l.device_id)
                   return (

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { GopoumClient, GopoumItem, Client } from '@/types'
+import { useBranch } from '@/lib/branch'
 
 function todayStartIso() {
   const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
@@ -202,6 +203,7 @@ function GopoumCard({
 }
 
 export default function GopoumPage() {
+  const { branch } = useBranch()
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [todayStart] = useState(todayStartIso)
@@ -246,12 +248,12 @@ export default function GopoumPage() {
     const term = (inputCode || inputName).trim()
     if (!term) { setSuggestions([]); setShowSugg(false); return }
     const timer = setTimeout(async () => {
-      const { data } = await supabase.from('clients').select('*').or(`code.ilike.%${term}%,name.ilike.%${term}%`).limit(6)
+      const { data } = await supabase.from('clients').select('*').eq('branch', branch).or(`code.ilike.%${term}%,name.ilike.%${term}%`).limit(6)
       setSuggestions(data ?? [])
       setShowSugg((data ?? []).length > 0)
     }, 180)
     return () => clearTimeout(timer)
-  }, [inputCode, inputName])
+  }, [inputCode, inputName, branch])
 
   useEffect(() => {
     function handler(e: MouseEvent) {

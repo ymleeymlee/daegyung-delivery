@@ -4,12 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 import { Client } from '@/types'
 import { supabase } from '@/lib/supabase'
 import { Group, groupByCode, groupLabel } from '@/lib/clientGroups'
+import { useBranch } from '@/lib/branch'
 
 interface Props {
   onAdd: (clientName: string, clientAddress: string, clientId?: string) => void
 }
 
 export default function QuickAddBar({ onAdd }: Props) {
+  const { branch } = useBranch()
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
@@ -29,7 +31,7 @@ export default function QuickAddBar({ onAdd }: Props) {
     const codeDigits = searchCol === 'code' ? q.replace(/\D/g, '').replace(/^0+/, '') : ''
     if (searchCol === 'code' && !codeDigits) { setResults([]); setOpen(false); return }
     const timer = setTimeout(async () => {
-      const base = supabase.from('clients').select('*')
+      const base = supabase.from('clients').select('*').eq('branch', branch)
       const query = searchCol === 'code'
         ? base.filter('code', 'match', `^0*${codeDigits}`).order('code', { ascending: true })
         : base.ilike(searchCol, `%${q}%`)
@@ -38,7 +40,7 @@ export default function QuickAddBar({ onAdd }: Props) {
       setOpen(true)
     }, 180)
     return () => clearTimeout(timer)
-  }, [term, searchCol])
+  }, [term, searchCol, branch])
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {

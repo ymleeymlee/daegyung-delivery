@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import './globals.css'
 import Nav from '@/components/Nav'
+import { BranchProvider } from '@/lib/branch'
 
 export const metadata: Metadata = {
   title: '대경배송시스템',
@@ -17,8 +19,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-screen bg-slate-100">
-        <Nav />
-        {children}
+        <Suspense fallback={null}>
+          <BranchProvider>
+            <Nav />
+            {children}
+          </BranchProvider>
+        </Suspense>
       </body>
     </html>
   )

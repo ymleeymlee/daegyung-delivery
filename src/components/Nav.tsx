@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { AppState, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow } from '@/lib/appState'
+import { useBranch } from '@/lib/branch'
 
 const sheetUrl = process.env.NEXT_PUBLIC_SHEET_URL ?? 'https://drive.google.com/drive/folders/1FFu4_whlCpr1YcOCaifBlwGi8h2S-z5K'
 
@@ -14,6 +15,7 @@ function fmtKstDate(d: Date) {
 }
 
 export default function Nav() {
+  const { branch, setBranch, branches } = useBranch()
   const [menuOpen, setMenuOpen] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [updateDone, setUpdateDone] = useState(false)
@@ -83,6 +85,18 @@ export default function Nav() {
   return (
     <nav className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6 shadow-sm">
       <span className="text-lg font-bold text-slate-800">대경배송시스템</span>
+      {branches.length > 0 && (
+        <select
+          value={branch}
+          onChange={e => setBranch(e.target.value)}
+          className="text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          title="지점 선택"
+        >
+          {branches.map(b => (
+            <option key={b.code} value={b.code}>{b.label}</option>
+          ))}
+        </select>
+      )}
       <Link href="/" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">배송 현황</Link>
       <Link href="/gopoum" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">고품 현황</Link>
 
@@ -105,6 +119,7 @@ export default function Nav() {
             <Link href="/tracking" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">실시간 위치</Link>
             <Link href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">거래처 관리</Link>
             <Link href="/riders" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">라이더 관리</Link>
+            <Link href="/branches" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">지점 관리</Link>
           </div>
         )}
       </div>

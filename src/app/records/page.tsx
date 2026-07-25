@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { Delivery, Rider } from '@/types'
+import { useBranch } from '@/lib/branch'
 import {
-  LOCATIONS,
   LocationReport,
   buildLocationReport,
   reportToWorkbook,
@@ -23,10 +23,12 @@ function todayKst() {
 }
 
 export default function RecordsPage() {
+  const { branch, branches } = useBranch()
   const [date, setDate] = useState(todayKst())
   const [reports, setReports] = useState<LocationReport[]>([])
   const [loading, setLoading] = useState(false)
 
+  // 현재 선택된 지점의 내역만 조회 (다른 화면과 일관되게 지점별 완전분리)
   const fetchReports = useCallback(async (dateStr: string) => {
     setLoading(true)
     const startMs = new Date(`${dateStr}T00:00:00+09:00`).getTime()
@@ -34,10 +36,11 @@ export default function RecordsPage() {
     const endIso = new Date(startMs + 24 * 60 * 60 * 1000).toISOString()
 
     const [{ data: riderRows }, { data: deliveryRows }] = await Promise.all([
-      supabase.from('riders').select('*').eq('is_active', true).order('created_at'),
+      supabase.from('riders').select('*').eq('is_active', true).eq('location', branch).order('created_at'),
       supabase
         .from('deliveries')
         .select('*')
+        .eq('branch', branch)
         .not('rider_id', 'is', null)
         .in('status', ['assigned', 'completed'])
         .gte('created_at', startIso)
@@ -47,16 +50,11 @@ export default function RecordsPage() {
     const riders = (riderRows ?? []) as Rider[]
     const deliveries = (deliveryRows ?? []) as Delivery[]
     const stamp = dateStr.replace(/-/g, '_')
+    const label = branches.find(b => b.code === branch)?.label ?? branch
 
-    const result: LocationReport[] = LOCATIONS.map(location => {
-      const locRiders = riders.filter(r => (r.location ?? 'gn') === location)
-      const riderIds = new Set(locRiders.map(r => r.id))
-      const locDeliveries = deliveries.filter(d => d.rider_id && riderIds.has(d.rider_id))
-      return buildLocationReport(location, stamp, locRiders, locDeliveries)
-    })
-    setReports(result)
+    setReports([buildLocationReport(branch, stamp, riders, deliveries, label)])
     setLoading(false)
-  }, [])
+  }, [branch, branches])
 
   useEffect(() => { fetchReports(date) }, [date, fetchReports])
 

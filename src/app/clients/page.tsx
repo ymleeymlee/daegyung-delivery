@@ -4,9 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Client } from '@/types'
 import { geocodeAddress } from '@/lib/kakaoGeocode'
+import { useBranch } from '@/lib/branch'
 import * as XLSX from 'xlsx'
 
 export default function ClientsPage() {
+  const { branch } = useBranch()
   const [clients, setClients] = useState<Client[]>([])
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -29,6 +31,7 @@ export default function ClientsPage() {
     const { data } = await supabase
       .from('clients')
       .select('*')
+      .eq('branch', branch)
     // 업체번호 순 정렬. 업체번호가 있으면 숫자(없으면 문자) 오름차순 우선,
     // 업체번호가 없는 거래처는 뒤로 보내고 상호명 순으로 정렬
     const sorted = (data ?? []).slice().sort((a, b) => {
@@ -46,7 +49,7 @@ export default function ClientsPage() {
       return a.name.localeCompare(b.name, 'ko')
     })
     setClients(sorted)
-  }, [])
+  }, [branch])
 
   useEffect(() => { fetchClients() }, [fetchClients])
 
@@ -62,7 +65,7 @@ export default function ClientsPage() {
     const geo = address ? await geocodeAddress(address).catch(() => null) : null
     await supabase.from('clients').insert({
       code: newCode.trim(), name: newName.trim(), address,
-      lat: geo?.lat ?? null, lng: geo?.lng ?? null,
+      lat: geo?.lat ?? null, lng: geo?.lng ?? null, branch,
     })
     setNewCode('')
     setNewName('')
@@ -144,12 +147,12 @@ export default function ClientsPage() {
           const realName = pick(r, '실거래처명')
           const address = pick(r, '대표주소')
           // 상호명은 실거래처명 사용, 없으면 거래처명
-          return { code, name: realName || clientName, address }
+          return { code, name: realName || clientName, address, branch }
         })
         .filter(r => r.name)
 
       // 파일 내 중복(업체번호+상호명 동일)은 하나로 합치기 — 주소 있는 행 우선
-      const byKey = new Map<string, { code: string; name: string; address: string }>()
+      const byKey = new Map<string, { code: string; name: string; address: string; branch: string }>()
       for (const r of parsed) {
         const key = `${r.code}|${r.name}`
         const prev = byKey.get(key)
@@ -165,7 +168,7 @@ export default function ClientsPage() {
       if (uploadModeRef.current === 'replace') {
         // 기존 데이터 전부 삭제 후 새로 등록
         setUploadStatus('기존 데이터 삭제 중...')
-        const { error: delError } = await supabase.from('clients').delete().not('id', 'is', null)
+        const { error: delError } = await supabase.from('clients').delete().eq('branch', branch)
         if (delError) throw delError
       } else {
         // 이미 등록된 거래처는 건너뛰기 (업체번호가 위탁/법인 등으로 공유되므로 업체번호+상호명 조합으로 판정)

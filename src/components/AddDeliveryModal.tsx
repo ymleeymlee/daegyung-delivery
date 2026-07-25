@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Client } from '@/types'
 import { supabase } from '@/lib/supabase'
+import { useBranch } from '@/lib/branch'
 
 interface Props {
   onClose: () => void
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function AddDeliveryModal({ onClose, onAdd }: Props) {
+  const { branch } = useBranch()
   const [query, setQuery] = useState('')
   const [address, setAddress] = useState('')
   const [results, setResults] = useState<Client[]>([])
@@ -26,13 +28,14 @@ export default function AddDeliveryModal({ onClose, onAdd }: Props) {
       const { data } = await supabase
         .from('clients')
         .select('*')
+        .eq('branch', branch)
         .ilike('name', `%${query}%`)
         .limit(8)
       setResults(data ?? [])
       setLoading(false)
     }, 200)
     return () => clearTimeout(timer)
-  }, [query, selectedClient])
+  }, [query, selectedClient, branch])
 
   function selectClient(client: Client) {
     setSelectedClient(client)

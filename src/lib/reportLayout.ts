@@ -24,7 +24,7 @@ export interface RiderColumn {
 }
 
 export interface LocationReport {
-  location: LocationCode
+  location: string   // 지점 코드 (branches.code). 과거 'gn'/'as' 하드코딩에서 임의 지점 코드로 확장.
   label: string
   dateStr: string // YYYY_MM_DD
   columns: RiderColumn[]
@@ -42,11 +42,13 @@ export function kstTime(iso: string | null) {
 }
 
 // 라이더 + 배송을 지점 리포트 구조로 변환
+// label 미지정 시 과거 하드코딩 LOCATION_LABEL('gn'/'as')에서 조회, 없으면 코드 그대로 표시(임의 지점 대응)
 export function buildLocationReport(
-  location: LocationCode,
+  location: string,
   dateStr: string,
   riders: Rider[],
-  deliveries: Delivery[]
+  deliveries: Delivery[],
+  label?: string
 ): LocationReport {
   const byRider = new Map<string, Delivery[]>()
   for (const r of riders) byRider.set(r.id, [])
@@ -71,7 +73,7 @@ export function buildLocationReport(
   })
 
   const grandTotal = columns.reduce((sum, c) => sum + c.count, 0)
-  return { location, label: LOCATION_LABEL[location], dateStr, columns, grandTotal }
+  return { location, label: label ?? LOCATION_LABEL[location as LocationCode] ?? location, dateStr, columns, grandTotal }
 }
 
 // 리포트 구조를 2D 배열(grid)로 변환 — XLSX·Google Sheets 공용

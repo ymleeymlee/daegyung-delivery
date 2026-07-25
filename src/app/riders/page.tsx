@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Rider, RiderDevice } from '@/types'
-
-const LOC_LABEL: Record<string, string> = { gn: '강남', as: '안산' }
+import { useBranch } from '@/lib/branch'
 
 // 숫자만 뽑아 자동 하이픈: 01087000078 → 010-8700-0078
 function formatPhone(v: string) {
@@ -27,26 +26,32 @@ function fmtAgo(iso: string | null): string {
 interface LiveDevice { device_id: string; updated_at: string }
 
 export default function RidersPage() {
+  const { branch, branches } = useBranch()
+  const branchLabel = useMemo(() => new Map(branches.map(b => [b.code, b.label])), [branches])
   const [riders, setRiders] = useState<Rider[]>([])
   const [devices, setDevices] = useState<RiderDevice[]>([])
   const [liveDevices, setLiveDevices] = useState<LiveDevice[]>([])
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [location, setLocation] = useState<'gn' | 'as'>('gn')
+  const [location, setLocation] = useState<string>(branch)
   const [isQuick, setIsQuick] = useState(false)
   const [adding, setAdding] = useState(false)
 
+  // 현재 지점 탭이 바뀌면 추가 폼의 기본 지점도 그 지점으로 프리셋
+  useEffect(() => { setLocation(branch) }, [branch])
+
   const fetchAll = useCallback(async () => {
+    // 현재 선택된 지점의 라이더만 (다른 화면과 일관되게 지점별 완전분리)
     const [{ data: r }, { data: d }, { data: loc }] = await Promise.all([
-      supabase.from('riders').select('*').eq('is_active', true),
+      supabase.from('riders').select('*').eq('is_active', true).eq('location', branch),
       supabase.from('rider_devices').select('*'),
       supabase.from('rider_locations').select('device_id,updated_at'),
     ])
     setRiders((r ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, 'ko')))
     setDevices((d ?? []) as RiderDevice[])
     setLiveDevices((loc ?? []) as LiveDevice[])
-  }, [])
+  }, [branch])
 
   useEffect(() => { fetchAll().finally(() => setLoading(false)) }, [fetchAll])
 
@@ -85,7 +90,7 @@ export default function RidersPage() {
     })
     setAdding(false)
     if (!error) {
-      setName(''); setPhone(''); setLocation('gn'); setIsQuick(false)
+      setName(''); setPhone(''); setLocation(branch); setIsQuick(false)
       fetchAll()
     } else {
       alert('추가 실패: ' + error.message)
@@ -141,9 +146,10 @@ export default function RidersPage() {
         </div>
         <div>
           <label className="text-xs text-slate-500 block mb-1">지점</label>
-          <select value={location} onChange={e => setLocation(e.target.value as 'gn' | 'as')} className={inputCls}>
-            <option value="gn">강남</option>
-            <option value="as">안산</option>
+          <select value={location} onChange={e => setLocation(e.target.value)} className={inputCls}>
+            {branches.map(b => (
+              <option key={b.code} value={b.code}>{b.label}</option>
+            ))}
           </select>
         </div>
         <label className="flex items-center gap-1.5 text-sm text-slate-600 pb-1.5">
@@ -192,7 +198,7 @@ export default function RidersPage() {
                     className="w-36 border border-transparent hover:border-slate-200 focus:border-blue-400 rounded-md px-2 py-1 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300"
                   />
                 </td>
-                <td className="px-4 py-3 text-slate-600">{LOC_LABEL[r.location ?? 'gn']}</td>
+                <td className="px-4 py-3 text-slate-600">{branchLabel.get(r.location) ?? r.location}</td>
                 <td className="px-4 py-3">
                   {mapped ? (
                     <div className="flex items-center gap-2">

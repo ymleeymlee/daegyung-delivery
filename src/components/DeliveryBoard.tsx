@@ -7,6 +7,7 @@ import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 import RiderAddModal from './RiderAddModal'
 import { AppState, fetchAppState, isClosedNow } from '@/lib/appState'
+import { useBranch } from '@/lib/branch'
 
 function RiderSection({
   rider, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
@@ -74,6 +75,7 @@ function RiderSection({
 }
 
 export default function DeliveryBoard() {
+  const { branch } = useBranch()
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
   const [riders, setRiders] = useState<Rider[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -89,9 +91,10 @@ export default function DeliveryBoard() {
   const fetchAll = useCallback(async () => {
     const [{ data: d }, { data: r }, { data: c }] = await Promise.all([
       // completed 포함 — 완료 카드도 보드에 '완료'로 계속 표시(마감 때까지 유지·기록). waiting/assigned/completed 전부.
-      supabase.from('deliveries').select('*').order('sort_order'),
-      supabase.from('riders').select('*').eq('is_active', true).order('created_at'),
-      supabase.from('clients').select('id, code, lat, lng'),
+      // 대기열 포함 전부 지점별 완전분리이므로 branch 필터만으로 충분(rider 기준 추론 불필요).
+      supabase.from('deliveries').select('*').eq('branch', branch).order('sort_order'),
+      supabase.from('riders').select('*').eq('is_active', true).eq('location', branch).order('created_at'),
+      supabase.from('clients').select('id, code, lat, lng').eq('branch', branch),
     ])
     setDeliveries(d ?? [])
     setRiders(r ?? [])
@@ -104,7 +107,7 @@ export default function DeliveryBoard() {
     }
     setCodeById(map)
     setCoordById(coords)
-  }, [])
+  }, [branch])
 
   const fetchGopoum = useCallback(async () => {
     const [{ data: gClients }, { data: gItems }] = await Promise.all([
@@ -182,7 +185,7 @@ export default function DeliveryBoard() {
       id: crypto.randomUUID(), client_id: clientId ?? null, client_name: clientName,
       client_address: clientAddress, status: 'waiting', created_at: now,
       assigned_at: null, rider_id: null, sort_order: maxOrder + 1,
-      dest_lat: coord?.lat ?? null, dest_lng: coord?.lng ?? null,
+      dest_lat: coord?.lat ?? null, dest_lng: coord?.lng ?? null, branch,
     }
     setDeliveries(prev => [...prev, row])
     supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })
@@ -199,7 +202,7 @@ export default function DeliveryBoard() {
       id: crypto.randomUUID(), client_id: clientId ?? null, client_name: clientName,
       client_address: clientAddress, status: 'assigned', created_at: now,
       assigned_at: now, rider_id: riderId, sort_order: maxOrder + 1,
-      dest_lat: coord?.lat ?? null, dest_lng: coord?.lng ?? null,
+      dest_lat: coord?.lat ?? null, dest_lng: coord?.lng ?? null, branch,
     }
     setDeliveries(prev => [...prev, row])
     supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })

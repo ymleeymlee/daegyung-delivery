@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Client } from '@/types'
 import { supabase } from '@/lib/supabase'
 import { groupByCode, groupLabel } from '@/lib/clientGroups'
+import { useBranch } from '@/lib/branch'
 
 interface Props {
   riderName: string
@@ -14,6 +15,7 @@ interface Props {
 
 // 이름블럭 아래 + 버튼용: 업체번호만 검색 → 선택 시 해당 라이더에 바로 배정
 export default function RiderAddModal({ riderName, onPick, onClose }: Props) {
+  const { branch } = useBranch()
   const [code, setCode] = useState('')
   const [results, setResults] = useState<Client[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
@@ -29,13 +31,14 @@ export default function RiderAddModal({ riderName, onPick, onClose }: Props) {
       const { data } = await supabase
         .from('clients')
         .select('*')
+        .eq('branch', branch)
         .filter('code', 'match', `^0*${digits}`)
         .order('code', { ascending: true })
         .limit(50)
       setResults(data ?? [])
     }, 180)
     return () => clearTimeout(timer)
-  }, [code])
+  }, [code, branch])
 
   const groups = groupByCode(results)
 

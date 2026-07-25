@@ -1,3 +1,11 @@
+// 지점 (branches 테이블). 하드코딩 enum 대신 DB에서 동적으로 로드.
+export interface Branch {
+  code: string
+  label: string
+  sort_order: number
+  created_at: string
+}
+
 export interface Client {
   id: string
   code: string      // 업체번호
@@ -6,6 +14,7 @@ export interface Client {
   created_at: string
   lat?: number | null   // 주소 지오코딩 좌표 (등록 시 웹에서 카카오로 1회 변환)
   lng?: number | null
+  branch: string     // 지점 코드 (branches.code)
 }
 
 export interface Rider {
@@ -14,7 +23,7 @@ export interface Rider {
   phone: string | null   // 연락처
   is_active: boolean
   is_quick: boolean   // true: 안산퀵·파워퀵 전용 구역
-  location: 'gn' | 'as'   // 지점: gn=강남, as=안산
+  location: string   // 지점 코드 (branches.code)
   created_at: string
 }
 
@@ -30,6 +39,7 @@ export interface Delivery {
   assigned_at: string | null
   rider_id: string | null
   sort_order: number
+  branch: string     // 지점 코드 (branches.code)
   // 배송지 좌표 (업체 좌표 복사 · 앱 자동 도착감지용)
   dest_lat?: number | null
   dest_lng?: number | null
