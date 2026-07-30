@@ -6,7 +6,7 @@ import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing, Branch } 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// 마감은 크론 전용 (매일 23:59 KST). URL 직접 접근 차단.
+// 마감은 크론 전용 (매일 22:00 KST = 13:00 UTC). URL 직접 접근 차단.
 // CRON_SECRET 설정 시 Vercel 크론이 보내는 Authorization: Bearer 헤더로 인증(권장).
 // 미설정 시엔 Vercel 크론 전용 헤더(x-vercel-cron)로 최소 방어(외부 요청엔 없음).
 function fromCron(req: NextRequest): boolean {
@@ -62,7 +62,12 @@ export async function GET(req: NextRequest) {
     const offset = parseInt(m.date_offset || '0') || 0
     const effNow = new Date(Date.now() + offset * 86400000)
     const nowIso = effNow.toISOString()
-    const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(effNow)
+    // 마감 대상 "영업일"은 실행 시각에서 6시간을 뺀 기준으로 판정한다.
+    // Vercel Hobby 크론은 예약 시각 대비 최대 1시간 지연될 수 있어, 자정 직전에 예약하면
+    // 00:xx 에 실행되어 날짜가 하루 밀렸다(→ 다음날 탭에 기록 + closed_until 이 하루 더 미뤄져
+    // 그 다음날 영업일 내내 마감 상태로 잠김). 06:00 이전 실행은 전날 마감으로 귀속시켜 방지.
+    const bizAnchor = new Date(effNow.getTime() - 6 * 3600 * 1000)
+    const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(bizAnchor)
     const [y, mo, d] = kstDate.split('-').map(Number)
     const tomorrow = new Date(Date.UTC(y, mo - 1, d + 1)).toISOString().slice(0, 10)
     const closedUntil = new Date(`${tomorrow}T06:00:00+09:00`).toISOString()
