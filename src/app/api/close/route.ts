@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
+import { fromCron } from '@/lib/cronAuth'
 import { buildGridsByBranch, writeSnapshot } from '@/lib/sheetSnapshot'
 import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing, Branch } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// 마감은 크론 전용 (매일 22:00 KST = 13:00 UTC). URL 직접 접근 차단.
-// CRON_SECRET 설정 시 Vercel 크론이 보내는 Authorization: Bearer 헤더로 인증(권장).
-// 미설정 시엔 Vercel 크론 전용 헤더(x-vercel-cron)로 최소 방어(외부 요청엔 없음).
-function fromCron(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET
-  if (secret) return req.headers.get('authorization') === `Bearer ${secret}`
-  return req.headers.get('x-vercel-cron') != null
-}
+// 마감은 크론 전용 (매일 22:00 KST = 13:00 UTC). URL 직접 접근 차단 — fromCron 참조.
 
 // location_pings 전량 조회 (Supabase 기본 1000줄 한도 우회). 라이더 8h × 5s = 5,760/명.
 async function fetchAllPings(): Promise<LocationPing[]> {

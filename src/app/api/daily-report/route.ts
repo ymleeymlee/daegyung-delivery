@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { generateDailyReports, dateStampUnderscore } from '@/lib/dailyReport'
+import { fromCron } from '@/lib/cronAuth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// Vercel Cron 인증 확인
-function authorized(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return true // 시크릿 미설정 시 통과 (설정 권장)
-  return req.headers.get('authorization') === `Bearer ${secret}`
-}
-
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) {
+  if (!fromCron(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 

@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
+import { fromCron } from '@/lib/cronAuth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-function authorized(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return true
-  return req.headers.get('authorization') === `Bearer ${secret}`
-}
-
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) {
+  if (!fromCron(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
