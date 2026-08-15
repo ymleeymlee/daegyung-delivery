@@ -213,11 +213,14 @@ export default function TrackingPage() {
       if (!active) return
       const m: Record<string, string> = {}
       for (const r of (cfg ?? []) as { key: string; value: string }[]) m[r.key] = r.value
-      setWarehouse({
-        lat: parseFloat(m[latKey] || '37.4787'),
-        lng: parseFloat(m[lngKey] || '127.0664'),
-        radius: parseFloat(m[radiusKey] || '100'),
-      })
+      const lat = parseFloat(m[latKey] ?? '')
+      const lng = parseFloat(m[lngKey] ?? '')
+      const radius = parseFloat(m[radiusKey] ?? '')
+      if (isNaN(lat) || isNaN(lng) || isNaN(radius)) {
+        setWarehouse(null)
+      } else {
+        setWarehouse({ lat, lng, radius })
+      }
       setLocations((locs ?? []) as RiderLocation[])
     })()
 
@@ -286,35 +289,41 @@ export default function TrackingPage() {
     return () => { active = false; supabase.removeChannel(ch) }
   }, [])
 
-  // SDK + 창고 준비되면 지도 1회 생성
+  // SDK 준비되면 지도 1회 생성. warehouse null 이면 서울 시청 기준으로 열고 창고 오버레이 스킵.
   useEffect(() => {
-    if (!sdkReady || !warehouse || !containerRef.current || mapRef.current) return
+    if (!sdkReady || !containerRef.current || mapRef.current) return
+    // warehouse 아직 로드 중(undefined)과 없음(null)을 구분: 첫 useEffect 실행 후 값이 결정됨.
+    // warehouse가 undefined가 아닌 null/Warehouse 일 때 지도 생성.
+    // 여기서는 별도 상태 없이 SDK 준비되면 바로 생성(warehouse 조회와 별도 의존성으로 분리).
     try {
       const kakao = window.kakao
-      const center = new kakao.maps.LatLng(warehouse.lat, warehouse.lng)
+      const fallback = new kakao.maps.LatLng(37.5665, 126.9780) // 서울 시청
+      const center = warehouse ? new kakao.maps.LatLng(warehouse.lat, warehouse.lng) : fallback
       const map = new kakao.maps.Map(containerRef.current, { center, level: 5 })
       mapRef.current = map
       setTimeout(() => { try { map.relayout(); map.setCenter(center) } catch { /* noop */ } }, 200)
 
-      warehouseCircleRef.current = new kakao.maps.Circle({
-        center, radius: warehouse.radius,
-        strokeWeight: 2, strokeColor: '#2563eb', strokeOpacity: 0.7, strokeStyle: 'solid',
-        fillColor: '#3b82f6', fillOpacity: 0.08,
-      })
-      warehouseCircleRef.current.setMap(map)
+      if (warehouse) {
+        warehouseCircleRef.current = new kakao.maps.Circle({
+          center, radius: warehouse.radius,
+          strokeWeight: 2, strokeColor: '#2563eb', strokeOpacity: 0.7, strokeStyle: 'solid',
+          fillColor: '#3b82f6', fillOpacity: 0.08,
+        })
+        warehouseCircleRef.current.setMap(map)
 
-      warehouseLabelRef.current = new kakao.maps.CustomOverlay({
-        position: center, yAnchor: 1.4,
-        content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">본사</div>',
-      })
-      warehouseLabelRef.current.setMap(map)
+        warehouseLabelRef.current = new kakao.maps.CustomOverlay({
+          position: center, yAnchor: 1.4,
+          content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">본사</div>',
+        })
+        warehouseLabelRef.current.setMap(map)
+      }
 
       setStatus('ready'); setStatusMsg('')
     } catch (e) {
       setStatus('error'); setStatusMsg('지도 생성 실패: ' + String(e))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sdkReady, warehouse])
+  }, [sdkReady])
 
   // 지도 위의 모든 라이더 오버레이(폴리라인·시작·5분 마크) 제거
   const clearRiderOverlays = useCallback(() => {
@@ -745,6 +754,12 @@ export default function TrackingPage() {
         {status !== 'ready' && statusMsg && (
           <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl shadow text-sm ${status === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-white/95 border border-slate-200 text-slate-600'}`}>
             {status === 'error' ? '⚠ ' : ''}{statusMsg}
+          </div>
+        )}
+        {/* 창고 좌표 미설정 배너 */}
+        {status === 'ready' && warehouse === null && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-xl shadow text-sm bg-amber-50 border border-amber-300 text-amber-800 whitespace-nowrap">
+            이 지점의 본사 좌표가 설정되지 않았습니다. 관리자에서 등록해주세요.
           </div>
         )}
         {/* 우상단: 날짜 + 본사 위치 버튼 */}
