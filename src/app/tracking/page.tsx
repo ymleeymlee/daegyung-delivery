@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
-import { fetchAppState, isClosedNow, type AppState } from '@/lib/appState'
+import { fetchAppState, isClosedNow, isBranchClosed, kstNowHm, type AppState } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
 import type { RiderLocation, DeliveryTrip } from '@/types'
 import type { ArchiveResponse } from '@/app/api/location-archive/route'
@@ -80,7 +80,7 @@ function fmtAgo(iso: string) {
 }
 
 export default function TrackingPage() {
-  const { branch } = useBranch()
+  const { branch, branches } = useBranch()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<Map<string, any>>(new Map()) // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -116,6 +116,8 @@ export default function TrackingPage() {
   const [deviceBranch, setDeviceBranch] = useState<Map<string, string>>(new Map())
   // 배송 출발/완료 토스트 알림
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: 'start' | 'end' }[]>([])
+  // 본사 좌표 역지오코딩 결과 (버튼 tooltip용)
+  const [hqAddress, setHqAddress] = useState<string | null>(null)
 
   // 날짜 선택 (기본=오늘). today=실시간, 과거=아카이브
   const [viewDate, setViewDate] = useState<string>(todayKst())
@@ -127,7 +129,10 @@ export default function TrackingPage() {
 
   // 마감된 날은 오늘이라도 라이브가 아니라 아카이브(시트)에서 로드
   // (마감 시 location_pings 가 비워지므로 Supabase 라이브로는 오늘 동선이 안 보임)
-  const isLive = viewDate === todayKst() && !isClosedNow(appState)
+  const currentBranchInfo = branches.find(b => b.code === branch)
+  const isLive = viewDate === todayKst() &&
+    !isClosedNow(appState) &&
+    !isBranchClosed(kstNowHm(appState.offset), currentBranchInfo?.open_time, currentBranchInfo?.close_time)
 
   // device_id → 표시 이름. 매핑되면 라이더 이름, 아니면 "미지정 (앞8자)".
   const nameOf = useCallback((deviceId: string) =>
@@ -468,6 +473,46 @@ export default function TrackingPage() {
     if (warehouse) setRadiusInput(warehouse.radius)
   }, [warehouse?.radius])
 
+  // warehouse 변경 시 지도 center + circle/label 재배치 + 역지오코딩
+  useEffect(() => {
+    if (!sdkReady || !mapRef.current) return
+    const kakao = window.kakao
+    if (!kakao) return
+    if (!warehouse) { setHqAddress(null); return }
+    const pos = new kakao.maps.LatLng(warehouse.lat, warehouse.lng)
+    mapRef.current.setCenter(pos)
+    if (warehouseCircleRef.current) {
+      warehouseCircleRef.current.setCenter(pos)
+      warehouseCircleRef.current.setRadius(warehouse.radius)
+    } else {
+      warehouseCircleRef.current = new kakao.maps.Circle({
+        center: pos, radius: warehouse.radius,
+        strokeWeight: 2, strokeColor: '#2563eb', strokeOpacity: 0.7, strokeStyle: 'solid',
+        fillColor: '#3b82f6', fillOpacity: 0.08,
+      })
+      warehouseCircleRef.current.setMap(mapRef.current)
+    }
+    if (warehouseLabelRef.current) {
+      warehouseLabelRef.current.setPosition(pos)
+    } else {
+      warehouseLabelRef.current = new kakao.maps.CustomOverlay({
+        position: pos, yAnchor: 1.4,
+        content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">본사</div>',
+      })
+      warehouseLabelRef.current.setMap(mapRef.current)
+    }
+    // 역지오코딩
+    if (kakao.maps.services) {
+      new kakao.maps.services.Geocoder().coord2Address(warehouse.lng, warehouse.lat, (result: any, status: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        if (status === kakao.maps.services.Status.OK && result[0]) {
+          setHqAddress(result[0].road_address?.address_name ?? result[0].address?.address_name ?? null)
+        } else {
+          setHqAddress(null)
+        }
+      })
+    }
+  }, [warehouse, sdkReady])
+
   // 드래그 중: 지도 원 크기만 실시간 반영 (저장 X)
   const previewRadius = useCallback((r: number) => {
     setRadiusInput(r)
@@ -785,6 +830,18 @@ export default function TrackingPage() {
               </button>
             )}
           </div>
+          <button
+            onClick={() => {
+              if (!mapRef.current || !warehouse) return
+              mapRef.current.setCenter(new window.kakao.maps.LatLng(warehouse.lat, warehouse.lng))
+              mapRef.current.setLevel(3)
+            }}
+            disabled={!warehouse}
+            title={hqAddress ?? '본사 좌표 미설정'}
+            className="px-3 py-2 rounded-xl shadow text-sm font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            📍 본사
+          </button>
           <div className="relative">
             <button
               onClick={() => setPickMode(v => !v)}

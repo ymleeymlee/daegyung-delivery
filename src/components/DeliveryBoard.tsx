@@ -6,7 +6,7 @@ import { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 import RiderAddModal from './RiderAddModal'
-import { AppState, fetchAppState, isClosedNow } from '@/lib/appState'
+import { AppState, fetchAppState, isClosedNow, isBranchClosed, kstNowHm } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
 
 function RiderSection({
@@ -75,7 +75,7 @@ function RiderSection({
 }
 
 export default function DeliveryBoard() {
-  const { branch } = useBranch()
+  const { branch, branches } = useBranch()
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
   const [riders, setRiders] = useState<Rider[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -177,7 +177,11 @@ export default function DeliveryBoard() {
   }
 
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {
-    if (isClosedNow(appState)) { alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return }
+    const nowHm = kstNowHm(appState.offset)
+    const branchInfo = branches.find(b => b.code === branch)
+    if (isBranchClosed(nowHm, branchInfo?.open_time, branchInfo?.close_time) || isClosedNow(appState)) {
+      alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return
+    }
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order))
     const now = new Date().toISOString()
     const coord = clientId ? coordById.get(clientId) : undefined
@@ -193,7 +197,11 @@ export default function DeliveryBoard() {
 
   // 이름블럭 아래 + 버튼: 선택한 업체를 해당 라이더에 바로 배정 상태로 추가
   function handleAddToRider(riderId: string, clientName: string, clientAddress: string, clientId?: string) {
-    if (isClosedNow(appState)) { alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return }
+    const nowHm = kstNowHm(appState.offset)
+    const branchInfo = branches.find(b => b.code === branch)
+    if (isBranchClosed(nowHm, branchInfo?.open_time, branchInfo?.close_time) || isClosedNow(appState)) {
+      alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return
+    }
     // 완료 카드도 라이더 열에 남아 자리를 차지하므로 max 계산에 포함 → 항상 맨 아래로.
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed')).map(d => d.sort_order))
     const now = new Date().toISOString()

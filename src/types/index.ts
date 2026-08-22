@@ -4,6 +4,8 @@ export interface Branch {
   label: string
   sort_order: number
   created_at: string
+  open_time: string | null
+  close_time: string | null
 }
 
 export interface Client {

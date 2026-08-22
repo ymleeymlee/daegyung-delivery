@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { AppState, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow } from '@/lib/appState'
+import { AppState, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow, isBranchClosed, kstNowHm } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
 
 const sheetUrl = process.env.NEXT_PUBLIC_SHEET_URL ?? 'https://drive.google.com/drive/folders/1FFu4_whlCpr1YcOCaifBlwGi8h2S-z5K'
@@ -44,6 +44,9 @@ export default function Nav() {
   }, [])
 
   const closed = isClosedNow(state)
+  // 운영시간 기준 마감: 어느 한 지점이라도 마감이면 배지 표시
+  const nowHm = kstNowHm(state.offset)
+  const anyBranchClosed = branches.some(b => isBranchClosed(nowHm, b.open_time, b.close_time))
   const displayDate = fmtKstDate(effNow(state.offset))
   // 23:55~24:00 은 자동 마감(23:59) 준비시간 → 업데이트 비활성 (1분 타이머로 재평가됨)
   const kstHM = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(effNow(state.offset))
@@ -132,7 +135,10 @@ export default function Nav() {
         {updateDone && (
           <span className="text-sm font-semibold text-green-600 animate-pulse">✓ 시트 업데이트됨</span>
         )}
-        {closed && !updateDone && (
+        {anyBranchClosed && !updateDone && (
+          <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full" title="운영시간 외 — 앱 위치공유 종료 및 배송카드 생성 차단">마감</span>
+        )}
+        {closed && !anyBranchClosed && !updateDone && (
           <span className="text-xs font-medium text-slate-400" title="매일 23:59 자동 마감됨 (다음날 06시 해제)">🔒 자동마감됨</span>
         )}
         <span className={`text-sm font-medium ${state.offset > 0 ? 'text-purple-600' : 'text-slate-500'}`}>

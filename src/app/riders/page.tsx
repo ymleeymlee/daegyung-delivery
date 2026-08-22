@@ -82,6 +82,13 @@ export default function RidersPage() {
     if (id) assign(id, rider.id)
   }
 
+  async function removeUnassigned(deviceId: string) {
+    if (!confirm(`${deviceId} 기기를 목록에서 삭제할까요?`)) return
+    await supabase.from('rider_devices').delete().eq('device_id', deviceId).is('rider_id', null)
+    await supabase.from('rider_locations').delete().eq('device_id', deviceId).is('rider_id', null)
+    fetchAll()
+  }
+
   async function handleAdd() {
     if (!name.trim() || adding) return
     setAdding(true)
@@ -238,15 +245,25 @@ export default function RidersPage() {
           <p className="text-sm font-semibold text-amber-800 mb-2">
             미지정 기기 {unassignedDevices.length}대 — 위 목록에서 라이더에 지정하세요
           </p>
-          <ul className="flex flex-wrap gap-2">
+          <ul className="flex flex-col gap-1.5">
             {unassignedDevices.map(id => (
-              <li key={id} className="text-xs bg-white border border-amber-200 rounded-lg px-2 py-1 text-slate-600">
-                <code className="break-all">{id}</code>
-                <span className="text-slate-400 ml-1.5">{fmtAgo(lastSeen.get(id) ?? null)}</span>
+              <li key={id} className="flex items-center justify-between text-xs bg-white border border-amber-200 rounded-lg px-2 py-1 text-slate-600">
+                <span>
+                  <code className="break-all">{id}</code>
+                  <span className="text-slate-400 ml-1.5">{fmtAgo(lastSeen.get(id) ?? null)}</span>
+                </span>
+                <button
+                  onClick={() => removeUnassigned(id)}
+                  className="ml-3 text-slate-400 hover:text-red-600 hover:bg-red-50 px-1.5 py-0.5 rounded transition-colors whitespace-nowrap"
+                  title="기기 삭제"
+                >
+                  삭제
+                </button>
               </li>
             ))}
           </ul>
           <p className="text-[11px] text-amber-700 mt-2">기기 ID는 라이더 폰의 위치 전송 알림에 표시됩니다.</p>
+          <p className="text-[11px] text-amber-600 mt-0.5">삭제 후 라이더 앱이 실행 중이면 다시 나타날 수 있습니다.</p>
         </div>
       )}
     </div>
