@@ -63,6 +63,11 @@ export interface RiderDevice {
   label: string | null
   last_seen_at: string | null
   created_at: string
+  name: string | null
+  phone: string | null
+  branch: string | null
+  connected: boolean
+  last_connected_at: string | null
 }
 
 // 기기별 최신 위치 (실시간 지도용). rider_* 는 앱이 안 채우므로 웹에서 매핑으로 해석.

@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
       supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).in('status', ['assigned', 'completed']),
       supabaseServer.from('gopoum_clients').select('*').order('created_at'),
       supabaseServer.from('gopoum_items').select('*'),
-      supabaseServer.from('rider_devices').select('device_id,rider_id'),
+      supabaseServer.from('rider_devices').select('device_id,rider_id,name'),
       fetchAllPings(),
     ])
     const { data: branchRows } = await supabaseServer.from('branches').select('*').order('sort_order')
@@ -77,17 +77,16 @@ export async function GET(req: NextRequest) {
     // 위치 그리드는 "오늘" 핑만 (truncate 누락으로 이전날 핑이 남아있어도 오늘 탭 오염 방지)
     const pings = pingRows.filter(p => p.captured_at >= todayStartIso)
 
-    // 앱은 device_id 로만 핑을 기록 → 기기↔라이더 매핑으로 rider_id/rider_name 을 채워 스냅샷에 반영
+    // 앱은 device_id 로만 핑을 기록 → rider_devices.name 으로 rider_name 을 채워 스냅샷에 반영
     const riderNameById = new Map(riders.map(r => [r.id, r.name]))
     const devToRider = new Map<string, { id: string; name: string }>()
-    for (const dv of (deviceRows ?? []) as { device_id: string; rider_id: string | null }[]) {
-      if (dv.rider_id && riderNameById.has(dv.rider_id)) {
-        devToRider.set(dv.device_id, { id: dv.rider_id, name: riderNameById.get(dv.rider_id)! })
-      }
+    for (const dv of (deviceRows ?? []) as { device_id: string; rider_id: string | null; name: string | null }[]) {
+      const name = dv.name ?? (dv.rider_id && riderNameById.has(dv.rider_id) ? riderNameById.get(dv.rider_id)! : null)
+      if (name) devToRider.set(dv.device_id, { id: dv.rider_id ?? '', name })
     }
     for (const p of pings) {
       const r = p.device_id ? devToRider.get(p.device_id) : undefined
-      if (r) { p.rider_id = r.id; p.rider_name = r.name }
+      if (r) { if (r.id) p.rider_id = r.id; p.rider_name = r.name }
       else if (!p.rider_name) p.rider_name = p.device_id ? `미지정(${p.device_id.slice(0, 8)})` : '미지정'
     }
 
@@ -123,6 +122,8 @@ export async function GET(req: NextRequest) {
       }),
       // 마감 상태 저장
       supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }),
+      // 라이더 기기 전원 오프: 마감 시 connected 일괄 리셋
+      supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null }).eq('connected', true),
     ])
 
     // 3) 위치 테이블 정리. 시트가 이미 확정됐으니 실패해도 비치명 — 마감은 성공 처리하고 다음 마감에 정리.

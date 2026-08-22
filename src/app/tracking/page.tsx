@@ -146,22 +146,17 @@ export default function TrackingPage() {
   const nameOfRef = useRef(nameOf)
   useEffect(() => { nameOfRef.current = nameOf }, [nameOf])
 
-  // 기기↔라이더 매핑 로드 + 실시간 반영 (/riders 에서 지정하면 지도 이름이 바로 갱신)
+  // 기기↔라이더 매핑 로드 + 실시간 반영 (rider_devices.name/branch 직접 사용)
   useEffect(() => {
     let active = true
     const load = async () => {
-      const [{ data: devs }, { data: riders }] = await Promise.all([
-        supabase.from('rider_devices').select('device_id,rider_id'),
-        supabase.from('riders').select('id,name,location'),
-      ])
+      const { data: devs } = await supabase.from('rider_devices').select('device_id,name,branch')
       if (!active) return
-      const rn = new Map<string, string>((riders ?? []).map((r: { id: string; name: string }) => [r.id, r.name]))
-      const rb = new Map<string, string>((riders ?? []).map((r: { id: string; location: string }) => [r.id, r.location]))
       const m = new Map<string, string>()
       const b = new Map<string, string>()
-      for (const d of (devs ?? []) as { device_id: string; rider_id: string | null }[]) {
-        if (d.rider_id && rn.has(d.rider_id)) m.set(d.device_id, rn.get(d.rider_id)!)
-        if (d.rider_id && rb.has(d.rider_id) && rb.get(d.rider_id)) b.set(d.device_id, rb.get(d.rider_id)!)
+      for (const d of (devs ?? []) as { device_id: string; name: string | null; branch: string | null }[]) {
+        if (d.name) m.set(d.device_id, d.name)
+        if (d.branch) b.set(d.device_id, d.branch)
       }
       setDeviceMap(m)
       setDeviceBranch(b)

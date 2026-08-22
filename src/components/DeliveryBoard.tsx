@@ -2,18 +2,22 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Delivery, Rider, GopoumClient, GopoumItem } from '@/types'
+import { Delivery, RiderDevice, GopoumClient, GopoumItem } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 import RiderAddModal from './RiderAddModal'
 import { AppState, fetchAppState, isClosedNow, isBranchClosed, kstNowHm } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
 
+function deviceDisplayName(d: RiderDevice): string {
+  return d.name ?? `이름 미입력 (기기 ${d.device_id.slice(0, 8)})`
+}
+
 function RiderSection({
-  rider, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
+  device, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
   getGopoumData, onSetPickup, onAddToRider,
 }: {
-  rider: Rider
+  device: RiderDevice
   deliveries: Delivery[]
   selectedIds: string[]
   onRiderClick: (riderId: string, e: React.MouseEvent) => void
@@ -23,17 +27,30 @@ function RiderSection({
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
 }) {
-  const isClickable = selectedIds.length > 0
+  const isClickable = selectedIds.length > 0 && device.rider_id !== null
   const [showAdd, setShowAdd] = useState(false)
+  const displayName = deviceDisplayName(device)
+  const canAssign = device.rider_id !== null
 
   return (
     <div
-      onClick={(e) => onRiderClick(rider.id, e)}
-      className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 min-w-56 flex-shrink-0 transition-colors ${isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''}`}
+      onClick={(e) => canAssign ? onRiderClick(device.rider_id!, e) : undefined}
+      className={`rounded-2xl shadow-sm border p-4 min-w-56 flex-shrink-0 transition-colors ${
+        device.connected ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 opacity-60'
+      } ${isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''}`}
     >
-      <div className="flex items-center gap-2 mb-3">
-        <span className={`text-sm font-semibold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-700'}`}>{rider.name}</span>
-        {rider.phone && <span className="text-xs text-slate-400 font-medium">{rider.phone}</span>}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className={`text-sm font-semibold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-700'}`}>
+          {displayName}
+        </span>
+        {device.phone && <span className="text-xs text-slate-400 font-medium">{device.phone}</span>}
+        <span className="text-xs text-slate-300 font-mono">{device.device_id.slice(0, 8)}</span>
+        {!device.connected && (
+          <span className="text-[10px] font-bold bg-slate-300 text-slate-600 px-1.5 py-0.5 rounded-full leading-none">미접속</span>
+        )}
+        {!canAssign && (
+          <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full leading-none">배정불가</span>
+        )}
         <span className="ml-auto bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">{deliveries.length}</span>
       </div>
 
@@ -51,22 +68,34 @@ function RiderSection({
               onDelete={onDelete}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
-              riderName={rider.name}
+              riderName={displayName}
               onSetPickup={onSetPickup}
             />
           )
         })}
       </div>
 
-      {/* 이 라이더에 바로 추가 (업체번호 검색 팝업) */}
-      <button
-        onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
-        className="mt-2 w-full py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
-      >+ 추가</button>
-      {showAdd && (
+      <div className="flex items-center gap-2 mt-2">
+        {canAssign ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
+            className="flex-1 py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
+          >+ 추가</button>
+        ) : null}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!confirm(`기기 "${displayName}"을 삭제하시겠습니까?\n(라이더 정보는 유지됩니다)`)) return
+            supabase.from('rider_devices').delete().eq('device_id', device.device_id)
+          }}
+          className="px-2 py-1.5 rounded-xl border border-dashed border-red-200 text-red-300 hover:border-red-400 hover:text-red-500 text-sm font-medium transition-colors"
+          title="기기 삭제 (라이더 정보 유지)"
+        >✕</button>
+      </div>
+      {showAdd && canAssign && (
         <RiderAddModal
-          riderName={rider.name}
-          onPick={(name, address, clientId) => onAddToRider(rider.id, name, address, clientId)}
+          riderName={displayName}
+          onPick={(name, address, clientId) => onAddToRider(device.rider_id!, name, address, clientId)}
           onClose={() => setShowAdd(false)}
         />
       )}
@@ -77,28 +106,24 @@ function RiderSection({
 export default function DeliveryBoard() {
   const { branch, branches } = useBranch()
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
-  const [riders, setRiders] = useState<Rider[]>([])
+  const [devices, setDevices] = useState<RiderDevice[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
-  // 거래처 id → 좌표 (배송 생성 시 dest_lat/lng 로 복사 → 앱 자동 도착감지)
   const [coordById, setCoordById] = useState<Map<string, { lat: number; lng: number }>>(new Map())
   const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
   const [loading, setLoading] = useState(true)
-  const [queueOpen, setQueueOpen] = useState(false)   // 대기열 접기: 기본 숨김
+  const [queueOpen, setQueueOpen] = useState(false)
 
   const fetchAll = useCallback(async () => {
-    const [{ data: d }, { data: r }, { data: c }] = await Promise.all([
-      // completed 포함 — 완료 카드도 보드에 '완료'로 계속 표시(마감 때까지 유지·기록). waiting/assigned/completed 전부.
-      // 대기열 포함 전부 지점별 완전분리이므로 branch 필터만으로 충분(rider 기준 추론 불필요).
+    const [{ data: d }, { data: devs }, { data: c }] = await Promise.all([
       supabase.from('deliveries').select('*').eq('branch', branch).order('sort_order'),
-      supabase.from('riders').select('*').eq('is_active', true).eq('location', branch).order('created_at'),
+      supabase.from('rider_devices').select('*').eq('branch', branch).order('created_at'),
       supabase.from('clients').select('id, code, lat, lng').eq('branch', branch),
     ])
     setDeliveries(d ?? [])
-    setRiders(r ?? [])
-    // 거래처 id → 업체번호 매핑 (고품 매칭용) + 좌표 매핑 (배송 도착감지용)
+    setDevices((devs ?? []) as RiderDevice[])
     const map = new Map<string, string>()
     const coords = new Map<string, { lat: number; lng: number }>()
     for (const cl of (c ?? []) as { id: string; code: string | null; lat: number | null; lng: number | null }[]) {
@@ -116,13 +141,11 @@ export default function DeliveryBoard() {
     ])
     setGopoumClients(gClients ?? [])
     const allItems = gItems ?? []
-    // 마감 안 된 아이템만
     setGopoumItems(allItems.filter((i: { archived_at: string | null }) => !i.archived_at))
   }, [branch])
 
   const refreshAppState = useCallback(async () => { setAppState(await fetchAppState()) }, [])
 
-  // realtime 재조회 debounce: 빠른 연속 수거 시 중간 상태로 낙관적 업데이트가 덮이는 것 방지
   const gopoumTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debouncedFetchGopoum = useCallback(() => {
     if (gopoumTimer.current) clearTimeout(gopoumTimer.current)
@@ -134,6 +157,7 @@ export default function DeliveryBoard() {
     const channel = supabase
       .channel('board-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_devices' }, fetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, debouncedFetchGopoum)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, debouncedFetchGopoum)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state' }, refreshAppState)
@@ -142,7 +166,6 @@ export default function DeliveryBoard() {
   }, [fetchAll, fetchGopoum, debouncedFetchGopoum, refreshAppState])
 
   const gopoumMap = useMemo(() => {
-    // 업체번호(코드) 기준으로 고품 품목을 묶음. 코드 없으면 상호명 폴백.
     const byCode = new Map<string, GopoumItem[]>()
     const byName = new Map<string, GopoumItem[]>()
     for (const gc of gopoumClients) {
@@ -159,18 +182,14 @@ export default function DeliveryBoard() {
   }, [gopoumClients, gopoumItems])
 
   function getGopoumData(d: Delivery) {
-    // 1) 업체번호 매칭 (배송 카드의 대표 거래처 → 코드 → 고품)
     const code = d.client_id ? codeById.get(d.client_id) : undefined
     let items: GopoumItem[] | null = null
     if (code && gopoumMap.byCode.has(code)) {
       items = gopoumMap.byCode.get(code)!
     } else if (gopoumMap.byName.has(d.client_name)) {
-      // 2) 폴백: 상호명 정확 매칭
       items = gopoumMap.byName.get(d.client_name)!
     }
     if (!items) return null
-    // 카드 생성 당시 기준 스냅샷: 생성 시점에 존재하던 품목만.
-    // (이후 추가된 품목은 이 카드에 소급되지 않음)
     const createdCut = d.created_at
     const snapshot = items.filter(i => i.created_at <= createdCut)
     return { clientId: '', items: snapshot }
@@ -195,14 +214,12 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').insert(row).then(({ error }) => { if (error) fetchAll() })
   }
 
-  // 이름블럭 아래 + 버튼: 선택한 업체를 해당 라이더에 바로 배정 상태로 추가
   function handleAddToRider(riderId: string, clientName: string, clientAddress: string, clientId?: string) {
     const nowHm = kstNowHm(appState.offset)
     const branchInfo = branches.find(b => b.code === branch)
     if (isBranchClosed(nowHm, branchInfo?.open_time, branchInfo?.close_time) || isClosedNow(appState)) {
       alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return
     }
-    // 완료 카드도 라이더 열에 남아 자리를 차지하므로 max 계산에 포함 → 항상 맨 아래로.
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed')).map(d => d.sort_order))
     const now = new Date().toISOString()
     const coord = clientId ? coordById.get(clientId) : undefined
@@ -223,7 +240,6 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
-  // 이 배송(라이더)의 수거량을 myQty로 설정. collectors 배열을 갱신하고 완전수거면 picked_at 기록.
   function handleSetPickup(itemId: string, deliveryId: string, riderName: string, myQty: number) {
     const item = gopoumItems.find(i => i.id === itemId)
     if (!item) return
@@ -247,21 +263,16 @@ export default function DeliveryBoard() {
     }).then(res => { if (!res.ok) fetchGopoum() })
   }
 
-  // 카드 클릭
   function handleCardClick(clicked: Delivery) {
     if (clicked.status === 'waiting') {
-      // 대기열 카드: 다중 선택 토글
       setSelectedIds(prev =>
         prev.includes(clicked.id) ? prev.filter(id => id !== clicked.id) : [...prev, clicked.id]
       )
       return
     }
-    // 이름 블럭 안(배정된) 카드: 선택에 넣지 않음.
-    // 대기열에서 선택한 카드가 있으면, 이 카드가 속한 라이더에게 일괄 배정.
     if (selectedIds.length > 0 && clicked.rider_id) assignSelectedToRider(clicked.rider_id)
   }
 
-  // 선택된 카드들을 클릭 순서대로 한 라이더에 일괄 배정
   function assignSelectedToRider(riderId: string) {
     if (selectedIds.length === 0) return
     const targets = selectedIds
@@ -269,7 +280,6 @@ export default function DeliveryBoard() {
       .filter((d): d is Delivery => !!d && !(d.rider_id === riderId && d.status === 'assigned'))
     if (targets.length === 0) { setSelectedIds([]); return }
     const now = new Date().toISOString()
-    // 완료 카드도 자리를 차지하므로 포함 → 배정 카드가 완료 카드 사이에 끼지 않고 맨 아래로.
     const base = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed')).map(d => d.sort_order))
     const orderMap = new Map(targets.map((d, i) => [d.id, base + i + 1]))
     setDeliveries(prev => prev.map(d => orderMap.has(d.id)
@@ -282,7 +292,6 @@ export default function DeliveryBoard() {
     setSelectedIds([])
   }
 
-  // 선택된 카드들을 대기열로 일괄 복귀
   function requeueSelected() {
     if (selectedIds.length === 0) return
     const targets = selectedIds
@@ -314,12 +323,8 @@ export default function DeliveryBoard() {
   }
 
   const waitingDeliveries = deliveries.filter(d => d.status === 'waiting').sort((a, b) => a.sort_order - b.sort_order)
-  const regularRiders = riders.filter(r => !r.is_quick)
-  const quickRiders = riders.filter(r => r.is_quick)
 
-  function getRiderDeliveries(riderId: string) {
-    // 배정 + 완료 모두 표시. 쌓인 순서(sort_order = 생성 순) 그대로 —
-    // 완료돼도 위치를 아래로 밀지 않고 제자리 유지(생성 순서 보존).
+  function getDeviceDeliveries(riderId: string) {
     return deliveries
       .filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed'))
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -375,24 +380,19 @@ export default function DeliveryBoard() {
         )}
       </section>
 
-      {/* 라이더 구역 */}
+      {/* 라이더(기기) 구역 */}
       <section className="flex gap-4 overflow-x-auto pb-2 items-start">
-        {regularRiders.map(rider => (
-          <RiderSection key={rider.id} rider={rider} deliveries={getRiderDeliveries(rider.id)} {...cardProps} />
+        {devices.map(device => (
+          <RiderSection
+            key={device.device_id}
+            device={device}
+            deliveries={device.rider_id ? getDeviceDeliveries(device.rider_id) : []}
+            {...cardProps}
+          />
         ))}
-        {quickRiders.length > 0 && (
-          <>
-            <div className="self-stretch w-px bg-slate-200 flex-shrink-0 mx-1" />
-            <div className="flex flex-col gap-3 flex-shrink-0">
-              {quickRiders.map(rider => (
-                <RiderSection key={rider.id} rider={rider} deliveries={getRiderDeliveries(rider.id)} {...cardProps} />
-              ))}
-            </div>
-          </>
-        )}
-        {riders.length === 0 && (
+        {devices.length === 0 && (
           <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-            라이더가 없습니다. Supabase에서 riders 테이블에 데이터를 추가하세요.
+            접속한 기기가 없습니다. 라이더 앱에서 출근하면 여기에 표시됩니다.
           </div>
         )}
       </section>
