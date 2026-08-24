@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
       supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).in('status', ['assigned', 'completed']),
       supabaseServer.from('gopoum_clients').select('*').order('created_at'),
       supabaseServer.from('gopoum_items').select('*'),
-      supabaseServer.from('rider_devices').select('device_id,rider_id,name'),
+      supabaseServer.from('rider_devices').select('device_id,rider_id,name,branch,today_first_connected_at'),
       fetchAllPings(),
     ])
     const { data: branchRows } = await supabaseServer.from('branches').select('*').order('sort_order')
@@ -79,11 +79,19 @@ export async function GET(req: NextRequest) {
 
     // 앱은 device_id 로만 핑을 기록 → rider_devices.name 으로 rider_name 을 채워 스냅샷에 반영
     const riderNameById = new Map(riders.map(r => [r.id, r.name]))
+    const deviceList = (deviceRows ?? []) as { device_id: string; rider_id: string | null; name: string | null; branch: string | null; today_first_connected_at: string | null }[]
     const devToRider = new Map<string, { id: string; name: string }>()
-    for (const dv of (deviceRows ?? []) as { device_id: string; rider_id: string | null; name: string | null }[]) {
+    for (const dv of deviceList) {
       const name = dv.name ?? (dv.rider_id && riderNameById.has(dv.rider_id) ? riderNameById.get(dv.rider_id)! : null)
       if (name) devToRider.set(dv.device_id, { id: dv.rider_id ?? '', name })
     }
+    // 오늘 출근한 라이더만 시트에 표시 (예전 riders 잔존 방지)
+    const todayRiderIds = new Set(
+      deviceList
+        .filter(dv => dv.today_first_connected_at != null && dv.rider_id != null)
+        .map(dv => dv.rider_id!)
+    )
+    const todayRiders = riders.filter(r => todayRiderIds.has(r.id))
     for (const p of pings) {
       const r = p.device_id ? devToRider.get(p.device_id) : undefined
       if (r) { if (r.id) p.rider_id = r.id; p.rider_name = r.name }
@@ -95,7 +103,7 @@ export async function GET(req: NextRequest) {
     if (branches.length === 0) {
       return NextResponse.json({ ok: false, stage: 'sheet', error: '등록된 지점이 없습니다' }, { status: 500 })
     }
-    const perBranch = buildGridsByBranch(branches, riders, deliveries, clients, snapshotItems, pings)
+    const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, pings)
 
     // 1) 시트 먼저 기록 (배송·고품 기록 실패 시 throw). 파괴적 DB 작업 전에 확정해 데이터 소실 방지.
     //    (구버전은 삭제→truncate→after(시트) 순서라, truncate 가 던지면 DB만 비고 시트엔 안 써져 그날 데이터가 통째로 소실됐음)

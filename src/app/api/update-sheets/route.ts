@@ -35,7 +35,7 @@ export async function GET() {
       supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).in('status', ['assigned', 'completed']),
       supabaseServer.from('gopoum_clients').select('*').order('created_at'),
       supabaseServer.from('gopoum_items').select('*'),
-      supabaseServer.from('rider_devices').select('device_id,rider_id'),
+      supabaseServer.from('rider_devices').select('device_id,rider_id,today_first_connected_at'),
       supabaseServer.from('branches').select('*').order('sort_order'),
     ])
 
@@ -63,10 +63,18 @@ export async function GET() {
 
     // 앱은 device_id 로만 핑 기록 → 기기↔라이더 매핑으로 이름 채움
     const riderNameById = new Map(riders.map(r => [r.id, r.name]))
+    const deviceList = (deviceRows ?? []) as { device_id: string; rider_id: string | null; today_first_connected_at: string | null }[]
     const devToRider = new Map<string, { id: string; name: string }>()
-    for (const dv of (deviceRows ?? []) as { device_id: string; rider_id: string | null }[]) {
+    for (const dv of deviceList) {
       if (dv.rider_id && riderNameById.has(dv.rider_id)) devToRider.set(dv.device_id, { id: dv.rider_id, name: riderNameById.get(dv.rider_id)! })
     }
+    // 오늘 출근한 라이더만 시트에 표시 (예전 riders 잔존 방지)
+    const todayRiderIds = new Set(
+      deviceList
+        .filter(dv => dv.today_first_connected_at != null && dv.rider_id != null)
+        .map(dv => dv.rider_id!)
+    )
+    const todayRiders = riders.filter(r => todayRiderIds.has(r.id))
     for (const p of pings) {
       const r = p.device_id ? devToRider.get(p.device_id) : undefined
       if (r) { p.rider_id = r.id; p.rider_name = r.name }
@@ -76,7 +84,7 @@ export async function GET() {
     // 지점별로 갈라 각 지점 폴더(예: 안산/2026, 강남/2026)에 한 번에 기록.
     const branches = (branchRows ?? []) as Branch[]
     if (branches.length === 0) throw new Error('등록된 지점이 없습니다 (지점 관리에서 추가하세요)')
-    const perBranch = buildGridsByBranch(branches, riders, deliveries, clients, snapshotItems, pings)
+    const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, pings)
 
     // 한 지점이 실패해도 나머지는 기록되게 (실패 지점은 응답에 담아 알림)
     const results = await Promise.allSettled(

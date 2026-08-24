@@ -45,7 +45,7 @@ export async function generateDailyReports(now = new Date()): Promise<ReportFile
   const startIso = kstStartOfTodayIso(now)
   const stamp = dateStampUnderscore(now)
 
-  const [{ data: riderRows }, { data: deliveryRows }] = await Promise.all([
+  const [{ data: riderRows }, { data: deliveryRows }, { data: deviceRows }] = await Promise.all([
     supabaseServer.from('riders').select('*').eq('is_active', true).order('created_at'),
     supabaseServer
       .from('deliveries')
@@ -53,14 +53,23 @@ export async function generateDailyReports(now = new Date()): Promise<ReportFile
       .not('rider_id', 'is', null)
       .in('status', ['assigned', 'completed'])
       .gte('created_at', startIso),
+    supabaseServer.from('rider_devices').select('rider_id,branch,today_first_connected_at'),
   ])
 
-  const riders = (riderRows ?? []) as Rider[]
+  const allRiders = (riderRows ?? []) as Rider[]
   const deliveries = (deliveryRows ?? []) as Delivery[]
+
+  // 오늘 출근한 라이더만 (device.today_first_connected_at 있는 rider_id). 지점은 device.branch 우선.
+  const deviceList = (deviceRows ?? []) as { rider_id: string | null; branch: string | null; today_first_connected_at: string | null }[]
+  const todayDeviceByRider = new Map<string, { branch: string | null }>()
+  for (const dv of deviceList) {
+    if (dv.today_first_connected_at && dv.rider_id) todayDeviceByRider.set(dv.rider_id, { branch: dv.branch })
+  }
+  const riders = allRiders.filter(r => todayDeviceByRider.has(r.id))
 
   const files: ReportFile[] = []
   for (const location of LOCATIONS) {
-    const locRiders = riders.filter(r => (r.location ?? 'gn') === location)
+    const locRiders = riders.filter(r => (todayDeviceByRider.get(r.id)?.branch ?? r.location ?? 'gn') === location)
     const riderIds = new Set(locRiders.map(r => r.id))
     const locDeliveries = deliveries.filter(d => d.rider_id && riderIds.has(d.rider_id))
     if (locDeliveries.length === 0) continue // 배송 없는 지점은 생략
