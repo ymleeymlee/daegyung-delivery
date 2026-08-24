@@ -88,11 +88,11 @@ function RiderSection({
         )}
       </div>
       <hr className="my-2 border-slate-200" />
-      <p className="text-xs text-slate-500 text-right mb-2">총배송: {deliveries.length}</p>
-
-      <div className="min-h-20 flex flex-col gap-2">
-        {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-4">배송 없음</p>}
-        {deliveries.map(d => {
+      <p className="text-xs text-slate-500 text-right">총배송: {deliveries.length}</p>
+      {(() => {
+        const activeList = deliveries.filter(d => d.status !== 'completed')
+        const doneList = deliveries.filter(d => d.status === 'completed')
+        const renderCard = (d: Delivery) => {
           const gd = getGopoumData(d)
           return (
             <DeliveryCard
@@ -108,8 +108,29 @@ function RiderSection({
               onSetPickup={onSetPickup}
             />
           )
-        })}
-      </div>
+        }
+        return (
+          <>
+            <p className="text-xs text-slate-500 text-right mb-2">현재 배송중 : {activeList.length}</p>
+            <div className="min-h-16 flex flex-col gap-2">
+              {activeList.length === 0 && <p className="text-xs text-slate-300 italic text-center py-3">진행 중인 배송 없음</p>}
+              {activeList.map(renderCard)}
+            </div>
+            {doneList.length > 0 && (
+              <>
+                <div className="flex items-center gap-2 my-3">
+                  <div className="flex-1 border-t border-slate-200" />
+                  <span className="text-xs text-slate-400 font-medium">배송 완료</span>
+                  <div className="flex-1 border-t border-slate-200" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  {doneList.map(renderCard)}
+                </div>
+              </>
+            )}
+          </>
+        )
+      })()}
 
       {canAssign && (
         <div className="mt-2">
