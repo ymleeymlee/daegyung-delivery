@@ -22,6 +22,17 @@ function fmtKstHm(iso: string | null): string | null {
   } catch { return null }
 }
 
+function fmtPhone(raw: string | null): string {
+  if (!raw) return '-'
+  const d = raw.replace(/\D/g, '')
+  if (d.length === 11) return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`
+  if (d.length === 10) {
+    if (d.startsWith('02')) return `${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}`
+    return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`
+  }
+  return raw
+}
+
 function RiderSection({
   device, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
   getGopoumData, onSetPickup, onAddToRider,
@@ -48,15 +59,11 @@ function RiderSection({
         device.connected ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 opacity-60'
       } ${isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''}`}
     >
-      <div className="flex items-center gap-2 mb-1 flex-wrap">
-        <span className={`text-sm font-semibold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-700'}`}>
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className={`text-lg font-bold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-800'} truncate`}>
           {displayName}
         </span>
-        {device.phone && <span className="text-xs text-slate-400 font-medium">{device.phone}</span>}
-        <span className="text-xs text-slate-300 font-mono">{device.device_id.slice(0, 8)}</span>
-        {!canAssign && (
-          <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full leading-none">배정불가</span>
-        )}
+        <span className="text-xs text-slate-300 font-mono ml-auto">{device.device_id.slice(0, 8)}</span>
         <button
           onClick={async (e) => {
             e.stopPropagation()
@@ -64,19 +71,24 @@ function RiderSection({
             const { error } = await supabase.from('rider_devices').delete().eq('device_id', device.device_id)
             if (error) alert(`삭제 실패: ${error.message}`)
           }}
-          className="ml-auto text-xs font-bold text-red-300 hover:text-red-500 leading-none px-1 py-0.5 rounded transition-colors"
+          className="text-xs font-bold text-red-300 hover:text-red-500 leading-none px-1 py-0.5 rounded transition-colors"
           title="기기 삭제 (라이더 정보 유지)"
         >✕</button>
       </div>
-      <div className="flex items-center gap-2 mb-1">
+      <p className="text-xs text-slate-500">전화번호: {fmtPhone(device.phone)}</p>
+      <div className="flex items-center gap-2 mt-0.5">
         {device.today_first_connected_at && (
           <span className="text-xs text-slate-500">출근시간 : {fmtKstHm(device.today_first_connected_at)}</span>
         )}
         {!device.connected && (
           <span className="text-[10px] font-bold bg-slate-300 text-slate-600 px-1.5 py-0.5 rounded-full leading-none">미접속</span>
         )}
+        {!canAssign && (
+          <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full leading-none">배정불가</span>
+        )}
       </div>
-      <p className="text-xs text-slate-500 text-center mb-3">총 배송 갯수 : {deliveries.length}</p>
+      <hr className="my-2 border-slate-200" />
+      <p className="text-xs text-slate-500 text-right mb-2">총배송: {deliveries.length}</p>
 
       <div className="min-h-20 flex flex-col gap-2">
         {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-4">배송 없음</p>}
