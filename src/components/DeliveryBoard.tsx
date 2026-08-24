@@ -52,10 +52,11 @@ function RiderSection({
           <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full leading-none">배정불가</span>
         )}
         <button
-          onClick={(e) => {
+          onClick={async (e) => {
             e.stopPropagation()
             if (!confirm(`기기 "${displayName}"을 삭제하시겠습니까?\n(라이더 정보는 유지됩니다)`)) return
-            supabase.from('rider_devices').delete().eq('device_id', device.device_id)
+            const { error } = await supabase.from('rider_devices').delete().eq('device_id', device.device_id)
+            if (error) alert(`삭제 실패: ${error.message}`)
           }}
           className="ml-auto text-xs font-bold text-red-300 hover:text-red-500 leading-none px-1 py-0.5 rounded transition-colors"
           title="기기 삭제 (라이더 정보 유지)"
