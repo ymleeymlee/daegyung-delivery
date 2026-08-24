@@ -13,6 +13,15 @@ function deviceDisplayName(d: RiderDevice): string {
   return d.name ?? `이름 미입력 (기기 ${d.device_id.slice(0, 8)})`
 }
 
+function fmtKstHm(iso: string | null): string | null {
+  if (!iso) return null
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date(iso))
+  } catch { return null }
+}
+
 function RiderSection({
   device, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
   getGopoumData, onSetPickup, onAddToRider,
@@ -62,6 +71,9 @@ function RiderSection({
           title="기기 삭제 (라이더 정보 유지)"
         >✕</button>
       </div>
+      {device.today_first_connected_at && (
+        <p className="text-xs text-slate-500 mb-1">출근시간 : {fmtKstHm(device.today_first_connected_at)}</p>
+      )}
       <p className="text-xs text-slate-500 text-center mb-3">총 배송 갯수 : {deliveries.length}</p>
 
       <div className="min-h-20 flex flex-col gap-2">

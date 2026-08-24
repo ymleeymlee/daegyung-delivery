@@ -122,8 +122,8 @@ export async function GET(req: NextRequest) {
       }),
       // 마감 상태 저장
       supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }),
-      // 라이더 기기 전원 오프: 마감 시 connected 일괄 리셋
-      supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null }).eq('connected', true),
+      // 라이더 기기 전원 오프: 마감 시 connected + 출근시간 일괄 리셋 (다음날 첫 접속 시 새로 잡힘)
+      supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null, today_first_connected_at: null }).eq('connected', true),
     ])
 
     // 3) 위치 테이블 정리. 시트가 이미 확정됐으니 실패해도 비치명 — 마감은 성공 처리하고 다음 마감에 정리.
