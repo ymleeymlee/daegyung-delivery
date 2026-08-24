@@ -39,7 +39,7 @@ function RiderSection({
         device.connected ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 opacity-60'
       } ${isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''}`}
     >
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
         <span className={`text-sm font-semibold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-700'}`}>
           {displayName}
         </span>
@@ -51,8 +51,17 @@ function RiderSection({
         {!canAssign && (
           <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full leading-none">배정불가</span>
         )}
-        <span className="ml-auto bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">{deliveries.length}</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!confirm(`기기 "${displayName}"을 삭제하시겠습니까?\n(라이더 정보는 유지됩니다)`)) return
+            supabase.from('rider_devices').delete().eq('device_id', device.device_id)
+          }}
+          className="ml-auto text-xs font-bold text-red-300 hover:text-red-500 leading-none px-1 py-0.5 rounded transition-colors"
+          title="기기 삭제 (라이더 정보 유지)"
+        >✕</button>
       </div>
+      <p className="text-xs text-slate-500 text-center mb-3">총 배송 갯수 : {deliveries.length}</p>
 
       <div className="min-h-20 flex flex-col gap-2">
         {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-4">배송 없음</p>}
@@ -75,23 +84,14 @@ function RiderSection({
         })}
       </div>
 
-      <div className="flex items-center gap-2 mt-2">
-        {canAssign ? (
+      {canAssign && (
+        <div className="mt-2">
           <button
             onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
-            className="flex-1 py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
+            className="w-full py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
           >+ 추가</button>
-        ) : null}
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            if (!confirm(`기기 "${displayName}"을 삭제하시겠습니까?\n(라이더 정보는 유지됩니다)`)) return
-            supabase.from('rider_devices').delete().eq('device_id', device.device_id)
-          }}
-          className="px-2 py-1.5 rounded-xl border border-dashed border-red-200 text-red-300 hover:border-red-400 hover:text-red-500 text-sm font-medium transition-colors"
-          title="기기 삭제 (라이더 정보 유지)"
-        >✕</button>
-      </div>
+        </div>
+      )}
       {showAdd && canAssign && (
         <RiderAddModal
           riderName={displayName}
