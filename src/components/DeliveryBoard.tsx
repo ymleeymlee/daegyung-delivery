@@ -54,9 +54,6 @@ function RiderSection({
         </span>
         {device.phone && <span className="text-xs text-slate-400 font-medium">{device.phone}</span>}
         <span className="text-xs text-slate-300 font-mono">{device.device_id.slice(0, 8)}</span>
-        {!device.connected && (
-          <span className="text-[10px] font-bold bg-slate-300 text-slate-600 px-1.5 py-0.5 rounded-full leading-none">미접속</span>
-        )}
         {!canAssign && (
           <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full leading-none">배정불가</span>
         )}
@@ -71,9 +68,14 @@ function RiderSection({
           title="기기 삭제 (라이더 정보 유지)"
         >✕</button>
       </div>
-      {device.today_first_connected_at && (
-        <p className="text-xs text-slate-500 mb-1">출근시간 : {fmtKstHm(device.today_first_connected_at)}</p>
-      )}
+      <div className="flex items-center gap-2 mb-1">
+        {device.today_first_connected_at && (
+          <span className="text-xs text-slate-500">출근시간 : {fmtKstHm(device.today_first_connected_at)}</span>
+        )}
+        {!device.connected && (
+          <span className="text-[10px] font-bold bg-slate-300 text-slate-600 px-1.5 py-0.5 rounded-full leading-none">미접속</span>
+        )}
+      </div>
       <p className="text-xs text-slate-500 text-center mb-3">총 배송 갯수 : {deliveries.length}</p>
 
       <div className="min-h-20 flex flex-col gap-2">
