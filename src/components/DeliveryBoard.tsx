@@ -283,6 +283,11 @@ export default function DeliveryBoard() {
   }
 
   function handleDelete(delivery: Delivery) {
+    const nowHm = kstNowHm(appState.offset)
+    const branchInfo = branches.find(b => b.code === branch)
+    if (isBranchClosed(nowHm, branchInfo?.open_time, branchInfo?.close_time) || isClosedNow(appState)) {
+      alert('마감된 상태입니다. 배송을 삭제할 수 없습니다.'); return
+    }
     setSelectedIds(prev => prev.filter(id => id !== delivery.id))
     setDeliveries(prev => prev.filter(d => d.id !== delivery.id))
     setGopoumItems(prev => prev.filter(i => i.delivery_id !== delivery.id))
