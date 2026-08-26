@@ -19,7 +19,7 @@ export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [updateDone, setUpdateDone] = useState(false)
-  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null })
+  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null })
   const menuRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => { setState(await fetchAppState()) }, [])

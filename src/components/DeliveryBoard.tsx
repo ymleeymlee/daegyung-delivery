@@ -8,6 +8,7 @@ import QuickAddBar from './QuickAddBar'
 import RiderAddModal from './RiderAddModal'
 import { AppState, fetchAppState, isClosedNow, isBranchClosed, kstNowHm } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
+import { isVersionAtLeast } from '@/lib/version'
 
 function deviceDisplayName(d: RiderDevice): string {
   return d.name ?? `이름 미입력 (기기 ${d.device_id.slice(0, 8)})`
@@ -160,7 +161,7 @@ export default function DeliveryBoard() {
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
   const [coordById, setCoordById] = useState<Map<string, { lat: number; lng: number }>>(new Map())
-  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
+  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null })
   const [loading, setLoading] = useState(true)
   const [queueOpen, setQueueOpen] = useState(false)
 
@@ -428,9 +429,11 @@ export default function DeliveryBoard() {
         )}
       </section>
 
-      {/* 라이더(기기) 구역 */}
+      {/* 라이더(기기) 구역 — 최소 앱 버전 미달 기기는 아예 표시하지 않음 */}
       <section className="flex gap-4 overflow-x-auto pb-2 items-start">
-        {devices.map(device => (
+        {devices
+          .filter(device => !appState.minAppVersion || isVersionAtLeast(device.app_version, appState.minAppVersion))
+          .map(device => (
           <RiderSection
             key={device.device_id}
             device={device}

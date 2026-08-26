@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
 import { fetchAppState, isClosedNow, isBranchClosed, kstNowHm, type AppState } from '@/lib/appState'
+import { isVersionAtLeast } from '@/lib/version'
 import { useBranch } from '@/lib/branch'
 import type { RiderLocation, DeliveryTrip } from '@/types'
 import type { ArchiveResponse } from '@/app/api/location-archive/route'
@@ -116,6 +117,8 @@ export default function TrackingPage() {
   const [deviceBranch, setDeviceBranch] = useState<Map<string, string>>(new Map())
   // 현재 접속(connected=true) 인 device_id 집합. 로그아웃 즉시 지도에서 숨기기 위함.
   const [connectedSet, setConnectedSet] = useState<Set<string>>(new Set())
+  // 최소 앱 버전 이상 device_id 집합
+  const [allowedDeviceSet, setAllowedDeviceSet] = useState<Set<string>>(new Set())
   // 배송 출발/완료 토스트 알림
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: 'start' | 'end' }[]>([])
   // 본사 좌표 역지오코딩 결과 (버튼 tooltip용)
@@ -125,7 +128,7 @@ export default function TrackingPage() {
   const [viewDate, setViewDate] = useState<string>(todayKst())
   const [archive, setArchive] = useState<ArchiveResponse | null>(null)
   const [archiveLoading, setArchiveLoading] = useState(false)
-  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null })
+  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null })
   // 아카이브: 그 날짜의 배송출발~본사복귀 구간(delivery_trips, device 기준). 동선 구간분리에 사용.
   const [archiveTripsRaw, setArchiveTripsRaw] = useState<{ deviceId: string; start: number; end: number }[]>([])
 
@@ -140,32 +143,40 @@ export default function TrackingPage() {
   const nameOf = useCallback((deviceId: string) =>
     deviceMap.get(deviceId) ?? `미지정 (${deviceId.slice(0, 8)})`, [deviceMap])
 
-  // 로그인 완료(name + branch) + 현재 접속중(connected=true) 인 기기만 표시.
-  // 로그아웃(connected=false) 은 앱이 stale 하게 위치 올리더라도 지도에서 즉시 숨김.
+  // 로그인 완료(name + branch) + 현재 접속중(connected=true) + 최소 앱 버전 이상 기기만 표시.
   const visibleLocations = useMemo(() =>
-    locations.filter(l => deviceMap.has(l.device_id) && deviceBranch.get(l.device_id) === branch && connectedSet.has(l.device_id)),
-    [locations, deviceMap, deviceBranch, branch, connectedSet])
+    locations.filter(l =>
+      deviceMap.has(l.device_id)
+      && deviceBranch.get(l.device_id) === branch
+      && connectedSet.has(l.device_id)
+      && allowedDeviceSet.has(l.device_id)
+    ),
+    [locations, deviceMap, deviceBranch, branch, connectedSet, allowedDeviceSet])
   // 최신 resolver 참조 (구독 재등록 없이 이름 해석용)
   const nameOfRef = useRef(nameOf)
   useEffect(() => { nameOfRef.current = nameOf }, [nameOf])
 
-  // 기기↔라이더 매핑 로드 + 실시간 반영 (rider_devices.name/branch/connected 직접 사용)
+  // 기기↔라이더 매핑 로드 + 실시간 반영 (rider_devices.name/branch/connected/app_version 직접 사용)
   useEffect(() => {
     let active = true
     const load = async () => {
-      const { data: devs } = await supabase.from('rider_devices').select('device_id,name,branch,connected')
+      const { data: devs } = await supabase.from('rider_devices').select('device_id,name,branch,connected,app_version')
       if (!active) return
       const m = new Map<string, string>()
       const b = new Map<string, string>()
       const c = new Set<string>()
-      for (const d of (devs ?? []) as { device_id: string; name: string | null; branch: string | null; connected: boolean }[]) {
+      const allowed = new Set<string>()
+      const min = appState.minAppVersion
+      for (const d of (devs ?? []) as { device_id: string; name: string | null; branch: string | null; connected: boolean; app_version: string | null }[]) {
         if (d.name) m.set(d.device_id, d.name)
         if (d.branch) b.set(d.device_id, d.branch)
         if (d.connected) c.add(d.device_id)
+        if (!min || isVersionAtLeast(d.app_version, min)) allowed.add(d.device_id)
       }
       setDeviceMap(m)
       setDeviceBranch(b)
       setConnectedSet(c)
+      setAllowedDeviceSet(allowed)
     }
     void load()
     const ch = supabase
@@ -173,7 +184,7 @@ export default function TrackingPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_devices' }, () => void load())
       .subscribe()
     return () => { active = false; supabase.removeChannel(ch) }
-  }, [])
+  }, [appState.minAppVersion])
 
   // 마감 상태 로드 + 실시간 반영 (마감되면 오늘도 아카이브 모드로 전환)
   useEffect(() => {

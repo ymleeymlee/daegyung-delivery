@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 export interface AppState {
   offset: number          // 테스트용 날짜 오프셋(일)
   closedUntil: string | null  // 레거시: /api/close 크론 등 기존 로직 호환용
+  minAppVersion: string | null  // 앱 최소 요구 버전. 미달 앱은 웹에서 무시.
 }
 
 // 유효 현재 시각 = 실제 now + offset일 (테스트용 날짜 이동)
@@ -44,6 +45,7 @@ export async function fetchAppState(): Promise<AppState> {
   return {
     offset: parseInt(m.date_offset || '0') || 0,
     closedUntil: m.closed_until || null,
+    minAppVersion: m.min_app_version || null,
   }
 }
 
