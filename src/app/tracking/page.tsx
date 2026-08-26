@@ -114,6 +114,8 @@ export default function TrackingPage() {
   const [deviceMap, setDeviceMap] = useState<Map<string, string>>(new Map())
   // device_id → 라이더 지점(location) 매핑. 지점별 지도 필터링용.
   const [deviceBranch, setDeviceBranch] = useState<Map<string, string>>(new Map())
+  // 현재 접속(connected=true) 인 device_id 집합. 로그아웃 즉시 지도에서 숨기기 위함.
+  const [connectedSet, setConnectedSet] = useState<Set<string>>(new Set())
   // 배송 출발/완료 토스트 알림
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: 'start' | 'end' }[]>([])
   // 본사 좌표 역지오코딩 결과 (버튼 tooltip용)
@@ -138,28 +140,32 @@ export default function TrackingPage() {
   const nameOf = useCallback((deviceId: string) =>
     deviceMap.get(deviceId) ?? `미지정 (${deviceId.slice(0, 8)})`, [deviceMap])
 
-  // 로그인(name + branch) 완료된 기기만 표시. 미지정(name 없음) 기기는 아예 무시.
+  // 로그인 완료(name + branch) + 현재 접속중(connected=true) 인 기기만 표시.
+  // 로그아웃(connected=false) 은 앱이 stale 하게 위치 올리더라도 지도에서 즉시 숨김.
   const visibleLocations = useMemo(() =>
-    locations.filter(l => deviceMap.has(l.device_id) && deviceBranch.get(l.device_id) === branch),
-    [locations, deviceMap, deviceBranch, branch])
+    locations.filter(l => deviceMap.has(l.device_id) && deviceBranch.get(l.device_id) === branch && connectedSet.has(l.device_id)),
+    [locations, deviceMap, deviceBranch, branch, connectedSet])
   // 최신 resolver 참조 (구독 재등록 없이 이름 해석용)
   const nameOfRef = useRef(nameOf)
   useEffect(() => { nameOfRef.current = nameOf }, [nameOf])
 
-  // 기기↔라이더 매핑 로드 + 실시간 반영 (rider_devices.name/branch 직접 사용)
+  // 기기↔라이더 매핑 로드 + 실시간 반영 (rider_devices.name/branch/connected 직접 사용)
   useEffect(() => {
     let active = true
     const load = async () => {
-      const { data: devs } = await supabase.from('rider_devices').select('device_id,name,branch')
+      const { data: devs } = await supabase.from('rider_devices').select('device_id,name,branch,connected')
       if (!active) return
       const m = new Map<string, string>()
       const b = new Map<string, string>()
-      for (const d of (devs ?? []) as { device_id: string; name: string | null; branch: string | null }[]) {
+      const c = new Set<string>()
+      for (const d of (devs ?? []) as { device_id: string; name: string | null; branch: string | null; connected: boolean }[]) {
         if (d.name) m.set(d.device_id, d.name)
         if (d.branch) b.set(d.device_id, d.branch)
+        if (d.connected) c.add(d.device_id)
       }
       setDeviceMap(m)
       setDeviceBranch(b)
+      setConnectedSet(c)
     }
     void load()
     const ch = supabase
