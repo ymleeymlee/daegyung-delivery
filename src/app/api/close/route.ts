@@ -92,18 +92,19 @@ export async function GET(req: NextRequest) {
         .map(dv => dv.rider_id!)
     )
     const todayRiders = riders.filter(r => todayRiderIds.has(r.id))
+    // 로그인(name)된 기기만 처리. 미지정 pings 는 아예 스냅샷에서 제외.
     for (const p of pings) {
       const r = p.device_id ? devToRider.get(p.device_id) : undefined
       if (r) { if (r.id) p.rider_id = r.id; p.rider_name = r.name }
-      else if (!p.rider_name) p.rider_name = p.device_id ? `미지정(${p.device_id.slice(0, 8)})` : '미지정'
     }
+    const knownPings = pings.filter(p => p.rider_name)
 
     // 스냅샷 그리드 (동기). 지점별로 갈라 각 지점 폴더(안산/2026, 강남/2026 …)에 기록.
     const branches = (branchRows ?? []) as Branch[]
     if (branches.length === 0) {
       return NextResponse.json({ ok: false, stage: 'sheet', error: '등록된 지점이 없습니다' }, { status: 500 })
     }
-    const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, pings)
+    const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, knownPings)
 
     // 1) 시트 먼저 기록 (배송·고품 기록 실패 시 throw). 파괴적 DB 작업 전에 확정해 데이터 소실 방지.
     //    (구버전은 삭제→truncate→after(시트) 순서라, truncate 가 던지면 DB만 비고 시트엔 안 써져 그날 데이터가 통째로 소실됐음)
@@ -137,7 +138,7 @@ export async function GET(req: NextRequest) {
     // 3) 위치 테이블 정리. 시트가 이미 확정됐으니 실패해도 비치명 — 마감은 성공 처리하고 다음 마감에 정리.
     //    anon/service 모두 이 테이블 DELETE 권한 보유 → security-definer RPC(service_role 전용, anon 폴백 시 permission denied) 의존 제거하고 직접 삭제.
     //    (DELETE 는 dead tuple 남지만 하루 수천 행 수준이라 autovacuum 으로 충분)
-    if (pingRows.length > 0) {
+    if (knownPings.length > 0) {
       const [pingsDel, locsDel] = await Promise.all([
         supabaseServer.from('location_pings').delete().not('id', 'is', null),
         supabaseServer.from('rider_locations').delete().not('device_id', 'is', null),

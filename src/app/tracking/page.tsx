@@ -138,10 +138,10 @@ export default function TrackingPage() {
   const nameOf = useCallback((deviceId: string) =>
     deviceMap.get(deviceId) ?? `미지정 (${deviceId.slice(0, 8)})`, [deviceMap])
 
-  // 현재 지점 라이더의 위치만 표시. 라이더가 아직 지정 안 된 기기(미지정)는 지점을 알 수 없으므로 계속 표시.
+  // 로그인(name + branch) 완료된 기기만 표시. 미지정(name 없음) 기기는 아예 무시.
   const visibleLocations = useMemo(() =>
-    locations.filter(l => !deviceBranch.has(l.device_id) || deviceBranch.get(l.device_id) === branch),
-    [locations, deviceBranch, branch])
+    locations.filter(l => deviceMap.has(l.device_id) && deviceBranch.get(l.device_id) === branch),
+    [locations, deviceMap, deviceBranch, branch])
   // 최신 resolver 참조 (구독 재등록 없이 이름 해석용)
   const nameOfRef = useRef(nameOf)
   useEffect(() => { nameOfRef.current = nameOf }, [nameOf])

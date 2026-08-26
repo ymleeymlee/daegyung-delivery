@@ -78,13 +78,13 @@ export async function GET() {
     for (const p of pings) {
       const r = p.device_id ? devToRider.get(p.device_id) : undefined
       if (r) { p.rider_id = r.id; p.rider_name = r.name }
-      else if (!p.rider_name) p.rider_name = p.device_id ? `미지정(${p.device_id.slice(0, 8)})` : '미지정'
     }
+    const knownPings = pings.filter(p => p.rider_name)
 
     // 지점별로 갈라 각 지점 폴더(예: 안산/2026, 강남/2026)에 한 번에 기록.
     const branches = (branchRows ?? []) as Branch[]
     if (branches.length === 0) throw new Error('등록된 지점이 없습니다 (지점 관리에서 추가하세요)')
-    const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, pings)
+    const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, knownPings)
 
     // 한 지점이 실패해도 나머지는 기록되게 (실패 지점은 응답에 담아 알림)
     const results = await Promise.allSettled(
