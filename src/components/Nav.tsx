@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { AppState, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow, isBranchClosed, kstNowHm } from '@/lib/appState'
+import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow, isBusinessClosed, kstNowHm } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
 
 function fmtKstDate(d: Date) {
@@ -15,7 +15,7 @@ function fmtKstDate(d: Date) {
 export default function Nav() {
   const { branch, setBranch, branches } = useBranch()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null })
+  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE })
   const menuRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => { setState(await fetchAppState()) }, [])
@@ -29,12 +29,15 @@ export default function Nav() {
     // 자정 넘어가며 마감 자동 해제 반영용 (1분마다 상태 재평가)
     const timer = setInterval(() => setState(s => ({ ...s })), 60000)
     // 다음날(00시) 자동 수행 트리거. 서버가 idempotent(하루 한 번만 실행) — 그냥 매 마운트 호출.
-    // 로컬 캐시: 오늘 이미 호출했으면 스킵 (네트워크 절약)
+    // 마감 자동 수행 트리거도 동일 방식. 서버가 close_time 지났는지·오늘 실행했는지 판정.
     try {
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
       if (localStorage.getItem('midnight-check-date') !== today) {
         fetch('/api/midnight-check').then(r => r.ok && localStorage.setItem('midnight-check-date', today)).catch(() => {})
       }
+      // close-check 는 시각 판정이 서버에서 이뤄지므로 localStorage 캐시 사용하지 않음
+      // (오전에 호출 → 아직 이르다고 skip → 저녁에 다시 호출 시 실행되어야 하기 때문)
+      fetch('/api/close-check').catch(() => {})
     } catch { /* noop */ }
     return () => { supabase.removeChannel(channel); clearInterval(timer) }
   }, [refresh])
@@ -48,9 +51,9 @@ export default function Nav() {
   }, [])
 
   const closed = isClosedNow(state)
-  // 운영시간 기준 마감: 어느 한 지점이라도 마감이면 배지 표시
+  // 전역 영업시간 기준 마감 배지
   const nowHm = kstNowHm(state.offset)
-  const anyBranchClosed = branches.some(b => isBranchClosed(nowHm, b.open_time, b.close_time))
+  const businessClosed = isBusinessClosed(nowHm, state.businessOpen, state.businessClose)
   const displayDate = fmtKstDate(effNow(state.offset))
 
   async function handleResetToday() {
@@ -99,10 +102,10 @@ export default function Nav() {
 
       {/* 우측: 날짜 + 마감 배지 + 톱니(설정) */}
       <div className="ml-auto flex items-center gap-3">
-        {anyBranchClosed && (
+        {businessClosed && (
           <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full" title="운영시간 외 — 앱 위치공유 종료 및 배송카드 생성 차단">마감</span>
         )}
-        {closed && !anyBranchClosed && (
+        {closed && !businessClosed && (
           <span className="text-xs font-medium text-slate-400" title="매일 23:59 자동 마감됨 (다음날 06시 해제)">🔒 자동마감됨</span>
         )}
         <span className={`text-sm font-medium ${state.offset > 0 ? 'text-purple-600' : 'text-slate-500'}`}>

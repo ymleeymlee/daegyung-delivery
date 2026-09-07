@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AppState, fetchAppState, effNow, kstNowHm } from '@/lib/appState'
+import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, fetchAppState, effNow, kstNowHm, isBusinessClosed } from '@/lib/appState'
 import { AUTO_ACTION_ITEMS, AutoActionKey, AutoActionsMap, defaultAutoActions, fetchAutoActions, saveAutoActions } from '@/lib/autoActions'
 import { Branch } from '@/types'
 
@@ -106,7 +106,7 @@ function SettingsContent() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [updateDone, setUpdateDone] = useState(false)
-  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null })
+  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE })
   const [pwOpen, setPwOpen] = useState(false)
 
   // 지점 편집 상태
@@ -161,10 +161,10 @@ function SettingsContent() {
     setUpdating(false)
   }
 
-  async function saveTime(code: string, field: 'open_time' | 'close_time', value: string) {
-    const { error } = await supabase.from('branches').update({ [field]: value || null }).eq('code', code)
+  async function saveBusinessTime(field: 'business_open_time' | 'business_close_time', value: string) {
+    if (!value) return
+    const { error } = await supabase.from('app_state').upsert({ key: field, value })
     if (error) alert('저장 실패: ' + error.message)
-    else fetchBranches()
   }
 
   function startEdit(b: Branch) {
@@ -246,12 +246,47 @@ function SettingsContent() {
         </div>
       </section>
 
+      {/* 영업 시간 카드 (전역) */}
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-800 mb-1">영업 시간</h2>
+        <p className="text-xs text-slate-500 mb-4">
+          전역 영업 시작·마감 시각. 자동 수행 &apos;마감&apos; 트리거는 여기 마감 시각 기준으로 동작합니다.
+          영업시간 밖에는 마감 배지 표시 · 앱 위치공유 종료 · 배송 카드 생성 차단됩니다.
+        </p>
+        <div className="flex items-end gap-6 flex-wrap">
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">시작</label>
+            <input
+              type="time"
+              defaultValue={state.businessOpen}
+              onBlur={e => saveBusinessTime('business_open_time', e.target.value)}
+              className={`${inputCls} min-w-[10.5rem]`}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">마감</label>
+            <input
+              type="time"
+              defaultValue={state.businessClose}
+              onBlur={e => saveBusinessTime('business_close_time', e.target.value)}
+              className={`${inputCls} min-w-[10.5rem]`}
+            />
+          </div>
+          <div className="mb-1.5">
+            {isBusinessClosed(nowHm, state.businessOpen, state.businessClose) ? (
+              <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">현재 마감</span>
+            ) : (
+              <span className="text-xs font-medium text-green-600">현재 영업중</span>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* 지점 관리 카드 */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <h2 className="text-base font-semibold text-slate-800 mb-1">지점 관리</h2>
         <p className="text-xs text-slate-500 mb-4">
-          지점별 이름·정렬·운영시간을 편집하고 새 지점을 추가할 수 있습니다.
-          운영시간 밖은 자동 마감 상태로 표시되어 앱 위치공유·배송카드 생성이 차단됩니다.
+          지점명·정렬을 편집하고 새 지점을 추가할 수 있습니다. (영업시간은 위 카드에서 전역 관리)
         </p>
 
         {loading ? (
@@ -262,21 +297,14 @@ function SettingsContent() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-slate-500 text-xs border-b border-slate-200 whitespace-nowrap">
-                <th className="text-left font-medium py-2 w-20">코드</th>
-                <th className="text-left font-medium py-2 min-w-[6rem]">지점명</th>
-                <th className="text-left font-medium py-2 w-16">정렬</th>
-                <th className="text-left font-medium py-2 w-44">시작</th>
-                <th className="text-left font-medium py-2 w-44">마감</th>
-                <th className="text-left font-medium py-2 w-20">현재</th>
-                <th className="text-right font-medium py-2 w-32">작업</th>
+                <th className="text-left font-medium py-2 w-24">코드</th>
+                <th className="text-left font-medium py-2 min-w-[8rem]">지점명</th>
+                <th className="text-left font-medium py-2 w-20">정렬</th>
+                <th className="text-right font-medium py-2 w-40">작업</th>
               </tr>
             </thead>
             <tbody>
               {branches.map(b => {
-                const isBranchClosedNow = (() => {
-                  if (!b.open_time || !b.close_time) return false
-                  return nowHm < b.open_time || nowHm >= b.close_time
-                })()
                 const isEditing = editingCode === b.code
                 return (
                   <tr key={b.code} className="border-b border-slate-100 last:border-0 align-middle">
@@ -293,33 +321,6 @@ function SettingsContent() {
                         <input type="number" value={editSortOrder} onChange={e => setEditSortOrder(parseInt(e.target.value) || 0)} className={`${inputCls} w-14`} />
                       ) : (
                         <span className="text-slate-500 text-xs">{b.sort_order}</span>
-                      )}
-                    </td>
-                    <td className="py-3">
-                      <input
-                        type="time"
-                        defaultValue={b.open_time ?? ''}
-                        onBlur={e => saveTime(b.code, 'open_time', e.target.value)}
-                        className={`${inputCls} w-full min-w-[10.5rem]`}
-                      />
-                    </td>
-                    <td className="py-3">
-                      <input
-                        type="time"
-                        defaultValue={b.close_time ?? ''}
-                        onBlur={e => saveTime(b.code, 'close_time', e.target.value)}
-                        className={`${inputCls} w-full min-w-[10.5rem]`}
-                      />
-                    </td>
-                    <td className="py-3">
-                      {b.open_time && b.close_time ? (
-                        isBranchClosedNow ? (
-                          <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">마감</span>
-                        ) : (
-                          <span className="text-xs font-medium text-green-600">영업중</span>
-                        )
-                      ) : (
-                        <span className="text-xs text-slate-400">미지정</span>
                       )}
                     </td>
                     <td className="py-3 text-right">
@@ -424,7 +425,7 @@ function AutoActionsSection() {
     <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
       <h2 className="text-base font-semibold text-slate-800 mb-1">자동 수행 설정</h2>
       <p className="text-xs text-slate-500 mb-4">
-        마감(매일 22:00 KST) · 다음날(00:00 이후 첫 접속) 시점에 자동 실행할 항목을 선택합니다.
+        마감(위 &apos;영업 시간&apos; 카드의 마감 시각) · 다음날(00:00 이후 첫 접속) 시점에 자동 실행할 항목을 선택합니다.
         같은 항목을 두 시점 모두 켜면 두 번 실행됩니다 (대부분 무해). 둘 다 끄면 해당 시점에 실행되지 않습니다.
       </p>
       {loading ? (
@@ -434,7 +435,7 @@ function AutoActionsSection() {
           <thead>
             <tr className="text-slate-500 text-xs border-b border-slate-200">
               <th className="text-left font-medium py-2">항목</th>
-              <th className="text-center font-medium py-2 w-24">마감<br /><span className="text-slate-400 font-normal">22:00 KST</span></th>
+              <th className="text-center font-medium py-2 w-24">마감<br /><span className="text-slate-400 font-normal">영업 마감 시각</span></th>
               <th className="text-center font-medium py-2 w-28">다음날<br /><span className="text-slate-400 font-normal">00시 이후</span></th>
             </tr>
           </thead>

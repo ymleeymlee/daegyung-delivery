@@ -4,7 +4,12 @@ export interface AppState {
   offset: number          // 테스트용 날짜 오프셋(일)
   closedUntil: string | null  // 레거시: /api/close 크론 등 기존 로직 호환용
   minAppVersion: string | null  // 앱 최소 요구 버전. 미달 앱은 웹에서 무시.
+  businessOpen: string   // 전역 영업 시작 시각 "HH:MM" (기본 08:00)
+  businessClose: string  // 전역 영업 마감 시각 "HH:MM" (기본 18:00)
 }
+
+export const DEFAULT_BUSINESS_OPEN = '08:00'
+export const DEFAULT_BUSINESS_CLOSE = '18:00'
 
 // 유효 현재 시각 = 실제 now + offset일 (테스트용 날짜 이동)
 export function effNow(offset: number): Date {
@@ -23,9 +28,9 @@ export function kstNowHm(offsetDays = 0): string {
   }).format(now)
 }
 
-// 지점 운영시간 기준 마감 여부 실시간 판정
-// open/close 모두 null → 제한 없음(false)
-export function isBranchClosed(nowHm: string, open?: string | null, close?: string | null): boolean {
+// 영업시간 기준 마감 여부 실시간 판정 (전역, 지점 무관)
+// open/close 모두 빈 값 → 제한 없음(false)
+export function isBusinessClosed(nowHm: string, open?: string | null, close?: string | null): boolean {
   if (!open && !close) return false
   if (open && nowHm < open) return true
   if (close && nowHm >= close) return true
@@ -46,6 +51,8 @@ export async function fetchAppState(): Promise<AppState> {
     offset: parseInt(m.date_offset || '0') || 0,
     closedUntil: m.closed_until || null,
     minAppVersion: m.min_app_version || null,
+    businessOpen: m.business_open_time || DEFAULT_BUSINESS_OPEN,
+    businessClose: m.business_close_time || DEFAULT_BUSINESS_CLOSE,
   }
 }
 

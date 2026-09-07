@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
-import { fetchAppState, isClosedNow, isBranchClosed, kstNowHm, type AppState } from '@/lib/appState'
+import { fetchAppState, isClosedNow, isBusinessClosed, kstNowHm, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, type AppState } from '@/lib/appState'
 import { isVersionAtLeast } from '@/lib/version'
 import { useBranch } from '@/lib/branch'
 import type { RiderLocation, DeliveryTrip } from '@/types'
@@ -128,16 +128,15 @@ export default function TrackingPage() {
   const [viewDate, setViewDate] = useState<string>(todayKst())
   const [archive, setArchive] = useState<ArchiveResponse | null>(null)
   const [archiveLoading, setArchiveLoading] = useState(false)
-  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null })
+  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE })
   // 아카이브: 그 날짜의 배송출발~본사복귀 구간(delivery_trips, device 기준). 동선 구간분리에 사용.
   const [archiveTripsRaw, setArchiveTripsRaw] = useState<{ deviceId: string; start: number; end: number }[]>([])
 
   // 마감된 날은 오늘이라도 라이브가 아니라 아카이브(시트)에서 로드
   // (마감 시 location_pings 가 비워지므로 Supabase 라이브로는 오늘 동선이 안 보임)
-  const currentBranchInfo = branches.find(b => b.code === branch)
   const isLive = viewDate === todayKst() &&
     !isClosedNow(appState) &&
-    !isBranchClosed(kstNowHm(appState.offset), currentBranchInfo?.open_time, currentBranchInfo?.close_time)
+    !isBusinessClosed(kstNowHm(appState.offset), appState.businessOpen, appState.businessClose)
 
   // device_id → 표시 이름. 매핑되면 라이더 이름, 아니면 "미지정 (앞8자)".
   const nameOf = useCallback((deviceId: string) =>

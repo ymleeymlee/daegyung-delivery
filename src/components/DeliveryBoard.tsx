@@ -6,7 +6,7 @@ import { Delivery, RiderDevice, GopoumClient, GopoumItem } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 import RiderAddModal from './RiderAddModal'
-import { AppState, fetchAppState, isClosedNow, isBranchClosed, kstNowHm } from '@/lib/appState'
+import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, fetchAppState, isClosedNow, isBusinessClosed, kstNowHm } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
 import { isVersionAtLeast } from '@/lib/version'
 
@@ -153,7 +153,7 @@ function RiderSection({
 }
 
 export default function DeliveryBoard() {
-  const { branch, branches } = useBranch()
+  const { branch } = useBranch()
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
   const [devices, setDevices] = useState<RiderDevice[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -161,7 +161,7 @@ export default function DeliveryBoard() {
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
   const [coordById, setCoordById] = useState<Map<string, { lat: number; lng: number }>>(new Map())
-  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null })
+  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE })
   const [loading, setLoading] = useState(true)
   const [queueOpen, setQueueOpen] = useState(false)
 
@@ -246,8 +246,7 @@ export default function DeliveryBoard() {
 
   function handleAdd(clientName: string, clientAddress: string, clientId?: string) {
     const nowHm = kstNowHm(appState.offset)
-    const branchInfo = branches.find(b => b.code === branch)
-    if (isBranchClosed(nowHm, branchInfo?.open_time, branchInfo?.close_time) || isClosedNow(appState)) {
+    if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
       alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return
     }
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order))
@@ -265,8 +264,7 @@ export default function DeliveryBoard() {
 
   function handleAddToRider(riderId: string, clientName: string, clientAddress: string, clientId?: string) {
     const nowHm = kstNowHm(appState.offset)
-    const branchInfo = branches.find(b => b.code === branch)
-    if (isBranchClosed(nowHm, branchInfo?.open_time, branchInfo?.close_time) || isClosedNow(appState)) {
+    if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
       alert('마감된 상태입니다. 배송을 추가할 수 없습니다.'); return
     }
     const maxOrder = Math.max(0, ...deliveries.filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed')).map(d => d.sort_order))
@@ -284,8 +282,7 @@ export default function DeliveryBoard() {
 
   function handleDelete(delivery: Delivery) {
     const nowHm = kstNowHm(appState.offset)
-    const branchInfo = branches.find(b => b.code === branch)
-    if (isBranchClosed(nowHm, branchInfo?.open_time, branchInfo?.close_time) || isClosedNow(appState)) {
+    if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
       alert('마감된 상태입니다. 배송을 삭제할 수 없습니다.'); return
     }
     setSelectedIds(prev => prev.filter(id => id !== delivery.id))
