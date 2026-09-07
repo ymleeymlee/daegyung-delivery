@@ -1,17 +1,22 @@
 import { google, sheets_v4, drive_v3 } from 'googleapis'
 
-// 서비스 계정 인증 (Drive 문서 탐색·생성 + Sheets 읽기/쓰기)
+// OAuth2 사용자 위임 인증 (custom.my.car.official@gmail.com 계정 위임)
+// 서비스 계정은 Drive 저장 용량이 없어서 파일 생성 시 quota 에러가 남.
+// OAuth 로 사용자 계정 quota(15GB) 를 사용해 파일을 생성한다.
+// refresh_token 은 만료 없음(계정 비번 변경 or 6개월 미사용 시만 만료).
+let _auth: InstanceType<typeof google.auth.OAuth2> | null = null
 function getAuth() {
-  const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_B64
-  if (!b64) throw new Error('GOOGLE_SERVICE_ACCOUNT_B64 미설정')
-  const credentials = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
-  return new google.auth.GoogleAuth({
-    credentials,
-    scopes: [
-      'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive',
-    ],
-  })
+  if (_auth) return _auth
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET / GOOGLE_OAUTH_REFRESH_TOKEN 중 하나 이상 미설정')
+  }
+  const oauth = new google.auth.OAuth2(clientId, clientSecret)
+  oauth.setCredentials({ refresh_token: refreshToken })
+  _auth = oauth
+  return oauth
 }
 
 let _sheets: sheets_v4.Sheets | null = null
