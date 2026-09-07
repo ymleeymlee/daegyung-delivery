@@ -212,7 +212,7 @@ function SettingsContent() {
   const inputCls = 'border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400'
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-8">
+    <div className="p-6 max-w-5xl mx-auto space-y-8">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-bold text-slate-800">설정</h1>
         <button
@@ -260,12 +260,12 @@ function SettingsContent() {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-slate-500 text-xs border-b border-slate-200">
+              <tr className="text-slate-500 text-xs border-b border-slate-200 whitespace-nowrap">
                 <th className="text-left font-medium py-2 w-20">코드</th>
-                <th className="text-left font-medium py-2">지점명</th>
+                <th className="text-left font-medium py-2 min-w-[6rem]">지점명</th>
                 <th className="text-left font-medium py-2 w-16">정렬</th>
-                <th className="text-left font-medium py-2 w-40">시작</th>
-                <th className="text-left font-medium py-2 w-40">마감</th>
+                <th className="text-left font-medium py-2 w-44">시작</th>
+                <th className="text-left font-medium py-2 w-44">마감</th>
                 <th className="text-left font-medium py-2 w-20">현재</th>
                 <th className="text-right font-medium py-2 w-32">작업</th>
               </tr>
@@ -299,7 +299,7 @@ function SettingsContent() {
                         type="time"
                         defaultValue={b.open_time ?? ''}
                         onBlur={e => saveTime(b.code, 'open_time', e.target.value)}
-                        className={`${inputCls} w-36`}
+                        className={`${inputCls} w-full min-w-[10.5rem]`}
                       />
                     </td>
                     <td className="py-3">
@@ -307,7 +307,7 @@ function SettingsContent() {
                         type="time"
                         defaultValue={b.close_time ?? ''}
                         onBlur={e => saveTime(b.code, 'close_time', e.target.value)}
-                        className={`${inputCls} w-36`}
+                        className={`${inputCls} w-full min-w-[10.5rem]`}
                       />
                     </td>
                     <td className="py-3">
