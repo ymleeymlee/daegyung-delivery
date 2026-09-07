@@ -241,8 +241,9 @@ export default function TrackingPage() {
       setLocations((locs ?? []) as RiderLocation[])
     })()
 
+    // 채널명에 branch 접미사 → 지점 변경 시 이전 채널과 이름 충돌 회피 (removeChannel 이 async 이므로)
     const ch = supabase
-      .channel('rider-locations-tracking')
+      .channel(`rider-locations-tracking-${branch}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_locations' }, payload => {
         setLocations(prev => {
           if (payload.eventType === 'DELETE') {
@@ -338,6 +339,23 @@ export default function TrackingPage() {
       setStatus('ready'); setStatusMsg('')
     } catch (e) {
       setStatus('error'); setStatusMsg('지도 생성 실패: ' + String(e))
+    }
+    // 언마운트 시 모든 Kakao 오버레이/맵 해제 (컨테이너 DOM 은 사라져도 참조가 남아 리소스 누적)
+    return () => {
+      try {
+        for (const [, ov] of markersRef.current) ov.setMap(null)
+        markersRef.current.clear()
+        for (const pl of pathRef.current) pl.setMap(null)
+        pathRef.current = []
+        pathStartMarkerRef.current?.setMap(null); pathStartMarkerRef.current = null
+        for (const m of fiveMinMarksRef.current) m.setMap(null)
+        fiveMinMarksRef.current = []
+        for (const layer of archiveLayersRef.current) layer.setMap(null)
+        archiveLayersRef.current = []
+        warehouseCircleRef.current?.setMap(null); warehouseCircleRef.current = null
+        warehouseLabelRef.current?.setMap(null); warehouseLabelRef.current = null
+        mapRef.current = null
+      } catch { /* noop */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sdkReady])
@@ -490,7 +508,12 @@ export default function TrackingPage() {
     if (!sdkReady || !mapRef.current) return
     const kakao = window.kakao
     if (!kakao) return
-    if (!warehouse) { setHqAddress(null); return }
+    if (!warehouse) {
+      // 지점 변경으로 창고가 없어진 경우: 이전 지점의 circle/label 이 남지 않도록 정리
+      warehouseCircleRef.current?.setMap(null); warehouseCircleRef.current = null
+      warehouseLabelRef.current?.setMap(null); warehouseLabelRef.current = null
+      setHqAddress(null); return
+    }
     const pos = new kakao.maps.LatLng(warehouse.lat, warehouse.lng)
     mapRef.current.setCenter(pos)
     if (warehouseCircleRef.current) {
