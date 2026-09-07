@@ -1,6 +1,6 @@
 import { google, sheets_v4, drive_v3 } from 'googleapis'
 
-// 서비스 계정 인증 (Drive 문서 탐색 + Sheets 읽기/쓰기)
+// 서비스 계정 인증 (Drive 문서 탐색·생성 + Sheets 읽기/쓰기)
 function getAuth() {
   const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_B64
   if (!b64) throw new Error('GOOGLE_SERVICE_ACCOUNT_B64 미설정')
@@ -20,7 +20,7 @@ function sheetsClient() { return (_sheets ??= google.sheets({ version: 'v4', aut
 function driveClient() { return (_drive ??= google.drive({ version: 'v3', auth: getAuth() })) }
 
 // 이름으로 폴더 찾기. parentId 를 주면 그 폴더 "바로 아래"에서만 찾는다.
-// (지점 도입 후 '2026' 폴더가 안산/강남 두 곳에 있으므로, 연도 폴더는 반드시 지점 폴더 하위로 한정해야 함)
+// (지점 폴더는 최상위에서, 카테고리 폴더는 지점 폴더 하위에서 찾도록 명시적으로 제한)
 const _folderCache = new Map<string, string>()
 async function findFolder(name: string, parentId?: string): Promise<string | null> {
   const cacheKey = `${parentId ?? '*'}/${name}`
@@ -36,24 +36,78 @@ async function findFolder(name: string, parentId?: string): Promise<string | nul
   return id
 }
 
-// 지점/연도 폴더 안에서 문서 찾기 (예: 안산/2026 폴더 안 '배송-07')
+// 폴더가 없으면 만들어서 반환. parentId 는 필수 (아무데나 만들지 않도록).
+async function findOrCreateFolder(name: string, parentId: string): Promise<string> {
+  const found = await findFolder(name, parentId)
+  if (found) return found
+  const drive = driveClient()
+  const res = await drive.files.create({
+    requestBody: {
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId],
+    },
+    fields: 'id',
+  })
+  const id = res.data.id
+  if (!id) throw new Error(`폴더 '${name}' 생성 실패 (parent=${parentId})`)
+  _folderCache.set(`${parentId}/${name}`, id)
+  console.log(`[googleSheets] 신규 폴더 생성: ${name} (id=${id}, parent=${parentId})`)
+  return id
+}
+
+// 지점/카테고리 폴더 안에서 문서(YY-MM) 찾기. autoCreate=true 면 없을 때 생성.
+// 카테고리 폴더도 자동 생성한다(지점 폴더는 절대 자동 생성 안 함 — 오탈자 시 엉뚱한 곳에 만들면 곤란).
 const _docCache = new Map<string, string>()
-async function findDocInYear(branchFolder: string, year: string, docName: string): Promise<string> {
-  const cacheKey = `${branchFolder}/${year}/${docName}`
+async function findDoc(
+  branchFolder: string,
+  category: '배송' | '고품' | '위치',
+  yy: string,
+  mm: string,
+  opts?: { autoCreate?: boolean },
+): Promise<string | null> {
+  const docName = `${yy}-${mm}`
+  const cacheKey = `${branchFolder}/${category}/${docName}`
   if (_docCache.has(cacheKey)) return _docCache.get(cacheKey)!
+
   const branchId = await findFolder(branchFolder)
-  if (!branchId) throw new Error(`지점 폴더 '${branchFolder}' 를 찾을 수 없습니다`)
-  const folderId = await findFolder(year, branchId)
-  if (!folderId) throw new Error(`폴더 '${branchFolder}/${year}' 를 찾을 수 없습니다`)
+  if (!branchId) {
+    if (opts?.autoCreate) throw new Error(`지점 폴더 '${branchFolder}' 를 찾을 수 없습니다 (지점 폴더는 자동 생성 안 함)`)
+    return null
+  }
+
+  // 카테고리 폴더: autoCreate 이면 없을 때 생성, 아니면 없으면 null
+  const categoryId = opts?.autoCreate
+    ? await findOrCreateFolder(category, branchId)
+    : await findFolder(category, branchId)
+  if (!categoryId) return null
+
   const drive = driveClient()
   const res = await drive.files.list({
-    q: `'${folderId}' in parents and name='${docName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
+    q: `'${categoryId}' in parents and name='${docName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
     fields: 'files(id,name)', pageSize: 1,
   })
-  const id = res.data.files?.[0]?.id
-  if (!id) throw new Error(`'${docName}' 문서를 ${branchFolder}/${year} 폴더에서 찾을 수 없습니다`)
-  _docCache.set(cacheKey, id)
-  return id
+  const existingId = res.data.files?.[0]?.id
+  if (existingId) {
+    _docCache.set(cacheKey, existingId)
+    return existingId
+  }
+  if (!opts?.autoCreate) return null
+
+  // 신규 스프레드시트 생성 (지점/카테고리 폴더 하위)
+  const created = await drive.files.create({
+    requestBody: {
+      name: docName,
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      parents: [categoryId],
+    },
+    fields: 'id',
+  })
+  const newId = created.data.id
+  if (!newId) throw new Error(`스프레드시트 '${docName}' 생성 실패 (${branchFolder}/${category})`)
+  _docCache.set(cacheKey, newId)
+  console.log(`[googleSheets] 신규 시트 생성: ${branchFolder}/${category}/${docName} (id=${newId})`)
+  return newId
 }
 
 // 탭(일별: 'MM-DD')이 없으면 생성
@@ -68,8 +122,18 @@ async function ensureTab(docId: string, title: string) {
 }
 
 // 일별 탭에 현황 스냅샷 저장 (마감 시 1회, 전체 덮어쓰기)
-async function writeDayTab(branchFolder: string, docName: string, year: string, month: string, day: string, grid: (string | number)[][]) {
-  const docId = await findDocInYear(branchFolder, year, docName)
+// 파일 구조: 지점/카테고리/YY-MM, 파일 없으면 자동 생성.
+async function writeDayTab(
+  branchFolder: string,
+  category: '배송' | '고품' | '위치',
+  year: string,
+  month: string,
+  day: string,
+  grid: (string | number)[][],
+) {
+  const yy = year.slice(-2)
+  const docId = await findDoc(branchFolder, category, yy, month, { autoCreate: true })
+  if (!docId) throw new Error(`시트 문서 준비 실패: ${branchFolder}/${category}/${yy}-${month}`)
   const tab = `${month}-${day}`
   const sheets = sheetsClient()
   await ensureTab(docId, tab)
@@ -82,25 +146,27 @@ async function writeDayTab(branchFolder: string, docName: string, year: string, 
   }
 }
 
-// 배송-MM 문서의 MM-DD 탭에 저장 (지점 폴더 하위)
+// 배송/YY-MM 문서의 MM-DD 탭에 저장 (지점 폴더 하위)
 export async function writeDeliveryTab(branchFolder: string, year: string, month: string, day: string, grid: (string | number)[][]) {
-  await writeDayTab(branchFolder, `배송-${month}`, year, month, day, grid)
+  await writeDayTab(branchFolder, '배송', year, month, day, grid)
 }
-// 고품-MM 문서의 MM-DD 탭에 저장 (지점 폴더 하위)
+// 고품/YY-MM 문서의 MM-DD 탭에 저장 (지점 폴더 하위)
 export async function writeGopoumTab(branchFolder: string, year: string, month: string, day: string, grid: (string | number)[][]) {
-  await writeDayTab(branchFolder, `고품-${month}`, year, month, day, grid)
+  await writeDayTab(branchFolder, '고품', year, month, day, grid)
 }
-// 위치-MM 문서의 MM-DD 탭에 저장 (마감 시 하루치 이동 기록 아카이브, 지점 폴더 하위)
+// 위치/YY-MM 문서의 MM-DD 탭에 저장 (마감 시 하루치 이동 기록 아카이브, 지점 폴더 하위)
 export async function writeLocationTab(branchFolder: string, year: string, month: string, day: string, grid: (string | number)[][]) {
-  await writeDayTab(branchFolder, `위치-${month}`, year, month, day, grid)
+  await writeDayTab(branchFolder, '위치', year, month, day, grid)
 }
 
-// 위치-MM 문서의 MM-DD 탭 읽기 (아카이브 조회용). 탭/문서 없으면 null.
+// 위치/YY-MM 문서의 MM-DD 탭 읽기 (아카이브 조회용). 탭/문서 없으면 null.
+// (조회용이므로 자동 생성 안 함.)
 export async function readLocationTab(branchFolder: string, year: string, month: string, day: string): Promise<string[][] | null> {
-  const docName = `위치-${month}`
+  const yy = year.slice(-2)
   const tab = `${month}-${day}`
   try {
-    const docId = await findDocInYear(branchFolder, year, docName)
+    const docId = await findDoc(branchFolder, '위치', yy, month)
+    if (!docId) return null
     const sheets = sheetsClient()
     // 탭 존재 확인 (없는 탭 조회 시 400 대신 조용히 null 반환)
     const meta = await sheets.spreadsheets.get({ spreadsheetId: docId, fields: 'sheets(properties(title))' })
@@ -108,7 +174,7 @@ export async function readLocationTab(branchFolder: string, year: string, month:
     const res = await sheets.spreadsheets.values.get({ spreadsheetId: docId, range: tab })
     return (res.data.values as string[][] | undefined) ?? []
   } catch (e) {
-    // 문서 자체가 없거나 접근 불가 → null 로 취급 (호출측이 안내)
+    // 접근 불가 등 → null 로 취급 (호출측이 안내)
     console.error(`readLocationTab(${branchFolder}, ${year}, ${month}, ${day}) 실패:`, e)
     return null
   }
