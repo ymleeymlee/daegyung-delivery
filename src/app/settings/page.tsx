@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AppState, fetchAppState, effNow, kstNowHm } from '@/lib/appState'
+import { AUTO_ACTION_ITEMS, AutoActionKey, AutoActionsMap, defaultAutoActions, fetchAutoActions, saveAutoActions } from '@/lib/autoActions'
 import { Branch } from '@/types'
 
 // 설정 페이지: 톱니 버튼으로 진입. 관리자 비밀번호 게이트 뒤에 표시.
@@ -385,8 +386,93 @@ function SettingsContent() {
         </div>
       </section>
 
+      <AutoActionsSection />
+
       {pwOpen && <PasswordChangeModal onClose={() => setPwOpen(false)} />}
     </div>
+  )
+}
+
+// === 자동 수행 설정 ===
+function AutoActionsSection() {
+  const [config, setConfig] = useState<AutoActionsMap>(defaultAutoActions())
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState<AutoActionKey | null>(null)
+
+  useEffect(() => {
+    (async () => {
+      try { setConfig(await fetchAutoActions(supabase)) }
+      finally { setLoading(false) }
+    })()
+  }, [])
+
+  async function toggle(key: AutoActionKey, trigger: 'close' | 'midnight') {
+    const next = { ...config, [key]: { ...config[key], [trigger]: !config[key][trigger] } }
+    setConfig(next)
+    setSaving(key)
+    try {
+      await saveAutoActions(supabase, next)
+    } catch (e) {
+      alert('저장 실패: ' + String(e))
+      setConfig(config) // 롤백
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-800 mb-1">자동 수행 설정</h2>
+      <p className="text-xs text-slate-500 mb-4">
+        마감(매일 22:00 KST) · 다음날(00:00 이후 첫 접속) 시점에 자동 실행할 항목을 선택합니다.
+        같은 항목을 두 시점 모두 켜면 두 번 실행됩니다 (대부분 무해). 둘 다 끄면 해당 시점에 실행되지 않습니다.
+      </p>
+      {loading ? (
+        <div className="text-sm text-slate-400">로딩 중...</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-slate-500 text-xs border-b border-slate-200">
+              <th className="text-left font-medium py-2">항목</th>
+              <th className="text-center font-medium py-2 w-24">마감<br /><span className="text-slate-400 font-normal">22:00 KST</span></th>
+              <th className="text-center font-medium py-2 w-28">다음날<br /><span className="text-slate-400 font-normal">00시 이후</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {AUTO_ACTION_ITEMS.map(it => (
+              <tr key={it.key} className="border-b border-slate-100 last:border-0 align-middle">
+                <td className="py-3">
+                  <div className="font-medium text-slate-700">{it.label}</div>
+                  {it.hint && <div className="text-xs text-slate-400 mt-0.5">{it.hint}</div>}
+                </td>
+                <td className="py-3 text-center">
+                  <input
+                    type="checkbox"
+                    checked={config[it.key].close}
+                    disabled={saving === it.key}
+                    onChange={() => toggle(it.key, 'close')}
+                    className="w-4 h-4 cursor-pointer accent-blue-600"
+                  />
+                </td>
+                <td className="py-3 text-center">
+                  <input
+                    type="checkbox"
+                    checked={config[it.key].midnight}
+                    disabled={saving === it.key}
+                    onChange={() => toggle(it.key, 'midnight')}
+                    className="w-4 h-4 cursor-pointer accent-blue-600"
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="text-xs text-slate-400 mt-3">
+        참고: 위치 공유 차단·배송 카드 생성 차단은 현재 같은 매커니즘(closed_until)을 씁니다.
+        둘 중 하나라도 켜져 있으면 마감 상태로 진입합니다. 다음날 00시 트리거는 페이지 로드 시 하루 첫 회에만 실행됩니다.
+      </p>
+    </section>
   )
 }
 

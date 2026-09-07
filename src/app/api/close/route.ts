@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
 import { fromCron } from '@/lib/cronAuth'
 import { buildGridsByBranch, writeSnapshot } from '@/lib/sheetSnapshot'
+import { fetchAutoActions } from '@/lib/autoActions'
 import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing, Branch } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 // 마감은 크론 전용 (매일 22:00 KST = 13:00 UTC). URL 직접 접근 차단 — fromCron 참조.
+// 각 액션은 app_state.auto_actions.*.close 플래그로 켜기/끄기 가능(설정 페이지).
 
 // location_pings 전량 조회 (Supabase 기본 1000줄 한도 우회). 라이더 8h × 5s = 5,760/명.
 async function fetchAllPings(): Promise<LocationPing[]> {
@@ -27,21 +29,19 @@ async function fetchAllPings(): Promise<LocationPing[]> {
   return out
 }
 
-// 마감: 유효 현재일 기준
-// - 배송: 대기/배정 → completed (보드 비움)
-// - 고품: 수거된 품목 archived(현황에서 제거), 미수거는 유지
-// - closed_until = 다음날 06:00 KST 저장 → 그 전까지 마감 상태
 export async function GET(req: NextRequest) {
   if (!fromCron(req)) {
     return NextResponse.json({ ok: false, error: 'forbidden (cron only)' }, { status: 403 })
   }
   try {
+    // 자동 수행 설정 로드 (각 액션 개별 토글). close 플래그만 여기서 사용.
+    const auto = await fetchAutoActions(supabaseServer)
+    const closedStateFlag = auto.location_share_off.close || auto.delivery_create_block.close
+
     // 1) 현황 + 상태 조회를 한 번에 병렬 — 스냅샷/잔여/날짜 계산에 공유
-    // location_pings 는 페이지네이션 필요할 수 있어 별도 헬퍼로 (라이더 8h × 5초 = 5,760/명)
     const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, { data: deviceRows }, pingRows] = await Promise.all([
       supabaseServer.from('app_state').select('*'),
       supabaseServer.from('riders').select('*').eq('is_active', true),
-      // assigned(진행중) + completed(앱이 도착·이탈 시 완료처리) 둘 다 시트에 기록. completed 만 빼면 배달 완료분이 통째로 누락됨.
       supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).in('status', ['assigned', 'completed']),
       supabaseServer.from('gopoum_clients').select('*').order('created_at'),
       supabaseServer.from('gopoum_items').select('*'),
@@ -56,10 +56,7 @@ export async function GET(req: NextRequest) {
     const offset = parseInt(m.date_offset || '0') || 0
     const effNow = new Date(Date.now() + offset * 86400000)
     const nowIso = effNow.toISOString()
-    // 마감 대상 "영업일"은 실행 시각에서 6시간을 뺀 기준으로 판정한다.
-    // Vercel Hobby 크론은 예약 시각 대비 최대 1시간 지연될 수 있어, 자정 직전에 예약하면
-    // 00:xx 에 실행되어 날짜가 하루 밀렸다(→ 다음날 탭에 기록 + closed_until 이 하루 더 미뤄져
-    // 그 다음날 영업일 내내 마감 상태로 잠김). 06:00 이전 실행은 전날 마감으로 귀속시켜 방지.
+    // 06:00 이전 실행은 전날 마감으로 귀속 (Vercel Hobby 크론 최대 1시간 지연 대응).
     const bizAnchor = new Date(effNow.getTime() - 6 * 3600 * 1000)
     const kstDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(bizAnchor)
     const [y, mo, d] = kstDate.split('-').map(Number)
@@ -72,9 +69,7 @@ export async function GET(req: NextRequest) {
     const clients = (clientRows ?? []) as GopoumClient[]
     const allItems = (itemRows ?? []) as GopoumItem[]
     const activeItems = allItems.filter(i => !i.archived_at)
-    // 시트 그리드용: 아직 활성이거나 "오늘" 아카이브된 품목(마감 재시도/부분 실행 대비)까지 포함
     const snapshotItems = allItems.filter(i => !i.archived_at || i.archived_at >= todayStartIso)
-    // 위치 그리드는 "오늘" 핑만 (truncate 누락으로 이전날 핑이 남아있어도 오늘 탭 오염 방지)
     const pings = pingRows.filter(p => p.captured_at >= todayStartIso)
 
     // 앱은 device_id 로만 핑을 기록 → rider_devices.name 으로 rider_name 을 채워 스냅샷에 반영
@@ -85,69 +80,73 @@ export async function GET(req: NextRequest) {
       const name = dv.name ?? (dv.rider_id && riderNameById.has(dv.rider_id) ? riderNameById.get(dv.rider_id)! : null)
       if (name) devToRider.set(dv.device_id, { id: dv.rider_id ?? '', name })
     }
-    // 오늘 출근한 라이더만 시트에 표시 (예전 riders 잔존 방지)
     const todayRiderIds = new Set(
       deviceList
         .filter(dv => dv.today_first_connected_at != null && dv.rider_id != null)
         .map(dv => dv.rider_id!)
     )
     const todayRiders = riders.filter(r => todayRiderIds.has(r.id))
-    // 로그인(name)된 기기만 처리. 미지정 pings 는 아예 스냅샷에서 제외.
     for (const p of pings) {
       const r = p.device_id ? devToRider.get(p.device_id) : undefined
       if (r) { if (r.id) p.rider_id = r.id; p.rider_name = r.name }
     }
     const knownPings = pings.filter(p => p.rider_name)
 
-    // 스냅샷 그리드 (동기). 지점별로 갈라 각 지점 폴더(안산/2026, 강남/2026 …)에 기록.
     const branches = (branchRows ?? []) as Branch[]
-    if (branches.length === 0) {
-      return NextResponse.json({ ok: false, stage: 'sheet', error: '등록된 지점이 없습니다' }, { status: 500 })
-    }
-    const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, knownPings)
+    const performed: string[] = []
 
-    // 1) 시트 먼저 기록 (배송·고품 기록 실패 시 throw). 파괴적 DB 작업 전에 확정해 데이터 소실 방지.
-    //    (구버전은 삭제→truncate→after(시트) 순서라, truncate 가 던지면 DB만 비고 시트엔 안 써져 그날 데이터가 통째로 소실됐음)
-    //    지점이 하나라도 실패하면 DB 를 건드리지 않고 중단 — 그 지점 데이터가 시트에 없는 채로 삭제되면 안 되므로.
-    try {
-      for (const b of perBranch) await writeSnapshot(b.label, kstDate, b.data)
-    } catch (e) {
-      // 시트 실패 → DB 는 손대지 않고 중단. 원인 해결 후 그대로 재시도 가능.
-      return NextResponse.json({ ok: false, stage: 'sheet', error: String(e) }, { status: 500 })
+    // 1) 시트 업데이트
+    if (auto.sheet_update.close) {
+      if (branches.length === 0) {
+        return NextResponse.json({ ok: false, stage: 'sheet', error: '등록된 지점이 없습니다' }, { status: 500 })
+      }
+      const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, knownPings)
+      try {
+        for (const b of perBranch) await writeSnapshot(b.label, kstDate, b.data)
+      } catch (e) {
+        // 시트 실패 → DB 는 손대지 않고 중단. 원인 해결 후 그대로 재시도 가능.
+        return NextResponse.json({ ok: false, stage: 'sheet', error: String(e) }, { status: 500 })
+      }
+      performed.push('sheet_update')
     }
 
-    // 2) 시트 확정 후에만 DB 정리 (조회한 데이터로 잔여 계산 → 재조회 불필요)
-    await Promise.all([
-      // 배송 전체 삭제 (시트에 기록됨)
-      supabaseServer.from('deliveries').delete().not('id', 'is', null),
-      // 수거된 고품 → archived
-      supabaseServer.from('gopoum_items').update({ archived_at: nowIso }).not('picked_at', 'is', null).is('archived_at', null),
-      // 업체별 잔여(미수거) 수량 갱신
-      ...clients.map(gc => {
+    // 2) DB 정리 (활성화된 것만). 시트가 이미 확정됐거나 시트가 꺼져 있으면 그대로 진행.
+    const tasks: PromiseLike<unknown>[] = []
+    if (auto.delivery_reset.close) {
+      tasks.push(supabaseServer.from('deliveries').delete().not('id', 'is', null))
+      performed.push('delivery_reset')
+    }
+    if (auto.gopoum_reset.close) {
+      tasks.push(supabaseServer.from('gopoum_items').update({ archived_at: nowIso }).not('picked_at', 'is', null).is('archived_at', null))
+      for (const gc of clients) {
         const rem = activeItems.filter(i => i.gopoum_client_id === gc.id && !i.picked_at).length
-        return supabaseServer.from('gopoum_clients')
+        tasks.push(supabaseServer.from('gopoum_clients')
           .update({ total_quantity: rem, started_at: rem > 0 ? tomorrow8am : null })
-          .eq('id', gc.id)
-      }),
-      // 마감 상태 저장
-      supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }),
-      // 라이더 기기 전원 오프: 마감 시 connected + 출근시간 일괄 리셋 (다음날 첫 접속 시 새로 잡힘)
-      supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null, today_first_connected_at: null }).eq('connected', true),
-    ])
+          .eq('id', gc.id))
+      }
+      performed.push('gopoum_reset')
+    }
+    if (closedStateFlag) {
+      tasks.push(supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }))
+      // 라이더 기기 리셋(connected off + 출근시간 초기화)은 마감 상태 진입과 세트로 처리
+      tasks.push(supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null, today_first_connected_at: null }).eq('connected', true))
+      if (auto.location_share_off.close) performed.push('location_share_off')
+      if (auto.delivery_create_block.close) performed.push('delivery_create_block')
+    }
+    await Promise.all(tasks)
 
-    // 3) 위치 테이블 정리. 시트가 이미 확정됐으니 실패해도 비치명 — 마감은 성공 처리하고 다음 마감에 정리.
-    //    anon/service 모두 이 테이블 DELETE 권한 보유 → security-definer RPC(service_role 전용, anon 폴백 시 permission denied) 의존 제거하고 직접 삭제.
-    //    (DELETE 는 dead tuple 남지만 하루 수천 행 수준이라 autovacuum 으로 충분)
-    if (knownPings.length > 0) {
+    // 3) 위치 로그 정리 (활성화 시)
+    if (auto.location_log_purge.close && knownPings.length > 0) {
       const [pingsDel, locsDel] = await Promise.all([
         supabaseServer.from('location_pings').delete().not('id', 'is', null),
         supabaseServer.from('rider_locations').delete().not('device_id', 'is', null),
       ])
       if (pingsDel.error) console.error('location_pings 삭제 실패(비치명):', pingsDel.error)
       if (locsDel.error) console.error('rider_locations 삭제 실패(비치명):', locsDel.error)
+      performed.push('location_log_purge')
     }
 
-    return NextResponse.json({ ok: true, date: kstDate, closedUntil })
+    return NextResponse.json({ ok: true, date: kstDate, closedUntil: closedStateFlag ? closedUntil : null, performed })
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
   }

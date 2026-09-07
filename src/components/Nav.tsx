@@ -28,6 +28,14 @@ export default function Nav() {
       .subscribe()
     // 자정 넘어가며 마감 자동 해제 반영용 (1분마다 상태 재평가)
     const timer = setInterval(() => setState(s => ({ ...s })), 60000)
+    // 다음날(00시) 자동 수행 트리거. 서버가 idempotent(하루 한 번만 실행) — 그냥 매 마운트 호출.
+    // 로컬 캐시: 오늘 이미 호출했으면 스킵 (네트워크 절약)
+    try {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
+      if (localStorage.getItem('midnight-check-date') !== today) {
+        fetch('/api/midnight-check').then(r => r.ok && localStorage.setItem('midnight-check-date', today)).catch(() => {})
+      }
+    } catch { /* noop */ }
     return () => { supabase.removeChannel(channel); clearInterval(timer) }
   }, [refresh])
 
