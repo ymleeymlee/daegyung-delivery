@@ -258,7 +258,8 @@ function SettingsContent() {
             <label className="text-xs text-slate-500 block mb-1">시작</label>
             <input
               type="time"
-              defaultValue={state.businessOpen}
+              value={state.businessOpen}
+              onChange={e => setState(s => ({ ...s, businessOpen: e.target.value }))}
               onBlur={e => saveBusinessTime('business_open_time', e.target.value)}
               className={`${inputCls} min-w-[10.5rem]`}
             />
@@ -267,7 +268,8 @@ function SettingsContent() {
             <label className="text-xs text-slate-500 block mb-1">마감</label>
             <input
               type="time"
-              defaultValue={state.businessClose}
+              value={state.businessClose}
+              onChange={e => setState(s => ({ ...s, businessClose: e.target.value }))}
               onBlur={e => saveBusinessTime('business_close_time', e.target.value)}
               className={`${inputCls} min-w-[10.5rem]`}
             />
