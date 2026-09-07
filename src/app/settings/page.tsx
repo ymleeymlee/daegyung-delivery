@@ -10,17 +10,8 @@ import { Branch } from '@/types'
 // - 관리자 비밀번호 변경
 // - 지점 관리 (추가/편집/삭제 + 마감시간)
 export default function SettingsPage() {
+  // 언마운트(설정 페이지를 나가면) 자동 초기화 → 재진입 시 비번 재입력 필요
   const [unlocked, setUnlocked] = useState(false)
-  const [checked, setChecked] = useState(false) // 세션 확인 완료 플래그
-
-  useEffect(() => {
-    try {
-      if (sessionStorage.getItem('settings-unlocked') === '1') setUnlocked(true)
-    } catch { /* noop */ }
-    setChecked(true)
-  }, [])
-
-  if (!checked) return null
   if (!unlocked) return <PasswordGate onUnlock={() => setUnlocked(true)} />
   return <SettingsContent />
 }
@@ -64,7 +55,6 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
     try {
       const saved = await fetchAdminPassword()
       if (pw === saved) {
-        try { sessionStorage.setItem('settings-unlocked', '1') } catch { /* noop */ }
         onUnlock()
       } else {
         setMsg('비밀번호가 일치하지 않습니다.')
