@@ -264,8 +264,8 @@ function SettingsContent() {
                 <th className="text-left font-medium py-2 w-20">코드</th>
                 <th className="text-left font-medium py-2">지점명</th>
                 <th className="text-left font-medium py-2 w-16">정렬</th>
-                <th className="text-left font-medium py-2 w-28">시작</th>
-                <th className="text-left font-medium py-2 w-28">마감</th>
+                <th className="text-left font-medium py-2 w-40">시작</th>
+                <th className="text-left font-medium py-2 w-40">마감</th>
                 <th className="text-left font-medium py-2 w-20">현재</th>
                 <th className="text-right font-medium py-2 w-32">작업</th>
               </tr>
@@ -299,7 +299,7 @@ function SettingsContent() {
                         type="time"
                         defaultValue={b.open_time ?? ''}
                         onBlur={e => saveTime(b.code, 'open_time', e.target.value)}
-                        className={`${inputCls} w-24`}
+                        className={`${inputCls} w-36`}
                       />
                     </td>
                     <td className="py-3">
@@ -307,7 +307,7 @@ function SettingsContent() {
                         type="time"
                         defaultValue={b.close_time ?? ''}
                         onBlur={e => saveTime(b.code, 'close_time', e.target.value)}
-                        className={`${inputCls} w-24`}
+                        className={`${inputCls} w-36`}
                       />
                     </td>
                     <td className="py-3">
