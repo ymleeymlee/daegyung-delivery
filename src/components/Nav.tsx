@@ -72,13 +72,6 @@ export default function Nav() {
     setUpdating(false)
   }
 
-  async function handleNextDay() {
-    // 테스트용: 하루 앞으로 이동하며 마감 강제 해제 (다음날 06시 넘긴 상태)
-    await setDateOffset(state.offset + 1)
-    await clearClosed()
-    await refresh()
-  }
-
   async function handleResetToday() {
     // 테스트용: 실제 오늘(offset 0)로 복구 + 마감 해제
     await setDateOffset(0)
@@ -145,14 +138,6 @@ export default function Nav() {
           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {updating ? '업데이트 중...' : blockWindow ? '마감 준비중' : '업데이트'}
-        </button>
-        {/* 테스트용: 다음날로 강제 이동 */}
-        <button
-          onClick={handleNextDay}
-          className="text-xs border border-purple-300 text-purple-600 hover:bg-purple-50 px-2.5 py-1.5 rounded-xl transition-colors"
-          title="테스트용: 하루 앞으로"
-        >
-          다음날 →
         </button>
         {/* 테스트용: 실제 오늘로 리셋 (offset > 0일 때만) */}
         {state.offset > 0 && (
