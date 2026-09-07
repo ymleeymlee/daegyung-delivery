@@ -85,7 +85,6 @@ export default function Nav() {
         {menuOpen && (
           <div className="absolute top-full left-0 mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
             <Link href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">거래처 관리</Link>
-            <Link href="/branches" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100">지점 관리</Link>
           </div>
         )}
       </div>
