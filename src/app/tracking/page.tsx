@@ -872,9 +872,9 @@ export default function TrackingPage() {
             }}
             disabled={!warehouse}
             title={hqAddress ?? '본사 좌표 미설정'}
-            className="px-3 py-2 rounded-xl shadow text-sm font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-2 rounded-xl shadow text-sm font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed max-w-[24rem] truncate"
           >
-            📍 본사
+            📍 {hqAddress ?? (warehouse ? '본사' : '본사 좌표 미설정')}
           </button>
           <div className="relative">
             <button
@@ -884,15 +884,22 @@ export default function TrackingPage() {
                 pickMode ? 'bg-slate-600 text-white hover:bg-slate-700'
                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
               } disabled:opacity-40 disabled:cursor-not-allowed`}
-              title="본사(배송 출발) 위치를 주소로 변경"
+              title="본사(배송 출발) 위치·지오펜스 반경 설정"
             >
-              {saving ? '저장 중…' : pickMode ? '닫기' : '📍 본사 위치 변경'}
+              {saving ? '저장 중…' : pickMode ? '닫기' : '⚙️ 설정'}
             </button>
             {pickMode && (
               <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-lg border border-slate-200 p-3 flex flex-col gap-3">
-                {/* 주소 입력 */}
+                {/* 현재 본사 주소 (읽기 전용) */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">본사 주소</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">현재 본사 주소</label>
+                  <div className="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
+                    {hqAddress ?? (warehouse ? '(주소 조회 중…)' : '미설정')}
+                  </div>
+                </div>
+                {/* 주소 입력 */}
+                <div className="border-t border-slate-100 pt-2.5">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">본사 주소 변경</label>
                   <div className="flex items-center gap-1.5">
                     <input
                       type="text"
