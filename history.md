@@ -1,29 +1,36 @@
 # 대경배송시스템(웹) — 프로젝트 히스토리 (요청 시 열람)
 
 ## 스택 / 위치
-- 웹: `~/Desktop/daegyung-delivery` — Next16·React19·TS·Tailwind4·Supabase·Vercel(main 자동배포, Hobby=크론 하루 1회).
+- 웹: `~/Desktop/daegyung-delivery` — Next16·React19·TS·Tailwind4·Supabase·Vercel(main 자동배포, Hobby=크론 하루 1개).
 - 앱: `~/Desktop/daegyung-rider-app` — Kotlin. APK는 웹 public/rider-app.apk로 복사·커밋→배포.
 
 ## 관례 / 인프라
-- 작업 완료(검증) 시 자동 배포. 검증 `npx tsc --noEmit`.
-- Supabase Management API로 SQL 직접 실행. 토큰 `security find-generic-password -s ck-daegyung-supabase -w`. ref=`edhfiqeklkpmjzevsquw`. 응답 `[]`=성공.
-- RLS off, anon 키로 앱/웹 직접 write. 지점: gn(강남)·as(안산).
+- 검증 `npx tsc --noEmit`. main 푸시 시 Vercel 자동 배포.
+- Supabase Management API: 토큰 `security find-generic-password -s ck-daegyung-supabase -w`. ref=`edhfiqeklkpmjzevsquw`. 응답 `[]`=성공.
+- Vercel API: 토큰 `security find-generic-password -s ck-vercel -w` (env 등록·배포 상태 조회 가능).
+- RLS off, anon 키로 앱/웹 직접 write. 지점: as(안산)·gn(강남).
 
-## 라이더 관리 흐름 대개편 (v1.9~)
-- `/riders` 페이지 삭제. 배송보드 카드가 곧 라이더 관리 UI(이름·전화·기기ID + 삭제 버튼 + 미접속 회색).
-- 소스: `rider_devices` (name/phone/branch/connected/last_connected_at/today_first_connected_at/app_version). deliveries.rider_id FK 유지 위해 riders auto-upsert(phone 유니크 partial index).
-- 배송보드: 카드에 이름(큰 폰트) · 전화(nnn-nnnn-nnnn 포맷) · 기기ID · 출근시간(오늘 첫 접속) · 미접속/배정불가 뱃지 · 진행중/완료 divider 분리.
-- 시트 스냅샷(close/update-sheets/dailyReport): 오늘 출근한 라이더(`today_first_connected_at`) + 최소 앱 버전 이상 기기만 표시. 미지정 pings 제외.
+## 시트 저장 구조 (2026-09-07 개편)
+- 지점/카테고리/YY-MM 스프레드시트, 탭은 MM-DD. 예: `안산/배송/26-09` 파일의 `09-08` 탭.
+- 서비스계정 → **OAuth 위임** 으로 전환 (custom.my.car.official@gmail.com 계정의 15GB 사용). 서비스계정은 Drive 저장 용량 0 이라 파일 생성 시 quota 초과.
+- Vercel env: `GOOGLE_OAUTH_CLIENT_ID`/`_SECRET`/`_REFRESH_TOKEN`. `GOOGLE_SERVICE_ACCOUNT_B64` 은 롤백 대비로 남김.
+- 자동 파일/폴더 생성: `googleSheets.ts`의 `findDoc(..., {autoCreate:true})`.
 
-## 서버사이드 버전 게이트 (v1.9.9~)
-- `app_state.min_app_version` (현재 "1.10.0"). 앱이 upsert 시 실은 `rider_devices.app_version`과 비교.
-- 미달 기기는 배송보드·tracking에서 아예 숨김. tracking은 추가로 connected=true만 표시.
+## 자동 수행 시스템 (2026-09-08 신규)
+- app_state.auto_actions JSON — 6개 항목(sheet_update/location_share_off/delivery_create_block/delivery_reset/gopoum_reset/location_log_purge) × 2트리거(close/midnight) 매트릭스.
+- 트리거: (1) 마감 = `business_close_time` 기준. 크론 22:00 KST + 클라이언트 트리거 `/api/close-check` (Nav 마다 호출, 서버가 `last_close_reset_date` 로 하루 1회만 실행). (2) 00시 = `/api/midnight-check` (Nav 마다 호출, `last_midnight_reset_date` idempotency).
+- 전역 영업시간: `business_open_time`/`business_close_time` (기본 08:00/18:00). 지점별 open/close 제거됨.
+
+## 설정 페이지 (`/settings`)
+- 톱니 아이콘 진입, 관리자 비밀번호 게이트(app_state.admin_password, 기본 1234). 나가면 잠금 초기화.
+- 카드: 시트 업데이트 / 영업 시간(전역) / 지점 관리(코드·이름·정렬만, 시간 열 제거) / 자동 수행 매트릭스 / 비밀번호 변경.
 
 ## 다음 할 일
-- 어제(08-25) 22:00 마감 크론 skip 이력. 잔재 2건 삭제 여부 결정. Vercel Cron Jobs 실행 로그 확인(사용자).
-- branches close_time 임시값 원복(gn 18:30, as 18:00). 지금 둘 다 23:59.
+- 이용문 폰 등 v1.9.7 이전 앱 웹 표시 문제(app_version=null) 재확인.
+- tracking 페이지 지점 변경 시 Chrome 렌더러 크래시("This page couldn't load") — 채널명/맵/오버레이 정리 3건 적용했지만 여전히 재현. DevTools 콘솔 로그 필요.
+- 이번 달 자동 생성된 시트(안산·강남 × 배송·고품·위치 × 26-09) 실제 파일 확인.
 
 ## 최근 커밋 3
-- 0e99cfe 새 APK v1.10.0
-- 133859e 새 APK v1.9.9 + 미달 버전 앱은 배송보드·tracking 에서 아예 숨김
-- f8bf124 새 APK v1.9.8 + tracking 에서 connected=false 숨김
+- 9975032 UI: 본사 버튼 원복 + 품목 표기 '총/타' → '잔여 N'
+- 53f4114 tracking: 본사 버튼에 주소 표시 + '위치 변경' → '설정' 팝업 개편
+- 164d8f5 설정 영업시간: uncontrolled → controlled input (저장/표시 유실 수정)
