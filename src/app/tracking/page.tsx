@@ -872,9 +872,9 @@ export default function TrackingPage() {
             }}
             disabled={!warehouse}
             title={hqAddress ?? '본사 좌표 미설정'}
-            className="px-3 py-2 rounded-xl shadow text-sm font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed max-w-[24rem] truncate"
+            className="px-3 py-2 rounded-xl shadow text-sm font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            📍 {hqAddress ?? (warehouse ? '본사' : '본사 좌표 미설정')}
+            📍 본사
           </button>
           <div className="relative">
             <button

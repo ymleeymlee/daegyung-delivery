@@ -85,9 +85,9 @@ function GopoumModal({
           {/* 각 품목: 내 수거량 −/+ (0이면 미수거·노랑, >0이면 수거·초록). 총량 초과 불가 */}
           {sorted.map(item => {
             const val = myVal(item)
-            const others = othersQty(item)
             const max = maxForMe(item)
             const picked = val > 0
+            const remain = qty(item) - collectedTotal(item)  // 아무도 아직 안 수거한 개수
             return (
               <div key={item.id}
                 className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-colors ${
@@ -96,7 +96,7 @@ function GopoumModal({
                 <div className="flex-1 min-w-0">
                   <div>
                     <span className={`text-sm font-medium ${picked ? 'text-green-700' : 'text-amber-800'}`}>{item.description}</span>
-                    <span className="text-xs text-slate-400 ml-2 whitespace-nowrap">총 {qty(item)}{others > 0 ? ` · 타 ${others}` : ''}</span>
+                    <span className="text-xs text-slate-400 ml-2 whitespace-nowrap">잔여 {remain}</span>
                   </div>
                   {item.note && (
                     <div className="mt-1.5 text-xs text-slate-700 bg-white border border-slate-200 rounded-md px-2 py-1 break-words">
