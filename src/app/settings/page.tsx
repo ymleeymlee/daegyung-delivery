@@ -164,7 +164,21 @@ function SettingsContent() {
   async function saveBusinessTime(field: 'business_open_time' | 'business_close_time', value: string) {
     if (!value) return
     const { error } = await supabase.from('app_state').upsert({ key: field, value })
-    if (error) alert('저장 실패: ' + error.message)
+    if (error) { alert('저장 실패: ' + error.message); return }
+    // 새 영업시간에 지금이 "영업중" 이면 자동마감(closed_until) 도 함께 해제.
+    // 관리자가 영업시간을 앞당겨 재개하려는 의도로 판단.
+    const newOpen = field === 'business_open_time' ? value : state.businessOpen
+    const newClose = field === 'business_close_time' ? value : state.businessClose
+    const nowHmNew = kstNowHm(state.offset)
+    if (!isBusinessClosed(nowHmNew, newOpen, newClose)) {
+      await supabase.from('app_state').upsert({ key: 'closed_until', value: '' })
+    }
+  }
+
+  async function clearAutoClose() {
+    if (!confirm('자동마감 상태를 지금 해제하시겠습니까?')) return
+    const { error } = await supabase.from('app_state').upsert({ key: 'closed_until', value: '' })
+    if (error) alert('해제 실패: ' + error.message)
   }
 
   async function saveDeliveryRadius(value: number) {
@@ -280,11 +294,20 @@ function SettingsContent() {
               className={`${inputCls} min-w-[10.5rem]`}
             />
           </div>
-          <div className="mb-1.5">
+          <div className="mb-1.5 flex items-center gap-2">
             {isBusinessClosed(nowHm, state.businessOpen, state.businessClose) ? (
               <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">현재 마감</span>
             ) : (
               <span className="text-xs font-medium text-green-600">현재 영업중</span>
+            )}
+            {state.closedUntil && new Date(state.closedUntil).getTime() > effNow(state.offset).getTime() && (
+              <button
+                onClick={clearAutoClose}
+                className="text-xs border border-slate-300 text-slate-600 hover:bg-slate-50 px-2 py-0.5 rounded-lg transition-colors"
+                title="이전 자동마감으로 세팅된 closed_until 을 지금 즉시 해제"
+              >
+                자동마감 해제
+              </button>
             )}
           </div>
         </div>
