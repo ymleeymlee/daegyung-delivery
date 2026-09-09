@@ -137,6 +137,9 @@ export async function runCloseIfDue(source: 'cron' | 'client'): Promise<CloseRun
   const tasks: PromiseLike<unknown>[] = []
   if (auto.delivery_reset.close) {
     tasks.push(supabaseServer.from('deliveries').delete().not('id', 'is', null))
+    // 출근시간(today_first_connected_at) 초기화는 여기서 (배송현황 정리와 함께).
+    // 마감/자정 로그아웃 자체에선 유지 → 마감 후에도 배송현황 카드에 출근시간·색상 유지됨.
+    tasks.push(supabaseServer.from('rider_devices').update({ today_first_connected_at: null }).not('today_first_connected_at', 'is', null))
     performed.push('delivery_reset')
   }
   if (auto.gopoum_reset.close) {
@@ -151,7 +154,7 @@ export async function runCloseIfDue(source: 'cron' | 'client'): Promise<CloseRun
   }
   if (closedStateFlag) {
     tasks.push(supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }))
-    tasks.push(supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null, today_first_connected_at: null }).eq('connected', true))
+    tasks.push(supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null }).eq('connected', true))
     if (auto.location_share_off.close) performed.push('location_share_off')
     if (auto.delivery_create_block.close) performed.push('delivery_create_block')
   }

@@ -100,6 +100,8 @@ export async function GET() {
     const nowIso = new Date().toISOString()
     if (auto.delivery_reset.midnight) {
       tasks.push(supabaseServer.from('deliveries').delete().not('id', 'is', null))
+      // 출근시간 초기화는 배송현황 정리와 함께 (마감/자정 로그아웃 자체에선 유지).
+      tasks.push(supabaseServer.from('rider_devices').update({ today_first_connected_at: null }).not('today_first_connected_at', 'is', null))
       performed.push('delivery_reset')
     }
     if (auto.gopoum_reset.midnight) {
@@ -124,7 +126,7 @@ export async function GET() {
       // 다음날 00시 트리거 → 오늘 06:00 KST 까지 닫힘 (곧 자동 해제)
       const closedUntil = new Date(`${today}T06:00:00+09:00`).toISOString()
       tasks.push(supabaseServer.from('app_state').upsert({ key: 'closed_until', value: closedUntil }))
-      tasks.push(supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null, today_first_connected_at: null }).eq('connected', true))
+      tasks.push(supabaseServer.from('rider_devices').update({ connected: false, last_connected_at: null }).eq('connected', true))
       if (auto.location_share_off.midnight) performed.push('location_share_off')
       if (auto.delivery_create_block.midnight) performed.push('delivery_create_block')
     }
