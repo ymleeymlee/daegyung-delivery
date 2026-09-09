@@ -1006,7 +1006,7 @@ export default function TrackingPage() {
         <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur rounded-xl shadow-lg border border-slate-200 w-64 max-h-[70vh] overflow-y-auto">
           <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
             <span className="text-sm font-semibold text-slate-700">
-              {isLive ? '운행 중' : `${viewDate} 동선`}
+              {isLive ? (isClosedState ? '운행마감' : '운행 중') : `${viewDate} 동선`}
             </span>
             <span className={`${isLive ? 'bg-red-100 text-red-600' : 'bg-purple-100 text-purple-600'} text-xs font-bold px-2 py-0.5 rounded-full`}>
               {isLive ? panelLocations.length : (archive?.riders.length ?? 0)}
