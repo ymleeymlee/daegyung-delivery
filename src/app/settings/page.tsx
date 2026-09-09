@@ -449,6 +449,8 @@ function SettingsContent() {
 }
 
 // === 라이더 앱 배포 (인앱 자동 업데이트) ===
+// 최신 버전/APK URL 은 웹에 배포된 /rider-app.json 을 읽어 Nav 에서 자동 동기화 (수동 입력 없음).
+// 이 카드는 현재 값 확인 + 최소 버전(강제 게이팅) 만 관리.
 function AppReleaseSection() {
   const [latestVersion, setLatestVersion] = useState('')
   const [apkUrl, setApkUrl] = useState('')
@@ -465,10 +467,17 @@ function AppReleaseSection() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    const ch = supabase
+      .channel('app-release-settings')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state' }, () => void load())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [load])
 
-  async function save(field: 'latest_app_version' | 'latest_app_apk_url' | 'min_app_version', value: string) {
-    const { error } = await supabase.from('app_state').upsert({ key: field, value })
+  async function saveMin(value: string) {
+    const { error } = await supabase.from('app_state').upsert({ key: 'min_app_version', value })
     if (error) alert('저장 실패: ' + error.message)
   }
 
@@ -476,44 +485,31 @@ function AppReleaseSection() {
     <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
       <h2 className="text-base font-semibold text-slate-800 mb-1">라이더 앱 배포</h2>
       <p className="text-xs text-slate-500 mb-4">
-        APK를 새로 배포한 뒤 <b>최신 버전</b>을 갱신하면, 실행 중인 라이더 앱에 &quot;새 버전 있음&quot; 팝업이 뜹니다.
+        <b>최신 버전 · APK URL</b> 은 웹 배포에 포함된 <code>/rider-app.json</code> 에서 자동 동기화됩니다 (수동 입력 없음).
         <br />
-        <b>최소 버전</b>은 강제 게이팅 — 이 버전 미달이면 출근 자체가 막힙니다.
+        APK 를 새로 빌드·배포하면 실행 중인 라이더 앱에 &quot;새 버전 있음&quot; 팝업이 뜹니다.
       </p>
       {loading ? (
         <div className="text-sm text-slate-400">로딩 중...</div>
       ) : (
         <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">최신 버전 (알림용 · 예: 1.10.4)</label>
-            <input
-              type="text"
-              value={latestVersion}
-              onChange={e => setLatestVersion(e.target.value)}
-              onBlur={e => save('latest_app_version', e.target.value.trim())}
-              placeholder="1.10.4"
-              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-40 font-mono"
-            />
+          <div className="flex flex-wrap gap-6 text-sm">
+            <div>
+              <div className="text-xs text-slate-500 mb-0.5">최신 버전 (자동)</div>
+              <div className="font-mono text-slate-800">{latestVersion || <span className="text-slate-400 italic">미동기화</span>}</div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-slate-500 mb-0.5">APK URL (자동)</div>
+              <div className="font-mono text-slate-600 text-xs truncate" title={apkUrl}>{apkUrl || <span className="text-slate-400 italic">미동기화</span>}</div>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">APK 다운로드 URL</label>
-            <input
-              type="text"
-              value={apkUrl}
-              onChange={e => setApkUrl(e.target.value)}
-              onBlur={e => save('latest_app_apk_url', e.target.value.trim())}
-              placeholder="https://<도메인>/rider-app.apk"
-              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-full max-w-lg font-mono"
-            />
-            <p className="text-[10px] text-slate-400 mt-1">앱이 이 URL 에서 APK 를 내려받아 설치를 시작합니다.</p>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">최소 버전 (강제 게이팅 · 예: 1.10.0)</label>
+          <div className="border-t border-slate-100 pt-3">
+            <label className="block text-xs text-slate-500 mb-1">최소 버전 (강제 게이팅 · 미달이면 출근 차단)</label>
             <input
               type="text"
               value={minVersion}
               onChange={e => setMinVersion(e.target.value)}
-              onBlur={e => save('min_app_version', e.target.value.trim())}
+              onBlur={e => saveMin(e.target.value.trim())}
               placeholder="1.10.0"
               className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-40 font-mono"
             />

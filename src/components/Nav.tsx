@@ -20,6 +20,28 @@ export default function Nav() {
 
   const refresh = useCallback(async () => { setState(await fetchAppState()) }, [])
 
+  // 앱 최신 버전·APK URL 을 웹 배포된 /rider-app.json 에서 자동 동기화.
+  // 배포된 값과 Supabase 값이 다르면 upsert → admin 이 설정 페이지에서 수동 입력할 필요 없음.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/rider-app.json', { cache: 'no-store' })
+        if (!res.ok) return
+        const json = await res.json() as { version?: string }
+        const version = (json.version ?? '').trim()
+        if (!version) return
+        const apkUrl = `${window.location.origin}/rider-app.apk`
+        const { data } = await supabase.from('app_state').select('key,value').in('key', ['latest_app_version', 'latest_app_apk_url'])
+        const m: Record<string, string> = {}
+        for (const r of (data ?? []) as { key: string; value: string }[]) m[r.key] = r.value
+        const updates: { key: string; value: string }[] = []
+        if (m.latest_app_version !== version) updates.push({ key: 'latest_app_version', value: version })
+        if (m.latest_app_apk_url !== apkUrl) updates.push({ key: 'latest_app_apk_url', value: apkUrl })
+        if (updates.length) await supabase.from('app_state').upsert(updates)
+      } catch { /* 실패 조용히 스킵 (Nav 는 자동 동기화이므로) */ }
+    })()
+  }, [])
+
   useEffect(() => {
     refresh()
     const channel = supabase
