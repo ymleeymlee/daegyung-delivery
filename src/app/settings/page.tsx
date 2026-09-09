@@ -172,6 +172,7 @@ function SettingsContent() {
     if (error) alert('저장 실패: ' + error.message)
   }
 
+
   function startEdit(b: Branch) {
     setEditingCode(b.code); setEditLabel(b.label); setEditSortOrder(b.sort_order)
   }
@@ -310,6 +311,8 @@ function SettingsContent() {
         </div>
       </section>
 
+      <AppReleaseSection />
+
       {/* 지점 관리 카드 */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
         <h2 className="text-base font-semibold text-slate-800 mb-1">지점 관리</h2>
@@ -419,6 +422,82 @@ function SettingsContent() {
 
       {pwOpen && <PasswordChangeModal onClose={() => setPwOpen(false)} />}
     </div>
+  )
+}
+
+// === 라이더 앱 배포 (인앱 자동 업데이트) ===
+function AppReleaseSection() {
+  const [latestVersion, setLatestVersion] = useState('')
+  const [apkUrl, setApkUrl] = useState('')
+  const [minVersion, setMinVersion] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('app_state').select('*').in('key', ['latest_app_version', 'latest_app_apk_url', 'min_app_version'])
+    const m: Record<string, string> = {}
+    for (const r of (data ?? []) as { key: string; value: string }[]) m[r.key] = r.value
+    setLatestVersion(m.latest_app_version || '')
+    setApkUrl(m.latest_app_apk_url || '')
+    setMinVersion(m.min_app_version || '')
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function save(field: 'latest_app_version' | 'latest_app_apk_url' | 'min_app_version', value: string) {
+    const { error } = await supabase.from('app_state').upsert({ key: field, value })
+    if (error) alert('저장 실패: ' + error.message)
+  }
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-800 mb-1">라이더 앱 배포</h2>
+      <p className="text-xs text-slate-500 mb-4">
+        APK를 새로 배포한 뒤 <b>최신 버전</b>을 갱신하면, 실행 중인 라이더 앱에 &quot;새 버전 있음&quot; 팝업이 뜹니다.
+        <br />
+        <b>최소 버전</b>은 강제 게이팅 — 이 버전 미달이면 출근 자체가 막힙니다.
+      </p>
+      {loading ? (
+        <div className="text-sm text-slate-400">로딩 중...</div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">최신 버전 (알림용 · 예: 1.10.4)</label>
+            <input
+              type="text"
+              value={latestVersion}
+              onChange={e => setLatestVersion(e.target.value)}
+              onBlur={e => save('latest_app_version', e.target.value.trim())}
+              placeholder="1.10.4"
+              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-40 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">APK 다운로드 URL</label>
+            <input
+              type="text"
+              value={apkUrl}
+              onChange={e => setApkUrl(e.target.value)}
+              onBlur={e => save('latest_app_apk_url', e.target.value.trim())}
+              placeholder="https://<도메인>/rider-app.apk"
+              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-full max-w-lg font-mono"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">앱이 이 URL 에서 APK 를 내려받아 설치를 시작합니다.</p>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">최소 버전 (강제 게이팅 · 예: 1.10.0)</label>
+            <input
+              type="text"
+              value={minVersion}
+              onChange={e => setMinVersion(e.target.value)}
+              onBlur={e => save('min_app_version', e.target.value.trim())}
+              placeholder="1.10.0"
+              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 w-40 font-mono"
+            />
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 
