@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, fetchAppState, effNow, kstNowHm, isBusinessClosed } from '@/lib/appState'
+import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, DEFAULT_DELIVERY_RADIUS, fetchAppState, effNow, kstNowHm, isBusinessClosed } from '@/lib/appState'
 import { AUTO_ACTION_ITEMS, AutoActionKey, AutoActionsMap, defaultAutoActions, fetchAutoActions, saveAutoActions } from '@/lib/autoActions'
 import { Branch } from '@/types'
 
@@ -106,7 +106,7 @@ function SettingsContent() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
   const [updateDone, setUpdateDone] = useState(false)
-  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE })
+  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE, deliveryRadius: DEFAULT_DELIVERY_RADIUS })
   const [pwOpen, setPwOpen] = useState(false)
 
   // 지점 편집 상태
@@ -164,6 +164,11 @@ function SettingsContent() {
   async function saveBusinessTime(field: 'business_open_time' | 'business_close_time', value: string) {
     if (!value) return
     const { error } = await supabase.from('app_state').upsert({ key: field, value })
+    if (error) alert('저장 실패: ' + error.message)
+  }
+
+  async function saveDeliveryRadius(value: number) {
+    const { error } = await supabase.from('app_state').upsert({ key: 'delivery_radius_m', value: String(value) })
     if (error) alert('저장 실패: ' + error.message)
   }
 
@@ -281,6 +286,27 @@ function SettingsContent() {
               <span className="text-xs font-medium text-green-600">현재 영업중</span>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* 배송지 도착 반경 카드 */}
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-800 mb-1">배송지 도착 반경</h2>
+        <p className="text-xs text-slate-500 mb-4">
+          라이더가 배송지 좌표로부터 이 반경 안에 진입하면 &apos;배송완료&apos;가 자동 기록됩니다.
+          앱이 30초 주기로 이 값을 읽어 반영합니다.
+        </p>
+        <div className="flex items-center gap-4">
+          <input
+            type="range" min={10} max={200} step={5}
+            value={state.deliveryRadius}
+            onChange={e => setState(s => ({ ...s, deliveryRadius: parseInt(e.target.value) }))}
+            onMouseUp={e => saveDeliveryRadius(parseInt((e.target as HTMLInputElement).value))}
+            onTouchEnd={e => saveDeliveryRadius(parseInt((e.target as HTMLInputElement).value))}
+            onKeyUp={e => saveDeliveryRadius(parseInt((e.target as HTMLInputElement).value))}
+            className="flex-1 max-w-md accent-blue-600"
+          />
+          <span className="text-sm font-mono text-slate-700 min-w-[3.5rem] text-right">{state.deliveryRadius}m</span>
         </div>
       </section>
 

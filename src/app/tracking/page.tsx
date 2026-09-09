@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
-import { fetchAppState, isClosedNow, isBusinessClosed, kstNowHm, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, type AppState } from '@/lib/appState'
+import { fetchAppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, DEFAULT_DELIVERY_RADIUS, type AppState } from '@/lib/appState'
 import { isVersionAtLeast } from '@/lib/version'
 import { useBranch } from '@/lib/branch'
+import { RIDER_PALETTE, buildRiderColorMap } from '@/lib/riderColors'
 import type { RiderLocation, DeliveryTrip } from '@/types'
 import type { ArchiveResponse } from '@/app/api/location-archive/route'
 
@@ -66,8 +67,8 @@ declare global {
 
 interface Warehouse { lat: number; lng: number; radius: number }
 
-// 아카이브 모드에서 여러 라이더 경로 색상 팔레트 (순환 사용)
-const PATH_PALETTE = ['#ef4444', '#3b82f6', '#22c55e', '#f97316', '#a855f7', '#0ea5e9', '#ec4899', '#84cc16']
+// 라이더 색상 팔레트는 riderColors.ts 의 RIDER_PALETTE 를 공용으로 사용.
+const PATH_PALETTE = RIDER_PALETTE
 
 function todayKst(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())
@@ -105,7 +106,6 @@ export default function TrackingPage() {
   const [geocoding, setGeocoding] = useState(false)
   const [pathDeviceId, setPathDeviceId] = useState<string | null>(null)
   const [pathLoading, setPathLoading] = useState(false)
-  const [pathPointCount, setPathPointCount] = useState(0)
   const [radiusInput, setRadiusInput] = useState(100)
   const [trips, setTrips] = useState<DeliveryTrip[]>([])
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null)
@@ -119,6 +119,8 @@ export default function TrackingPage() {
   const [connectedSet, setConnectedSet] = useState<Set<string>>(new Set())
   // 최소 앱 버전 이상 device_id 집합
   const [allowedDeviceSet, setAllowedDeviceSet] = useState<Set<string>>(new Set())
+  // device_id → 무지개 색상 (오늘 출근 순, 지점 필터 후 배정)
+  const [deviceColorMap, setDeviceColorMap] = useState<Map<string, string>>(new Map())
   // 배송 출발/완료 토스트 알림
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: 'start' | 'end' }[]>([])
   // 본사 좌표 역지오코딩 결과 (버튼 tooltip용)
@@ -128,15 +130,14 @@ export default function TrackingPage() {
   const [viewDate, setViewDate] = useState<string>(todayKst())
   const [archive, setArchive] = useState<ArchiveResponse | null>(null)
   const [archiveLoading, setArchiveLoading] = useState(false)
-  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE })
+  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE, deliveryRadius: DEFAULT_DELIVERY_RADIUS })
   // 아카이브: 그 날짜의 배송출발~본사복귀 구간(delivery_trips, device 기준). 동선 구간분리에 사용.
   const [archiveTripsRaw, setArchiveTripsRaw] = useState<{ deviceId: string; start: number; end: number }[]>([])
 
-  // 마감된 날은 오늘이라도 라이브가 아니라 아카이브(시트)에서 로드
-  // (마감 시 location_pings 가 비워지므로 Supabase 라이브로는 오늘 동선이 안 보임)
-  const isLive = viewDate === todayKst() &&
-    !isClosedNow(appState) &&
-    !isBusinessClosed(kstNowHm(appState.offset), appState.businessOpen, appState.businessClose)
+  // "오늘" 이면 라이브 뷰(Supabase pings/trips 직접 조회) 유지 — 마감 이후에도 pings 가 남아있는 한 오늘 동선 계속 표시.
+  // 마감 후 실시간 마커는 rider_devices.connected=false 로 자연 필터되어 사라짐(아래 visibleLocations).
+  // 위치 로그 정리(location_pings delete)가 실제로 지운 뒤엔 조회 결과가 비어 자연스럽게 궤적도 사라짐.
+  const isLive = viewDate === todayKst()
 
   // device_id → 표시 이름. 매핑되면 라이더 이름, 아니면 "미지정 (앞8자)".
   const nameOf = useCallback((deviceId: string) =>
@@ -159,14 +160,15 @@ export default function TrackingPage() {
   useEffect(() => {
     let active = true
     const load = async () => {
-      const { data: devs } = await supabase.from('rider_devices').select('device_id,name,branch,connected,app_version')
+      const { data: devs } = await supabase.from('rider_devices').select('device_id,name,branch,connected,app_version,today_first_connected_at')
       if (!active) return
       const m = new Map<string, string>()
       const b = new Map<string, string>()
       const c = new Set<string>()
       const allowed = new Set<string>()
       const min = appState.minAppVersion
-      for (const d of (devs ?? []) as { device_id: string; name: string | null; branch: string | null; connected: boolean; app_version: string | null }[]) {
+      const rows = (devs ?? []) as { device_id: string; name: string | null; branch: string | null; connected: boolean; app_version: string | null; today_first_connected_at: string | null }[]
+      for (const d of rows) {
         if (d.name) m.set(d.device_id, d.name)
         if (d.branch) b.set(d.device_id, d.branch)
         if (d.connected) c.add(d.device_id)
@@ -176,6 +178,19 @@ export default function TrackingPage() {
       setDeviceBranch(b)
       setConnectedSet(c)
       setAllowedDeviceSet(allowed)
+      // 오늘 출근 순으로 색상 배정 (지점별 필터 후) — 배송현황 뱃지와 매칭
+      const byBranch = new Map<string, typeof rows>()
+      for (const d of rows) {
+        if (!d.branch) continue
+        if (!byBranch.has(d.branch)) byBranch.set(d.branch, [])
+        byBranch.get(d.branch)!.push(d)
+      }
+      const colorMap = new Map<string, string>()
+      for (const [, list] of byBranch) {
+        const sub = buildRiderColorMap(list)
+        for (const [k, v] of sub) colorMap.set(k, v)
+      }
+      setDeviceColorMap(colorMap)
     }
     void load()
     const ch = supabase
@@ -367,13 +382,14 @@ export default function TrackingPage() {
     fiveMinMarksRef.current = []
   }, [])
 
-  // 주어진 pings 로 폴리라인 렌더링 (+ withFiveMinMarks 옵션)
-  const renderPingsAsPath = useCallback((pts: Ping[], opts: { withFiveMinMarks: boolean; fit: boolean }) => {
+  // 주어진 pings 로 폴리라인 렌더링 (+ withFiveMinMarks 옵션). color: 라이더 색상.
+  const renderPingsAsPath = useCallback((pts: Ping[], opts: { withFiveMinMarks: boolean; fit: boolean; color?: string }) => {
     const kakao = window.kakao
     const map = mapRef.current
     if (!kakao || !map) return
     clearRiderOverlays()
     if (pts.length < 1) return
+    const color = opts.color ?? '#7c3aed'
     // 스파이크(텔레포트)·저정확도 점 제거 + 추적끊김 구간에서 선 끊기
     const { segments, kept } = cleanPathSegments(pts)
     if (kept.length < 1) return
@@ -382,14 +398,14 @@ export default function TrackingPage() {
       if (seg.length < 2) continue
       const pl = new kakao.maps.Polyline({
         path: seg.map(p => new kakao.maps.LatLng(p.lat, p.lng)),
-        strokeWeight: 4, strokeColor: '#7c3aed', strokeOpacity: 0.85, strokeStyle: 'solid',
+        strokeWeight: 4, strokeColor: color, strokeOpacity: 0.85, strokeStyle: 'solid',
       })
       pl.setMap(map)
       pathRef.current.push(pl)
     }
     pathStartMarkerRef.current = new kakao.maps.CustomOverlay({
       position: new kakao.maps.LatLng(kept[0].lat, kept[0].lng), yAnchor: 1.2, zIndex: 4,
-      content: '<div style="background:#22c55e;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:9999px;white-space:nowrap;">시작</div>',
+      content: `<div style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:9999px;white-space:nowrap;">시작</div>`,
     })
     pathStartMarkerRef.current.setMap(map)
 
@@ -412,7 +428,7 @@ export default function TrackingPage() {
           if (!lastMark || distMeters(lastMark, p) > SAME_SPOT_M) {
             const overlay = new kakao.maps.CustomOverlay({
               position: new kakao.maps.LatLng(p.lat, p.lng), yAnchor: 0.5, zIndex: 3,
-              content: `<div style="background:#fff;border:2px solid #7c3aed;color:#7c3aed;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">${timeFmt.format(new Date(nextMark))}</div>`,
+              content: `<div style="background:#fff;border:2px solid ${color};color:${color};font-size:10px;font-weight:700;padding:1px 6px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">${timeFmt.format(new Date(nextMark))}</div>`,
             })
             overlay.setMap(map)
             fiveMinMarksRef.current.push(overlay)
@@ -430,19 +446,17 @@ export default function TrackingPage() {
     }
   }, [clearRiderOverlays])
 
-  // === 기기 선택: 오늘 pings + 오늘 trips 병렬 로드 후 전체 폴리라인 표시 ===
+  // === 기기 선택: 오늘 pings + 오늘 trips 로드 후 마지막 회차(trip) 만 자동 표시 ===
   const showPath = useCallback(async (deviceId: string | null) => {
     setSelectedTripId(null)
     setTrips([])
     dayPingsRef.current = []
     clearRiderOverlays()
-    setPathPointCount(0)
     if (!deviceId) return
     setPathLoading(true)
     try {
       const startISO = new Date(`${todayKst()}T00:00:00+09:00`).toISOString()
       // location_pings 는 서버가 1000행씩만 반환(db-max-rows) → 페이지네이션으로 오늘 전량 수집.
-      // (안 하면 오전 1000개만 그려지고 오후 동선이 통째로 누락됨)
       const PAGE = 1000
       const ptsPromise = (async () => {
         const all: Ping[] = []
@@ -468,22 +482,37 @@ export default function TrackingPage() {
       const [pts, tripsRes] = await Promise.all([ptsPromise, tripsPromise])
       if (tripsRes.error && tripsRes.error.code !== '42P01') throw tripsRes.error  // 42P01 = 테이블 없음(마이그레이션 미적용)
       dayPingsRef.current = pts
-      setTrips((tripsRes.data ?? []) as DeliveryTrip[])
-      setPathPointCount(pts.length)
-      renderPingsAsPath(pts, { withFiveMinMarks: false, fit: true })
+      const tripsList = (tripsRes.data ?? []) as DeliveryTrip[]
+      setTrips(tripsList)
+      const color = deviceColorMap.get(deviceId) ?? '#7c3aed'
+      // 마지막 회차 우선. 회차가 없으면(오늘 아직 출발 전) 전체 궤적.
+      const lastTrip = tripsList.length > 0 ? tripsList[tripsList.length - 1] : null
+      if (lastTrip) {
+        setSelectedTripId(lastTrip.id)
+        const startMs = new Date(lastTrip.started_at).getTime()
+        const endMs = lastTrip.ended_at ? new Date(lastTrip.ended_at).getTime() : Date.now()
+        const filtered = pts.filter(p => {
+          const t = new Date(p.captured_at).getTime()
+          return t >= startMs && t <= endMs
+        })
+        renderPingsAsPath(filtered, { withFiveMinMarks: true, fit: true, color })
+      } else {
+        renderPingsAsPath(pts, { withFiveMinMarks: false, fit: true, color })
+      }
     } catch (e) {
       alert('동선 불러오기 실패: ' + String(e))
     } finally {
       setPathLoading(false)
     }
-  }, [clearRiderOverlays, renderPingsAsPath])
+  }, [clearRiderOverlays, renderPingsAsPath, deviceColorMap])
 
   // === 트립 선택: 캐시된 pings 를 시작~종료 시각으로 필터 후 폴리라인 + 5분 마크 ===
   const showTrip = useCallback((tripId: string | null) => {
     setSelectedTripId(tripId)
+    const color = pathDeviceId ? (deviceColorMap.get(pathDeviceId) ?? '#7c3aed') : '#7c3aed'
     if (!tripId) {
       // 트립 해제 → 전체 오늘 궤적으로 복귀
-      renderPingsAsPath(dayPingsRef.current, { withFiveMinMarks: false, fit: true })
+      renderPingsAsPath(dayPingsRef.current, { withFiveMinMarks: false, fit: true, color })
       return
     }
     const trip = trips.find(t => t.id === tripId)
@@ -494,8 +523,8 @@ export default function TrackingPage() {
       const t = new Date(p.captured_at).getTime()
       return t >= startMs && t <= endMs
     })
-    renderPingsAsPath(filtered, { withFiveMinMarks: true, fit: true })
-  }, [trips, renderPingsAsPath])
+    renderPingsAsPath(filtered, { withFiveMinMarks: true, fit: true, color })
+  }, [trips, renderPingsAsPath, pathDeviceId, deviceColorMap])
 
   // 창고 초기 로드 시 슬라이더 값 동기화
   useEffect(() => {
@@ -606,6 +635,17 @@ export default function TrackingPage() {
     })
   }, [addressInput, saveWarehouse])
 
+  // 라이더 색상이 담긴 핀 모양 마커 HTML (아래 뾰족 · 이름 표시).
+  const pinMarkerHtml = useCallback((deviceId: string) => {
+    const color = deviceColorMap.get(deviceId) ?? '#64748b'
+    const name = nameOf(deviceId)
+    // 라운드 pill + 아래로 향하는 꼬리(::after 대체: 인라인 SVG)
+    return `<div style="position:relative;display:inline-block;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35));">
+      <div style="background:${color};color:#fff;font-size:14px;font-weight:800;padding:5px 12px;border-radius:9999px;white-space:nowrap;border:2px solid #fff;">${name}</div>
+      <svg width="14" height="10" viewBox="0 0 14 10" style="position:absolute;left:50%;top:100%;transform:translate(-50%,-2px);display:block;"><path d="M0 0 L14 0 L7 10 Z" fill="${color}" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    </div>`
+  }, [deviceColorMap, nameOf])
+
   // 실시간 라이더 마커 동기화 (아카이브 모드에서는 모두 숨김)
   const syncMarkers = useCallback(() => {
     const kakao = window.kakao
@@ -621,11 +661,12 @@ export default function TrackingPage() {
     for (const l of visibleLocations) {
       seen.add(l.device_id)
       const pos = new kakao.maps.LatLng(l.lat, l.lng)
-      const html = `<div style="background:#f97316;color:#fff;font-size:15px;font-weight:800;padding:5px 12px;border-radius:9999px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);">${nameOf(l.device_id)}</div>`
+      const html = pinMarkerHtml(l.device_id)
       const existing = markersRef.current.get(l.device_id)
       if (existing) { existing.setPosition(pos); existing.setContent(html) }
       else {
-        const overlay = new kakao.maps.CustomOverlay({ position: pos, yAnchor: 1.2, content: html })
+        // yAnchor 를 1.0 위 (꼬리 끝이 실제 좌표에 오도록 살짝 위로)
+        const overlay = new kakao.maps.CustomOverlay({ position: pos, yAnchor: 1.15, content: html })
         overlay.setMap(map)
         markersRef.current.set(l.device_id, overlay)
       }
@@ -633,7 +674,7 @@ export default function TrackingPage() {
     for (const [id, overlay] of markersRef.current) {
       if (!seen.has(id)) { overlay.setMap(null); markersRef.current.delete(id) }
     }
-  }, [visibleLocations, isLive, nameOf])
+  }, [visibleLocations, isLive, pinMarkerHtml])
 
   useEffect(() => { syncMarkers() }, [syncMarkers, sdkReady])
 
@@ -685,7 +726,7 @@ export default function TrackingPage() {
     if (!isLive) {
       for (const pl of pathRef.current) pl.setMap(null); pathRef.current = []
       pathStartMarkerRef.current?.setMap(null); pathStartMarkerRef.current = null
-      setPathDeviceId(null); setPathPointCount(0)
+      setPathDeviceId(null)
     }
   }, [isLive])
 
@@ -977,6 +1018,9 @@ export default function TrackingPage() {
                         }}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
+                            {deviceColorMap.get(l.device_id) && (
+                              <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: deviceColorMap.get(l.device_id) }} />
+                            )}
                             <span className="text-sm font-medium text-slate-800">{nameOf(l.device_id)}</span>
                             {unassigned && (
                               <span className="text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full leading-none">
@@ -993,11 +1037,7 @@ export default function TrackingPage() {
                         </div>
                         <div className="text-xs text-slate-400">
                           {fmtAgo(l.updated_at)}
-                          {isActive && (
-                            pathLoading ? <span className="ml-2 text-purple-500">불러오는 중…</span>
-                              : pathPointCount > 0 ? <span className="ml-2 text-purple-500">{pathPointCount.toLocaleString()}개 지점</span>
-                              : <span className="ml-2 text-slate-400">기록 없음</span>
-                          )}
+                          {isActive && pathLoading && <span className="ml-2 text-purple-500">불러오는 중…</span>}
                         </div>
                       </div>
                       {/* 라이더 활성 시: 오늘 배송(trip) 목록 */}
@@ -1088,7 +1128,7 @@ export default function TrackingPage() {
           {isLive && pathDeviceId && (
             <div className="px-4 py-2 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-500 text-center leading-relaxed">
               {selectedTripId
-                ? '이 배송 구간 · 5분 간격 시각 표시 · 배송 클릭 시 해제'
+                ? '현재 회차 동선 · 5분 간격 시각 표시 · 다른 회차 클릭 시 이동'
                 : '오늘 00시 이후 전체 동선 · 배송 클릭 시 그 구간만'}
             </div>
           )}

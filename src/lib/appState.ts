@@ -6,10 +6,12 @@ export interface AppState {
   minAppVersion: string | null  // 앱 최소 요구 버전. 미달 앱은 웹에서 무시.
   businessOpen: string   // 전역 영업 시작 시각 "HH:MM" (기본 08:00)
   businessClose: string  // 전역 영업 마감 시각 "HH:MM" (기본 18:00)
+  deliveryRadius: number // 배송지 도착 판정 반경(m). 앱이 30s 폴링으로 읽어 반영.
 }
 
 export const DEFAULT_BUSINESS_OPEN = '08:00'
 export const DEFAULT_BUSINESS_CLOSE = '18:00'
+export const DEFAULT_DELIVERY_RADIUS = 50
 
 // 유효 현재 시각 = 실제 now + offset일 (테스트용 날짜 이동)
 export function effNow(offset: number): Date {
@@ -53,6 +55,7 @@ export async function fetchAppState(): Promise<AppState> {
     minAppVersion: m.min_app_version || null,
     businessOpen: m.business_open_time || DEFAULT_BUSINESS_OPEN,
     businessClose: m.business_close_time || DEFAULT_BUSINESS_CLOSE,
+    deliveryRadius: parseInt(m.delivery_radius_m || '') || DEFAULT_DELIVERY_RADIUS,
   }
 }
 

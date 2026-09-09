@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow, isBusinessClosed, kstNowHm } from '@/lib/appState'
+import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, DEFAULT_DELIVERY_RADIUS, fetchAppState, setDateOffset, clearClosed, effNow, isClosedNow, isBusinessClosed, kstNowHm } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
 
 function fmtKstDate(d: Date) {
@@ -15,7 +15,7 @@ function fmtKstDate(d: Date) {
 export default function Nav() {
   const { branch, setBranch, branches } = useBranch()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE })
+  const [state, setState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE, deliveryRadius: DEFAULT_DELIVERY_RADIUS })
   const menuRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => { setState(await fetchAppState()) }, [])
@@ -99,6 +99,11 @@ export default function Nav() {
           </div>
         )}
       </div>
+
+      {/* 운영시간 표시 (전역) */}
+      <span className="text-xs text-slate-400 tabular-nums" title="설정 페이지에서 변경">
+        운영 {state.businessOpen}~{state.businessClose}
+      </span>
 
       {/* 우측: 날짜 + 마감 배지 + 톱니(설정) */}
       <div className="ml-auto flex items-center gap-3">

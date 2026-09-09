@@ -6,9 +6,10 @@ import { Delivery, RiderDevice, GopoumClient, GopoumItem } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 import RiderAddModal from './RiderAddModal'
-import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, fetchAppState, isClosedNow, isBusinessClosed, kstNowHm } from '@/lib/appState'
+import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, DEFAULT_DELIVERY_RADIUS, fetchAppState, isClosedNow, isBusinessClosed, kstNowHm } from '@/lib/appState'
 import { useBranch } from '@/lib/branch'
 import { isVersionAtLeast } from '@/lib/version'
+import { buildRiderColorMap } from '@/lib/riderColors'
 
 function deviceDisplayName(d: RiderDevice): string {
   return d.name ?? `이름 미입력 (기기 ${d.device_id.slice(0, 8)})`
@@ -35,12 +36,13 @@ function fmtPhone(raw: string | null): string {
 }
 
 function RiderSection({
-  device, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
+  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete,
   getGopoumData, onSetPickup, onAddToRider,
 }: {
   device: RiderDevice
   deliveries: Delivery[]
   selectedIds: string[]
+  riderColor?: string
   onRiderClick: (riderId: string, e: React.MouseEvent) => void
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
@@ -64,6 +66,13 @@ function RiderSection({
         <span className={`text-lg font-bold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-800'} truncate`}>
           {displayName}
         </span>
+        {riderColor && (
+          <span
+            className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-sm"
+            style={{ backgroundColor: riderColor }}
+            title="라이더 색상 (실시간 지도 마커·동선 동일)"
+          />
+        )}
         <span className="text-xs text-slate-300 font-mono ml-auto">{device.device_id.slice(0, 8)}</span>
         <button
           onClick={async (e) => {
@@ -91,8 +100,14 @@ function RiderSection({
       <hr className="my-2 border-slate-200" />
       <p className="text-xs text-slate-500 text-right">총배송: {deliveries.length}</p>
       {(() => {
-        const activeList = deliveries.filter(d => d.status !== 'completed')
-        const doneList = deliveries.filter(d => d.status === 'completed')
+        // 완료 = 배송지 이탈(status=completed) + 본사복귀(returned_at != null) 모두 완료된 것만 완료 섹션으로.
+        // 본사복귀 전이면 현재 진행중 위치에 그대로 유지.
+        const isFullyDone = (d: Delivery) => d.status === 'completed' && !!d.returned_at
+        const activeList = deliveries.filter(d => !isFullyDone(d))
+        // 완료 카드: 배송완료 시각(arrived_at) 오래된 게 위 → 최근 완료가 아래로 쌓임
+        const doneList = deliveries
+          .filter(isFullyDone)
+          .sort((a, b) => (a.arrived_at ?? '').localeCompare(b.arrived_at ?? ''))
         const renderCard = (d: Delivery) => {
           const gd = getGopoumData(d)
           return (
@@ -161,7 +176,7 @@ export default function DeliveryBoard() {
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
   const [coordById, setCoordById] = useState<Map<string, { lat: number; lng: number }>>(new Map())
-  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE })
+  const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE, deliveryRadius: DEFAULT_DELIVERY_RADIUS })
   const [loading, setLoading] = useState(true)
   const [queueOpen, setQueueOpen] = useState(false)
 
@@ -375,6 +390,9 @@ export default function DeliveryBoard() {
 
   const waitingDeliveries = deliveries.filter(d => d.status === 'waiting').sort((a, b) => a.sort_order - b.sort_order)
 
+  // 오늘 출근한 라이더에게 today_first_connected_at 순으로 무지개 색상 배정 (전 지점 공통 순).
+  const riderColorMap = useMemo(() => buildRiderColorMap(devices), [devices])
+
   function getDeviceDeliveries(riderId: string) {
     return deliveries
       .filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed'))
@@ -440,6 +458,7 @@ export default function DeliveryBoard() {
             key={device.device_id}
             device={device}
             deliveries={device.rider_id ? getDeviceDeliveries(device.rider_id) : []}
+            riderColor={riderColorMap.get(device.device_id)}
             {...cardProps}
           />
         ))}
