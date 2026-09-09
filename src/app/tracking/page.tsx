@@ -143,7 +143,7 @@ export default function TrackingPage() {
   const nameOf = useCallback((deviceId: string) =>
     deviceMap.get(deviceId) ?? `미지정 (${deviceId.slice(0, 8)})`, [deviceMap])
 
-  // 로그인 완료(name + branch) + 현재 접속중(connected=true) + 최소 앱 버전 이상 기기만 표시.
+  // 지도의 실시간 마커: 현재 접속중(connected=true) + 지점/버전 게이트 통과한 것만.
   const visibleLocations = useMemo(() =>
     locations.filter(l =>
       deviceMap.has(l.device_id)
@@ -152,6 +152,17 @@ export default function TrackingPage() {
       && allowedDeviceSet.has(l.device_id)
     ),
     [locations, deviceMap, deviceBranch, branch, connectedSet, allowedDeviceSet])
+  // 좌측 패널 리스트: 오늘 활동한(rider_locations.updated_at 이 오늘 KST) 라이더 포함.
+  // 마감 후에도 접속중이 아니어도 리스트에 남겨 클릭 → 오늘 동선 조회를 가능하게 함.
+  const panelLocations = useMemo(() => {
+    const todayStart = new Date(`${todayKst()}T00:00:00+09:00`).getTime()
+    return locations.filter(l =>
+      deviceMap.has(l.device_id)
+      && deviceBranch.get(l.device_id) === branch
+      && allowedDeviceSet.has(l.device_id)
+      && (connectedSet.has(l.device_id) || new Date(l.updated_at).getTime() >= todayStart)
+    )
+  }, [locations, deviceMap, deviceBranch, branch, connectedSet, allowedDeviceSet])
   // 최신 resolver 참조 (구독 재등록 없이 이름 해석용)
   const nameOfRef = useRef(nameOf)
   useEffect(() => { nameOfRef.current = nameOf }, [nameOf])
@@ -989,19 +1000,20 @@ export default function TrackingPage() {
               {isLive ? '운행 중' : `${viewDate} 동선`}
             </span>
             <span className={`${isLive ? 'bg-red-100 text-red-600' : 'bg-purple-100 text-purple-600'} text-xs font-bold px-2 py-0.5 rounded-full`}>
-              {isLive ? visibleLocations.length : (archive?.riders.length ?? 0)}
+              {isLive ? panelLocations.length : (archive?.riders.length ?? 0)}
             </span>
           </div>
 
           {isLive ? (
-            // 실시간 목록
-            visibleLocations.length === 0 ? (
-              <p className="px-4 py-4 text-xs text-slate-400 italic text-center">위치 전송 중인 기기 없음</p>
+            // 실시간 목록 (오늘 활동한 라이더 포함 — 마감 후에도 클릭으로 오늘 동선 조회 가능)
+            panelLocations.length === 0 ? (
+              <p className="px-4 py-4 text-xs text-slate-400 italic text-center">오늘 활동한 기기 없음</p>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {[...visibleLocations].sort((a, b) => nameOf(a.device_id).localeCompare(nameOf(b.device_id), 'ko')).map(l => {
+                {[...panelLocations].sort((a, b) => nameOf(a.device_id).localeCompare(nameOf(b.device_id), 'ko')).map(l => {
                   const isActive = pathDeviceId === l.device_id
                   const unassigned = !deviceMap.has(l.device_id)
+                  const isOffline = !connectedSet.has(l.device_id)
                   return (
                     <li key={l.device_id} className="transition-colors">
                       <div
@@ -1021,10 +1033,15 @@ export default function TrackingPage() {
                             {deviceColorMap.get(l.device_id) && (
                               <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: deviceColorMap.get(l.device_id) }} />
                             )}
-                            <span className="text-sm font-medium text-slate-800">{nameOf(l.device_id)}</span>
+                            <span className={`text-sm font-medium ${isOffline ? 'text-slate-500' : 'text-slate-800'}`}>{nameOf(l.device_id)}</span>
                             {unassigned && (
                               <span className="text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full leading-none">
                                 미지정
+                              </span>
+                            )}
+                            {isOffline && (
+                              <span className="text-[10px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full leading-none">
+                                오프라인
                               </span>
                             )}
                             {activeTripDeviceIds.has(l.device_id) && (
