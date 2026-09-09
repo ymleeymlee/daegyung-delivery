@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Script from 'next/script'
 import { supabase } from '@/lib/supabase'
-import { fetchAppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, DEFAULT_DELIVERY_RADIUS, type AppState } from '@/lib/appState'
+import { fetchAppState, isClosedNow, isBusinessClosed, kstNowHm, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, DEFAULT_DELIVERY_RADIUS, type AppState } from '@/lib/appState'
 import { isVersionAtLeast } from '@/lib/version'
 import { useBranch } from '@/lib/branch'
 import { RIDER_PALETTE, buildRiderColorMap } from '@/lib/riderColors'
@@ -138,6 +138,8 @@ export default function TrackingPage() {
   // 마감 후 실시간 마커는 rider_devices.connected=false 로 자연 필터되어 사라짐(아래 visibleLocations).
   // 위치 로그 정리(location_pings delete)가 실제로 지운 뒤엔 조회 결과가 비어 자연스럽게 궤적도 사라짐.
   const isLive = viewDate === todayKst()
+  // 마감 여부(자동/영업시간 밖). 배송출발·진행중 표시를 마감 시엔 숨기기 위한 조건.
+  const isClosedState = isClosedNow(appState) || isBusinessClosed(kstNowHm(appState.offset), appState.businessOpen, appState.businessClose)
 
   // device_id → 표시 이름. 매핑되면 라이더 이름, 아니면 "미지정 (앞8자)".
   const nameOf = useCallback((deviceId: string) =>
@@ -166,6 +168,9 @@ export default function TrackingPage() {
   // 최신 resolver 참조 (구독 재등록 없이 이름 해석용)
   const nameOfRef = useRef(nameOf)
   useEffect(() => { nameOfRef.current = nameOf }, [nameOf])
+  // 마감 상태 ref — 구독 재등록 없이 토스트 게이팅용
+  const isClosedStateRef = useRef(isClosedState)
+  useEffect(() => { isClosedStateRef.current = isClosedState }, [isClosedState])
 
   // 기기↔라이더 매핑 로드 + 실시간 반영 (rider_devices.name/branch/connected/app_version 직접 사용)
   useEffect(() => {
@@ -319,14 +324,18 @@ export default function TrackingPage() {
         const t = payload.new as DeliveryTrip
         if (!t.device_id) return
         setActiveTripDeviceIds(s => new Set(s).add(t.device_id!))
-        pushToast(`🚚 ${nameOfRef.current(t.device_id)} 배송출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
+        if (!isClosedStateRef.current) {
+          pushToast(`🚚 ${nameOfRef.current(t.device_id)} 배송출발 · ${timeFmt.format(new Date(t.started_at))}`, 'start')
+        }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'delivery_trips' }, payload => {
         const t = payload.new as DeliveryTrip
         if (!t.ended_at || !t.device_id) return
         setActiveTripDeviceIds(s => { const n = new Set(s); n.delete(t.device_id!); return n })
-        const dur = Math.round((new Date(t.ended_at).getTime() - new Date(t.started_at).getTime()) / 60000)
-        pushToast(`🏁 ${nameOfRef.current(t.device_id)} 본사복귀 · ${dur}분`, 'end')
+        if (!isClosedStateRef.current) {
+          const dur = Math.round((new Date(t.ended_at).getTime() - new Date(t.started_at).getTime()) / 60000)
+          pushToast(`🏁 ${nameOfRef.current(t.device_id)} 본사복귀 · ${dur}분`, 'end')
+        }
       })
       .subscribe()
     return () => { active = false; supabase.removeChannel(ch) }
@@ -1044,7 +1053,7 @@ export default function TrackingPage() {
                                 오프라인
                               </span>
                             )}
-                            {activeTripDeviceIds.has(l.device_id) && (
+                            {!isClosedState && activeTripDeviceIds.has(l.device_id) && (
                               <span className="text-[10px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full leading-none">
                                 🚚 배송출발
                               </span>
@@ -1082,7 +1091,7 @@ export default function TrackingPage() {
                               >
                                 <span className="flex items-center gap-1.5">
                                   <span className="font-semibold text-slate-700">{i + 1}회</span>
-                                  <span>{startFmt}~{endFmt ?? '진행중'}</span>
+                                  <span>{startFmt}~{endFmt ?? (isClosedState ? '-' : '진행중')}</span>
                                 </span>
                                 <span className="text-[10px] text-slate-400">{durMin}분</span>
                               </li>
