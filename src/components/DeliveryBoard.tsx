@@ -99,7 +99,6 @@ function RiderSection({
         )}
       </div>
       <hr className="my-2 border-slate-200" />
-      <p className="text-xs text-slate-500 text-right">총배송: {deliveries.length}</p>
       {(() => {
         // 완료 = 배송지 이탈(status=completed) + 본사복귀(returned_at != null) 모두 완료된 것만 완료 섹션으로.
         // 본사복귀 전이면 현재 진행중 위치에 그대로 유지.
@@ -109,6 +108,18 @@ function RiderSection({
         const doneList = deliveries
           .filter(isFullyDone)
           .sort((a, b) => (b.arrived_at ?? '').localeCompare(a.arrived_at ?? ''))
+        // 배송출발 시각(분 단위)으로 그룹핑. 그룹 순서는 doneList 정렬 유지(최신 arrived_at 우선).
+        const hhmm = (iso: string | null | undefined) => iso
+          ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
+          : ''
+        const doneGroups: { key: string; label: string; items: Delivery[] }[] = []
+        for (const d of doneList) {
+          const key = hhmm(d.departed_at) || '__none__'
+          const label = key === '__none__' ? '출발 시각 미기록' : `${key} 출발`
+          const bucket = doneGroups.find(g => g.key === key)
+          if (bucket) bucket.items.push(d)
+          else doneGroups.push({ key, label, items: [d] })
+        }
         const renderCard = (d: Delivery) => {
           const gd = getGopoumData(d)
           return (
@@ -129,22 +140,23 @@ function RiderSection({
         }
         return (
           <>
-            <p className="text-xs text-slate-500 text-right mb-2">현재 배송중 : {activeList.length}</p>
+            <div className="flex items-end justify-between gap-2 mb-2">
+              <span className="text-xs text-slate-500">현재 배송중 : {activeList.length}</span>
+              <span className="text-xl font-bold text-slate-700 leading-none">총배송 : {deliveries.length}</span>
+            </div>
             <div className="min-h-16 flex flex-col gap-2">
               {activeList.length === 0 && <p className="text-xs text-slate-300 italic text-center py-3">진행 중인 배송 없음</p>}
               {activeList.map(renderCard)}
             </div>
-            {doneList.length > 0 && (
-              <>
-                <div className="flex items-center gap-2 my-3">
-                  <div className="flex-1 border-t border-slate-200" />
-                  <span className="text-xs text-slate-400 font-medium">배송 완료</span>
-                  <div className="flex-1 border-t border-slate-200" />
-                </div>
-                <div className="flex flex-col gap-2">
-                  {doneList.map(renderCard)}
-                </div>
-              </>
+            {doneGroups.length > 0 && (
+              <div className="mt-3 flex flex-col gap-2">
+                {doneGroups.map(g => (
+                  <div key={g.key} className="flex flex-col gap-2">
+                    <span className="text-xs text-slate-400 font-medium pl-1">{g.label}</span>
+                    {g.items.map(renderCard)}
+                  </div>
+                ))}
+              </div>
             )}
           </>
         )
@@ -215,8 +227,10 @@ function QuickSection({
       </div>
       <p className="text-xs text-slate-500">전화번호: {fmtPhone(quick.phone)}</p>
       <hr className="my-2 border-slate-200" />
-      <p className="text-xs text-slate-500 text-right">총배송: {deliveries.length}</p>
-      <p className="text-xs text-slate-500 text-right mb-2">현재 배송중 : {deliveries.length}</p>
+      <div className="flex items-end justify-between gap-2 mb-2">
+        <span className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</span>
+        <span className="text-xl font-bold text-slate-700 leading-none">총배송 : {deliveries.length}</span>
+      </div>
       <div className="min-h-16 flex flex-col gap-2">
         {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-3">진행 중인 배송 없음</p>}
         {deliveries.map(d => {
