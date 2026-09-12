@@ -25,7 +25,7 @@ function orderRiders(riders: Rider[]): Rider[] {
   })
 }
 
-const DCOLS = 6 // 라이더당: 상호|주소|배정|배송출발|배송완료|본사복귀 (일별 탭이라 날짜열 불필요)
+const DCOLS = 7 // 라이더당: 상호|주소|배정|배송출발|배송완료|본사복귀|비고 (일별 탭이라 날짜열 불필요)
 
 // 배송 현황 그리드 (전체 라이더 가로)
 function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] {
@@ -39,7 +39,7 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
   riders.forEach((_, k) => {
     const b = k * DCOLS
     set(1, b, '상호'); set(1, b + 1, '주소')
-    set(1, b + 2, '배정'); set(1, b + 3, '배송출발'); set(1, b + 4, '배송완료'); set(1, b + 5, '본사복귀')
+    set(1, b + 2, '배정'); set(1, b + 3, '배송출발'); set(1, b + 4, '배송완료'); set(1, b + 5, '본사복귀'); set(1, b + 6, '비고')
   })
   const byRider = new Map<string, Delivery[]>()
   for (const rd of riders) {
@@ -59,6 +59,7 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
       set(2 + i, b + 3, kstTime(d.departed_at))   // 배송출발
       set(2 + i, b + 4, kstTime(d.arrived_at))    // 배송완료
       set(2 + i, b + 5, kstTime(d.returned_at))   // 본사복귀
+      set(2 + i, b + 6, d.note ?? '')             // 비고
     })
   }
   for (let r = 0; r <= 1 + maxRows; r++) if (!grid[r]) grid[r] = new Array(cols).fill('')

@@ -37,7 +37,7 @@ function fmtPhone(raw: string | null): string {
 
 function RiderSection({
   device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete,
-  getGopoumData, onSetPickup, onAddToRider,
+  getGopoumData, onSetPickup, onSetNote, onAddToRider,
 }: {
   device: RiderDevice
   deliveries: Delivery[]
@@ -48,6 +48,7 @@ function RiderSection({
   onDelete: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
+  onSetNote: (deliveryId: string, note: string) => void
   onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
 }) {
   const isClickable = selectedIds.length > 0 && device.rider_id !== null
@@ -122,6 +123,7 @@ function RiderSection({
               gopoumClientId={gd?.clientId}
               riderName={displayName}
               onSetPickup={onSetPickup}
+              onSetNote={onSetNote}
             />
           )
         }
@@ -171,7 +173,7 @@ function RiderSection({
 // RiderSection 을 단순화: 미접속·출근시간·기기삭제 UI 없음. 완료 섹션 없음(앱이 arrived_at 안 채움).
 function QuickSection({
   quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
-  getGopoumData, onSetPickup, onAddToRider,
+  getGopoumData, onSetPickup, onSetNote, onAddToRider,
 }: {
   quick: Rider
   deliveries: Delivery[]
@@ -181,6 +183,7 @@ function QuickSection({
   onDelete: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
+  onSetNote: (deliveryId: string, note: string) => void
   onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
 }) {
   const isClickable = selectedIds.length > 0
@@ -230,6 +233,7 @@ function QuickSection({
               gopoumClientId={gd?.clientId}
               riderName={quick.name}
               onSetPickup={onSetPickup}
+              onSetNote={onSetNote}
             />
           )
         })}
@@ -393,6 +397,12 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
+  function handleSetNote(deliveryId: string, note: string) {
+    const value = note.trim() ? note : null
+    setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, note: value } : d))
+    supabase.from('deliveries').update({ note: value }).eq('id', deliveryId).then(({ error }) => { if (error) fetchAll() })
+  }
+
   function handleSetPickup(itemId: string, deliveryId: string, riderName: string, myQty: number) {
     const item = gopoumItems.find(i => i.id === itemId)
     if (!item) return
@@ -502,6 +512,7 @@ export default function DeliveryBoard() {
     onDelete: handleDelete,
     getGopoumData,
     onSetPickup: handleSetPickup,
+    onSetNote: handleSetNote,
     onAddToRider: handleAddToRider,
   }
 
@@ -532,6 +543,7 @@ export default function DeliveryBoard() {
                 onSelect={handleCardClick} onDelete={handleDelete}
                 gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
                 onSetPickup={handleSetPickup}
+                onSetNote={handleSetNote}
               />
             )
           })}

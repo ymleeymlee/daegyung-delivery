@@ -54,6 +54,8 @@ export interface Delivery {
   // 위치추적 ETA/지연용 (지금은 미사용 · optional)
   eta_seconds?: number | null
   baseline_arrival_at?: string | null
+  // 배송 비고 (웹에서만 편집. 마감 시 시트의 '비고' 열로 반영)
+  note?: string | null
 }
 
 // 기기 ↔ 라이더 매핑 (앱은 device_id 로만 write, 웹에서 라이더 지정)

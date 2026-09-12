@@ -16,6 +16,8 @@ interface Props {
   riderName?: string
   // 이 배송(라이더)의 수거량을 quantity로 설정 (0이면 미수거)
   onSetPickup?: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
+  // 배송 비고 저장 (빈 문자열이면 null로 저장)
+  onSetNote?: (deliveryId: string, note: string) => void
 }
 
 const qty = (i: GopoumItem) => i.quantity ?? 1
@@ -130,13 +132,51 @@ function GopoumModal({
   )
 }
 
+function NoteModal({
+  initial, onSave, onClose,
+}: {
+  initial: string
+  onSave: (note: string) => void
+  onClose: () => void
+}) {
+  const [text, setText] = useState(initial)
+  function commit() { if (text !== initial) onSave(text); onClose() }
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4" onClick={commit}>
+      <div className="bg-white rounded-2xl shadow-xl w-80 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <span className="font-bold text-slate-800">메모</span>
+          <button onClick={commit} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+        <div className="p-4">
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="비고를 입력하세요 (시트의 '비고' 열에 반영됩니다)"
+            className="w-full h-32 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+            autoFocus
+          />
+        </div>
+        <div className="px-4 pb-4 flex gap-2">
+          <button onClick={() => { setText(''); onSave(''); onClose() }} className="flex-1 py-2 rounded-xl border border-slate-300 text-slate-500 hover:bg-slate-50 text-sm font-medium transition-colors">지우기</button>
+          <button onClick={commit} className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">저장</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 export default function DeliveryCard({
   delivery, isSelected, hasSelection, onSelect, onDelete,
-  gopoumItems, gopoumClientId, riderName, onSetPickup,
+  gopoumItems, gopoumClientId, riderName, onSetPickup, onSetNote,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
+  const [showNote, setShowNote] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const isCompleted = delivery.status === 'completed'
+  const note = delivery.note ?? ''
+  const notePreview = note.split('\n')[0].slice(0, 20)
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
   const gItems = gopoumItems ?? []
@@ -229,6 +269,21 @@ export default function DeliveryCard({
             {returnedTime && <span className="text-slate-400">본사복귀 {returnedTime}</span>}
           </div>
         )}
+
+        {/* 메모 버튼 (맨 아래) — 비고 저장. 시트 '비고' 열에 반영됨. */}
+        {onSetNote && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowNote(true) }}
+            className={`mt-2 w-full py-1 rounded-lg border text-[11px] transition-colors truncate ${
+              note
+                ? 'bg-yellow-50 border-yellow-300 text-yellow-800 hover:bg-yellow-100'
+                : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600'
+            }`}
+            title={note || '메모 추가'}
+          >
+            📝 {note ? notePreview + (note.length > 20 || note.includes('\n') ? '…' : '') : '메모'}
+          </button>
+        )}
       </div>
 
       {showModal && gopoumItems && (
@@ -237,6 +292,14 @@ export default function DeliveryCard({
           deliveryId={delivery.id}
           onSetPickup={handleSetPickup}
           onClose={() => setShowModal(false)}
+        />
+      )}
+
+      {showNote && onSetNote && (
+        <NoteModal
+          initial={note}
+          onSave={(v) => onSetNote(delivery.id, v)}
+          onClose={() => setShowNote(false)}
         />
       )}
     </>
