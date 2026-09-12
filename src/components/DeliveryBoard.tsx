@@ -178,7 +178,6 @@ export default function DeliveryBoard() {
   const [coordById, setCoordById] = useState<Map<string, { lat: number; lng: number }>>(new Map())
   const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE, deliveryRadius: DEFAULT_DELIVERY_RADIUS })
   const [loading, setLoading] = useState(true)
-  const [queueOpen, setQueueOpen] = useState(false)
 
   const fetchAll = useCallback(async () => {
     const [{ data: d }, { data: devs }, { data: c }] = await Promise.all([
@@ -393,6 +392,15 @@ export default function DeliveryBoard() {
   // 오늘 출근한 라이더에게 today_first_connected_at 순으로 무지개 색상 배정 (전 지점 공통 순).
   const riderColorMap = useMemo(() => buildRiderColorMap(devices), [devices])
 
+  // 출근한 라이더(today_first_connected_at != null) 를 앞으로, 미출근을 뒤로. 각 그룹은 기존 등록순 유지(stable sort).
+  const sortedDevices = useMemo(() => {
+    return [...devices].sort((a, b) => {
+      const aOn = a.today_first_connected_at ? 0 : 1
+      const bOn = b.today_first_connected_at ? 0 : 1
+      return aOn - bOn
+    })
+  }, [devices])
+
   function getDeviceDeliveries(riderId: string) {
     return deliveries
       .filter(d => d.rider_id === riderId && (d.status === 'assigned' || d.status === 'completed'))
@@ -417,41 +425,34 @@ export default function DeliveryBoard() {
     <div className="p-4 flex flex-col gap-4 min-h-[calc(100vh-56px)]" onClick={() => setSelectedIds([])}>
       {/* 대기열 */}
       <section onClick={handleWaitingZoneClick} className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-4 transition-colors ${selectedIds.length > 0 ? 'cursor-pointer hover:border-amber-300 hover:bg-amber-50/30' : ''}`}>
-        <div className={`flex items-center justify-between gap-3 flex-wrap ${queueOpen ? 'mb-3' : ''}`} onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            onClick={() => setQueueOpen(o => !o)}
-            className="flex items-center gap-2 rounded-lg px-1 -mx-1 hover:bg-slate-50 transition-colors"
-          >
-            <span className={`text-slate-400 text-xs transition-transform ${queueOpen ? 'rotate-90' : ''}`}>▶</span>
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-3" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-slate-700">대기열</span>
             <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{waitingDeliveries.length}</span>
-          </button>
-          <QuickAddBar onAdd={(name, address, clientId) => { setQueueOpen(true); handleAdd(name, address, clientId) }} />
-        </div>
-        {queueOpen && (
-          <div className="min-h-16 flex gap-3 flex-wrap">
-            {waitingDeliveries.length === 0 && <p className="text-sm text-slate-300 italic self-center">배송 카드를 추가하세요</p>}
-            {waitingDeliveries.map(d => {
-              const gd = getGopoumData(d)
-              return (
-                <DeliveryCard
-                  key={d.id} delivery={d}
-                  isSelected={selectedIds.includes(d.id)}
-                  hasSelection={selectedIds.length > 0}
-                  onSelect={handleCardClick} onDelete={handleDelete}
-                  gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
-                  onSetPickup={handleSetPickup}
-                />
-              )
-            })}
           </div>
-        )}
+          <QuickAddBar onAdd={handleAdd} />
+        </div>
+        <div className="min-h-16 flex gap-3 flex-wrap">
+          {waitingDeliveries.length === 0 && <p className="text-sm text-slate-300 italic self-center">배송 카드를 추가하세요</p>}
+          {waitingDeliveries.map(d => {
+            const gd = getGopoumData(d)
+            return (
+              <DeliveryCard
+                key={d.id} delivery={d}
+                isSelected={selectedIds.includes(d.id)}
+                hasSelection={selectedIds.length > 0}
+                onSelect={handleCardClick} onDelete={handleDelete}
+                gopoumItems={gd?.items} gopoumClientId={gd?.clientId}
+                onSetPickup={handleSetPickup}
+              />
+            )
+          })}
+        </div>
       </section>
 
       {/* 라이더(기기) 구역 — 최소 앱 버전 미달 기기는 아예 표시하지 않음 */}
       <section className="flex gap-4 overflow-x-auto pb-2 items-start">
-        {devices
+        {sortedDevices
           .filter(device => !appState.minAppVersion || isVersionAtLeast(device.app_version, appState.minAppVersion))
           .map(device => (
           <RiderSection
