@@ -149,14 +149,21 @@ function RiderSection({
               {activeList.map(renderCard)}
             </div>
             {doneGroups.length > 0 && (
-              <div className="mt-3 flex flex-col gap-2">
-                {doneGroups.map(g => (
-                  <div key={g.key} className="flex flex-col gap-2">
-                    <span className="text-xs text-slate-400 font-medium pl-1">{g.label}</span>
-                    {g.items.map(renderCard)}
-                  </div>
-                ))}
-              </div>
+              <>
+                <div className="flex items-center gap-2 my-3">
+                  <div className="flex-1 border-t border-slate-200" />
+                  <span className="text-xs text-slate-400 font-medium">배송 완료</span>
+                  <div className="flex-1 border-t border-slate-200" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  {doneGroups.map(g => (
+                    <div key={g.key} className="flex flex-col gap-2">
+                      <span className="text-xs text-slate-400 font-medium pl-1">{g.label}</span>
+                      {g.items.map(renderCard)}
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </>
         )
