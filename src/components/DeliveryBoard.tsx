@@ -104,10 +104,10 @@ function RiderSection({
         // 본사복귀 전이면 현재 진행중 위치에 그대로 유지.
         const isFullyDone = (d: Delivery) => d.status === 'completed' && !!d.returned_at
         const activeList = deliveries.filter(d => !isFullyDone(d))
-        // 완료 카드: 배송완료 시각(arrived_at) 오래된 게 위 → 최근 완료가 아래로 쌓임
+        // 완료 카드: 배송완료 시각(arrived_at) 최신이 위 → 오래된 게 아래로 쌓임
         const doneList = deliveries
           .filter(isFullyDone)
-          .sort((a, b) => (a.arrived_at ?? '').localeCompare(b.arrived_at ?? ''))
+          .sort((a, b) => (b.arrived_at ?? '').localeCompare(a.arrived_at ?? ''))
         const renderCard = (d: Delivery) => {
           const gd = getGopoumData(d)
           return (
