@@ -202,12 +202,17 @@ export default function DeliveryCard({
     if (onSetPickup) onSetPickup(itemId, delivery.id, riderName ?? '배송자', quantity)
   }
 
-  // 카드 클릭: 배정된 고품(노란) 카드는 선택 중이 아니면 카드 자체가 고품 버튼 → 팝업 열기.
-  // 그 외(대기열 카드 / 선택 진행 중)는 기존 선택·배정 로직으로.
+  // 카드 클릭:
+  // - 완료 카드(선택 중 아님): 접기/펼치기 토글. 고품 편집은 고품 배지 클릭으로 분리.
+  // - 진행중 카드(선택 중 아님, 고품 있음): 카드 자체가 고품 입력 버튼.
+  // - 그 외(대기열 / 선택 진행 중): 기존 선택·배정 로직.
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation()
-    // 배정·완료 카드 모두: 선택 중이 아니면 카드가 곧 고품 입력 버튼 (완료 후에도 고품 수정 가능)
-    if ((delivery.status === 'assigned' || delivery.status === 'completed') && hasGopoum && !hasSelection) {
+    if (isCompleted && !hasSelection) {
+      setExpanded(v => !v)
+      return
+    }
+    if (delivery.status === 'assigned' && hasGopoum && !hasSelection) {
       setShowModal(true)
       return
     }
@@ -234,25 +239,34 @@ export default function DeliveryCard({
           >×</button>
         )}
 
-        {/* 고품 배지 */}
-        {isGopoumCard && (
-          <div className={`absolute -top-2 -left-2 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap ${
-            collectedByMe ? 'bg-green-500' : 'bg-amber-400'
-          }`}>
-            고품 {collectedCount}/{total}
-          </div>
-        )}
-
-        <div className="flex items-center gap-1">
-          <p className={`font-semibold text-sm truncate flex-1 ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
-          {isCompleted && (
+        {/* 배지 라인: 고품 + 메모. 완료 카드는 카드 클릭이 접기 토글이므로 고품 배지가 편집 트리거. */}
+        <div className="absolute -top-2 -left-2 flex items-center gap-1">
+          {isGopoumCard && (
             <button
-              onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
-              className="text-slate-400 hover:text-slate-600 text-[10px] leading-none px-1 py-0.5 rounded transition-colors flex-shrink-0"
-              title={expanded ? '시간 접기' : '시간 펼치기'}
-            >{expanded ? '▼' : '▶'}</button>
+              type="button"
+              onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
+              disabled={!isCompleted}
+              className={`text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap transition-transform ${
+                collectedByMe ? 'bg-green-500' : 'bg-amber-400'
+              } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
+              title={isCompleted ? '고품 수정' : undefined}
+            >
+              고품 {collectedCount}/{total}
+            </button>
+          )}
+          {onSetNote && note && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowNote(true) }}
+              className="bg-sky-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap cursor-pointer hover:scale-105 transition-transform"
+              title={note}
+            >
+              📝 메모
+            </button>
           )}
         </div>
+
+        <p className={`font-semibold text-sm truncate ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
 
         {delivery.status === 'waiting' ? (
           <div className="mt-1 text-xs whitespace-nowrap">
@@ -270,8 +284,8 @@ export default function DeliveryCard({
           </div>
         )}
 
-        {/* 메모 버튼 (맨 아래) — 비고 저장. 시트 '비고' 열에 반영됨. */}
-        {onSetNote && (
+        {/* 메모 버튼 (맨 아래) — 비고 저장. 시트 '비고' 열에 반영됨. 완료 카드는 펼쳤을 때만 표시. */}
+        {onSetNote && (!isCompleted || expanded) && (
           <button
             onClick={(e) => { e.stopPropagation(); setShowNote(true) }}
             className={`mt-2 w-full py-1 rounded-lg border text-[11px] transition-colors truncate ${
