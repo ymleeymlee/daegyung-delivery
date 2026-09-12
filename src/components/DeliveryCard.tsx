@@ -247,7 +247,7 @@ export default function DeliveryCard({
               onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
               disabled={!isCompleted}
               className={`text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap transition-transform ${
-                collectedByMe ? 'bg-green-500' : 'bg-amber-400'
+                collectedByMe ? 'bg-orange-600' : 'bg-orange-400'
               } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
               title={isCompleted ? '고품 수정' : undefined}
             >
@@ -258,10 +258,10 @@ export default function DeliveryCard({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setShowNote(true) }}
-              className="bg-sky-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap cursor-pointer hover:scale-105 transition-transform"
+              className="bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap cursor-pointer hover:scale-105 transition-transform"
               title={note}
             >
-              📝 메모
+              메모
             </button>
           )}
         </div>
