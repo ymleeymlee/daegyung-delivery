@@ -135,6 +135,7 @@ export default function DeliveryCard({
   gopoumItems, gopoumClientId, riderName, onSetPickup,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const isCompleted = delivery.status === 'completed'
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
@@ -202,13 +203,22 @@ export default function DeliveryCard({
           </div>
         )}
 
-        <p className={`font-semibold text-sm truncate ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
+        <div className="flex items-center gap-1">
+          <p className={`font-semibold text-sm truncate flex-1 ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
+          {isCompleted && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setExpanded(v => !v) }}
+              className="text-slate-400 hover:text-slate-600 text-[10px] leading-none px-1 py-0.5 rounded transition-colors flex-shrink-0"
+              title={expanded ? '시간 접기' : '시간 펼치기'}
+            >{expanded ? '▼' : '▶'}</button>
+          )}
+        </div>
 
         {delivery.status === 'waiting' ? (
           <div className="mt-1 text-xs whitespace-nowrap">
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
           </div>
-        ) : (
+        ) : (!isCompleted || expanded) && (
           <div className="mt-1 flex flex-col gap-0.5 text-xs whitespace-nowrap">
             {/* 4줄: 배정 / 배송출발 / 배송완료 / 본사복귀 */}
             {assignedTime && <span className="text-slate-400">배정 {assignedTime}</span>}
