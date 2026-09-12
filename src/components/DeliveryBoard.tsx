@@ -156,12 +156,16 @@ function RiderSection({
                   <div className="flex-1 border-t border-slate-200" />
                 </div>
                 <div className="flex flex-col gap-2">
-                  {doneGroups.map(g => (
-                    <div key={g.key} className="flex flex-col gap-2">
-                      <span className="text-xs text-slate-400 font-medium pl-1">{g.label}</span>
-                      {g.items.map(renderCard)}
-                    </div>
-                  ))}
+                  {(() => {
+                    // 그룹 사이에만 얇은 divider 삽입. divider는 -my-1 로 gap-2(8px) 안에 정확히 들어가
+                    // 카드 간 간격(8px)이 divider 유무와 상관없이 동일하게 유지된다.
+                    const nodes: React.ReactNode[] = []
+                    doneGroups.forEach((g, gi) => {
+                      if (gi > 0) nodes.push(<div key={`div-${gi}`} className="border-t border-slate-200 -my-1 h-0" aria-hidden="true" />)
+                      g.items.forEach(d => nodes.push(renderCard(d)))
+                    })
+                    return nodes
+                  })()}
                 </div>
               </>
             )}
