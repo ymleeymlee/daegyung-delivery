@@ -197,6 +197,18 @@ function QuickSection({
           {quick.name}
         </span>
         <span className="text-[10px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full leading-none ml-auto">퀵</span>
+        <button
+          onClick={async (e) => {
+            e.stopPropagation()
+            const { count } = await supabase.from('deliveries').select('id', { count: 'exact', head: true }).eq('rider_id', quick.id)
+            if ((count ?? 0) > 0) { alert(`이 퀵에 배정된 배송이 ${count}건 있어 삭제할 수 없습니다. 먼저 배송을 정리하세요.`); return }
+            if (!confirm(`퀵 "${quick.name}"을 삭제하시겠습니까?`)) return
+            const { error } = await supabase.from('riders').delete().eq('id', quick.id)
+            if (error) alert(`삭제 실패: ${error.message}`)
+          }}
+          className="text-xs font-bold text-red-300 hover:text-red-500 leading-none px-1 py-0.5 rounded transition-colors"
+          title="퀵 삭제"
+        >✕</button>
       </div>
       <p className="text-xs text-slate-500">전화번호: {fmtPhone(quick.phone)}</p>
       <hr className="my-2 border-slate-200" />
@@ -526,8 +538,16 @@ export default function DeliveryBoard() {
         </div>
       </section>
 
-      {/* 라이더(기기) 구역 — 최소 앱 버전 미달 기기는 아예 표시하지 않음. 퀵은 가장 오른쪽. */}
+      {/* 라이더(기기) 구역 — 최소 앱 버전 미달 기기는 아예 표시하지 않음. 퀵은 가장 왼쪽. */}
       <section className="flex gap-4 overflow-x-auto pb-2 items-start">
+        {quickRiders.map(q => (
+          <QuickSection
+            key={q.id}
+            quick={q}
+            deliveries={getDeviceDeliveries(q.id)}
+            {...cardProps}
+          />
+        ))}
         {sortedDevices
           .filter(device => !appState.minAppVersion || isVersionAtLeast(device.app_version, appState.minAppVersion))
           .map(device => (
@@ -536,14 +556,6 @@ export default function DeliveryBoard() {
             device={device}
             deliveries={device.rider_id ? getDeviceDeliveries(device.rider_id) : []}
             riderColor={riderColorMap.get(device.device_id)}
-            {...cardProps}
-          />
-        ))}
-        {quickRiders.map(q => (
-          <QuickSection
-            key={q.id}
-            quick={q}
-            deliveries={getDeviceDeliveries(q.id)}
             {...cardProps}
           />
         ))}

@@ -68,68 +68,69 @@ export default function QuickPage() {
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <h1 className="text-xl font-bold text-slate-800">퀵 관리</h1>
       <p className="text-xs text-slate-500">
-        앱을 쓰지 않는 외주 퀵 업체. 추가하면 배송현황의 라이더 카드 가장 오른쪽에 나타나고 대기열 카드를 배정할 수 있습니다.
+        앱을 쓰지 않는 외주 퀵 업체. 추가하면 배송현황의 라이더 카드 가장 왼쪽에 나타나고 대기열 카드를 배정할 수 있습니다.
       </p>
 
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-        {loading ? (
-          <div className="text-sm text-slate-400">로딩 중...</div>
-        ) : quicks.length === 0 ? (
-          <div className="text-sm text-slate-400">등록된 퀵이 없습니다. 아래에서 추가하세요.</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-slate-500 text-xs border-b border-slate-200 whitespace-nowrap">
-                <th className="text-left font-medium py-2 min-w-[10rem]">이름</th>
-                <th className="text-left font-medium py-2 w-48">전화번호</th>
-                <th className="text-right font-medium py-2 w-24">작업</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quicks.map(q => (
-                <tr key={q.id} className="border-b border-slate-100 last:border-0 align-middle">
-                  <td className="py-3 font-semibold text-slate-700">{q.name}</td>
-                  <td className="py-3 text-slate-600">{q.phone ?? '-'}</td>
-                  <td className="py-3 text-right">
-                    <button onClick={() => handleDelete(q)} className="text-xs border border-red-200 text-red-600 hover:bg-red-50 px-2.5 py-1 rounded-lg">삭제</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">퀵 추가</h3>
+        <div className="flex items-end gap-3 flex-wrap">
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">이름 *</label>
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+              placeholder="예) 안산퀵"
+              className={`${inputCls} w-48`}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">전화번호</label>
+            <input
+              value={newPhone}
+              onChange={e => setNewPhone(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+              placeholder="예) 031-000-0000"
+              className={`${inputCls} w-48`}
+            />
+          </div>
+          <button
+            onClick={handleAdd}
+            disabled={adding || !newName.trim()}
+            className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {adding ? '추가 중...' : '퀵 추가'}
+          </button>
+        </div>
 
         <div className="mt-6 pt-4 border-t border-slate-100">
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">퀵 추가</h3>
-          <div className="flex items-end gap-3 flex-wrap">
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">이름 *</label>
-              <input
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
-                placeholder="예) 안산퀵"
-                className={`${inputCls} w-48`}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">전화번호</label>
-              <input
-                value={newPhone}
-                onChange={e => setNewPhone(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
-                placeholder="예) 031-000-0000"
-                className={`${inputCls} w-48`}
-              />
-            </div>
-            <button
-              onClick={handleAdd}
-              disabled={adding || !newName.trim()}
-              className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {adding ? '추가 중...' : '퀵 추가'}
-            </button>
-          </div>
+          <h3 className="text-sm font-semibold text-slate-700 mb-3">등록된 퀵</h3>
+          {loading ? (
+            <div className="text-sm text-slate-400">로딩 중...</div>
+          ) : quicks.length === 0 ? (
+            <div className="text-sm text-slate-400">등록된 퀵이 없습니다. 위에서 추가하세요.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-slate-500 text-xs border-b border-slate-200 whitespace-nowrap">
+                  <th className="text-left font-medium py-2 min-w-[10rem]">이름</th>
+                  <th className="text-left font-medium py-2 w-48">전화번호</th>
+                  <th className="text-right font-medium py-2 w-24">작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quicks.map(q => (
+                  <tr key={q.id} className="border-b border-slate-100 last:border-0 align-middle">
+                    <td className="py-3 font-semibold text-slate-700">{q.name}</td>
+                    <td className="py-3 text-slate-600">{q.phone ?? '-'}</td>
+                    <td className="py-3 text-right">
+                      <button onClick={() => handleDelete(q)} className="text-xs border border-red-200 text-red-600 hover:bg-red-50 px-2.5 py-1 rounded-lg">삭제</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </section>
     </div>
