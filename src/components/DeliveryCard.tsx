@@ -266,7 +266,14 @@ export default function DeliveryCard({
           )}
         </div>
 
-        <p className={`font-semibold text-sm truncate ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
+        <div className="flex items-center gap-1">
+          <p className={`font-semibold text-sm truncate flex-1 ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
+          {isCompleted && (
+            <span className="text-slate-400 text-[10px] leading-none flex-shrink-0" aria-hidden="true">
+              {expanded ? '▼' : '▶'}
+            </span>
+          )}
+        </div>
 
         {delivery.status === 'waiting' ? (
           <div className="mt-1 text-xs whitespace-nowrap">
@@ -295,7 +302,7 @@ export default function DeliveryCard({
             }`}
             title={note || '메모 추가'}
           >
-            📝 {note ? notePreview + (note.length > 20 || note.includes('\n') ? '…' : '') : '메모'}
+            {note ? notePreview + (note.length > 20 || note.includes('\n') ? '…' : '') : '메모'}
           </button>
         )}
       </div>
