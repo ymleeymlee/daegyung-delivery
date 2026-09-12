@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AppState, DEFAULT_BUSINESS_OPEN, DEFAULT_BUSINESS_CLOSE, DEFAULT_DELIVERY_RADIUS, fetchAppState, effNow, kstNowHm, isBusinessClosed } from '@/lib/appState'
 import { AUTO_ACTION_ITEMS, AutoActionKey, AutoActionsMap, defaultAutoActions, fetchAutoActions, saveAutoActions } from '@/lib/autoActions'
-import { Branch } from '@/types'
+import { Branch, Rider } from '@/types'
 
 // 설정 페이지: 톱니 버튼으로 진입. 관리자 비밀번호 게이트 뒤에 표시.
 // - 시트 업데이트
@@ -441,6 +441,8 @@ function SettingsContent() {
         </div>
       </section>
 
+      <QuickManageSection branches={branches} />
+
       <AutoActionsSection />
 
       {pwOpen && <PasswordChangeModal onClose={() => setPwOpen(false)} />}
@@ -516,6 +518,141 @@ function AppReleaseSection() {
           </div>
         </div>
       )}
+    </section>
+  )
+}
+
+// === 퀵 관리 ===
+// 앱을 안 쓰는 외주 퀵 업체를 라이더 카드처럼 배송현황에 노출하기 위한 관리 UI.
+// riders 테이블에 is_quick=true 로 저장. 배정 로직은 기존 rider_id 기반과 동일.
+function QuickManageSection({ branches }: { branches: Branch[] }) {
+  const [quicks, setQuicks] = useState<Rider[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newBranch, setNewBranch] = useState('')
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [adding, setAdding] = useState(false)
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('riders').select('*').eq('is_quick', true).order('location').order('created_at')
+    setQuicks((data ?? []) as Rider[])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void load()
+    const ch = supabase
+      .channel('quick-manage')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'riders' }, () => void load())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [load])
+
+  useEffect(() => {
+    if (!newBranch && branches.length > 0) setNewBranch(branches[0].code)
+  }, [branches, newBranch])
+
+  async function handleAdd() {
+    const name = newName.trim()
+    const phone = newPhone.trim() || null
+    if (!newBranch || !name || adding) return
+    setAdding(true)
+    const { error } = await supabase.from('riders').insert({
+      name, phone, is_quick: true, is_active: true, location: newBranch,
+    })
+    setAdding(false)
+    if (error) { alert('추가 실패: ' + error.message); return }
+    setNewName(''); setNewPhone('')
+  }
+
+  async function handleDelete(q: Rider) {
+    if (!confirm(`퀵 '${q.name}'을 삭제할까요?`)) return
+    const { count } = await supabase.from('deliveries').select('id', { count: 'exact', head: true }).eq('rider_id', q.id)
+    if ((count ?? 0) > 0) {
+      alert(`이 퀵에 배정된 배송이 ${count}건 있어 삭제할 수 없습니다. 먼저 배송을 정리하세요.`)
+      return
+    }
+    const { error } = await supabase.from('riders').delete().eq('id', q.id)
+    if (error) alert('삭제 실패: ' + error.message)
+  }
+
+  const inputCls = 'border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400'
+  const labelOf = (code: string) => branches.find(b => b.code === code)?.label ?? code
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-800 mb-1">퀵 관리</h2>
+      <p className="text-xs text-slate-500 mb-4">
+        앱을 쓰지 않는 외주 퀵 업체. 추가하면 배송현황의 라이더 카드 가장 오른쪽에 나타나고 대기열 카드를 배정할 수 있습니다.
+      </p>
+
+      {loading ? (
+        <div className="text-sm text-slate-400">로딩 중...</div>
+      ) : quicks.length === 0 ? (
+        <div className="text-sm text-slate-400 mb-4">등록된 퀵이 없습니다. 아래에서 추가하세요.</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-slate-500 text-xs border-b border-slate-200 whitespace-nowrap">
+              <th className="text-left font-medium py-2 w-24">지점</th>
+              <th className="text-left font-medium py-2 min-w-[8rem]">이름</th>
+              <th className="text-left font-medium py-2 w-40">전화번호</th>
+              <th className="text-right font-medium py-2 w-24">작업</th>
+            </tr>
+          </thead>
+          <tbody>
+            {quicks.map(q => (
+              <tr key={q.id} className="border-b border-slate-100 last:border-0 align-middle">
+                <td className="py-3 text-slate-500 text-xs">{labelOf(q.location)}</td>
+                <td className="py-3 font-semibold text-slate-700">{q.name}</td>
+                <td className="py-3 text-slate-600">{q.phone ?? '-'}</td>
+                <td className="py-3 text-right">
+                  <button onClick={() => handleDelete(q)} className="text-xs border border-red-200 text-red-600 hover:bg-red-50 px-2.5 py-1 rounded-lg">삭제</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="mt-6 pt-4 border-t border-slate-100">
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">퀵 추가</h3>
+        <div className="flex items-end gap-3 flex-wrap">
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">지점 *</label>
+            <select value={newBranch} onChange={e => setNewBranch(e.target.value)} className={`${inputCls} w-28`}>
+              {branches.map(b => (<option key={b.code} value={b.code}>{b.label}</option>))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">이름 *</label>
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+              placeholder="예) 안산퀵"
+              className={`${inputCls} w-40`}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">전화번호</label>
+            <input
+              value={newPhone}
+              onChange={e => setNewPhone(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAdd() }}
+              placeholder="예) 031-000-0000"
+              className={`${inputCls} w-40`}
+            />
+          </div>
+          <button
+            onClick={handleAdd}
+            disabled={adding || !newBranch || !newName}
+            className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {adding ? '추가 중...' : '퀵 추가'}
+          </button>
+        </div>
+      </div>
     </section>
   )
 }

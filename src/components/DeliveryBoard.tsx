@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Delivery, RiderDevice, GopoumClient, GopoumItem } from '@/types'
+import { Delivery, RiderDevice, GopoumClient, GopoumItem, Rider } from '@/types'
 import DeliveryCard from './DeliveryCard'
 import QuickAddBar from './QuickAddBar'
 import RiderAddModal from './RiderAddModal'
@@ -167,10 +167,83 @@ function RiderSection({
   )
 }
 
+// 퀵 카드 — 앱 없이 웹에서만 배송카드가 배정되는 외주 퀵 업체 렌더용.
+// RiderSection 을 단순화: 미접속·출근시간·기기삭제 UI 없음. 완료 섹션 없음(앱이 arrived_at 안 채움).
+function QuickSection({
+  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
+  getGopoumData, onSetPickup, onAddToRider,
+}: {
+  quick: Rider
+  deliveries: Delivery[]
+  selectedIds: string[]
+  onRiderClick: (riderId: string, e: React.MouseEvent) => void
+  onSelect: (delivery: Delivery) => void
+  onDelete: (d: Delivery) => void
+  getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
+  onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
+  onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
+}) {
+  const isClickable = selectedIds.length > 0
+  const [showAdd, setShowAdd] = useState(false)
+  return (
+    <div
+      onClick={(e) => onRiderClick(quick.id, e)}
+      className={`rounded-2xl shadow-sm border p-4 min-w-56 flex-shrink-0 transition-colors bg-white border-slate-200 ${
+        isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''
+      }`}
+    >
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className={`text-lg font-bold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-800'} truncate`}>
+          {quick.name}
+        </span>
+        <span className="text-[10px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full leading-none ml-auto">퀵</span>
+      </div>
+      <p className="text-xs text-slate-500">전화번호: {fmtPhone(quick.phone)}</p>
+      <hr className="my-2 border-slate-200" />
+      <p className="text-xs text-slate-500 text-right">총배송: {deliveries.length}</p>
+      <p className="text-xs text-slate-500 text-right mb-2">현재 배송중 : {deliveries.length}</p>
+      <div className="min-h-16 flex flex-col gap-2">
+        {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-3">진행 중인 배송 없음</p>}
+        {deliveries.map(d => {
+          const gd = getGopoumData(d)
+          return (
+            <DeliveryCard
+              key={d.id}
+              delivery={d}
+              isSelected={selectedIds.includes(d.id)}
+              hasSelection={selectedIds.length > 0}
+              onSelect={onSelect}
+              onDelete={onDelete}
+              gopoumItems={gd?.items}
+              gopoumClientId={gd?.clientId}
+              riderName={quick.name}
+              onSetPickup={onSetPickup}
+            />
+          )
+        })}
+      </div>
+      <div className="mt-2">
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
+          className="w-full py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
+        >+ 추가</button>
+      </div>
+      {showAdd && (
+        <RiderAddModal
+          riderName={quick.name}
+          onPick={(name, address, clientId) => onAddToRider(quick.id, name, address, clientId)}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function DeliveryBoard() {
   const { branch } = useBranch()
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
   const [devices, setDevices] = useState<RiderDevice[]>([])
+  const [quickRiders, setQuickRiders] = useState<Rider[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [gopoumClients, setGopoumClients] = useState<GopoumClient[]>([])
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
@@ -180,13 +253,15 @@ export default function DeliveryBoard() {
   const [loading, setLoading] = useState(true)
 
   const fetchAll = useCallback(async () => {
-    const [{ data: d }, { data: devs }, { data: c }] = await Promise.all([
+    const [{ data: d }, { data: devs }, { data: c }, { data: qr }] = await Promise.all([
       supabase.from('deliveries').select('*').eq('branch', branch).order('sort_order'),
       supabase.from('rider_devices').select('*').eq('branch', branch).order('created_at'),
       supabase.from('clients').select('id, code, lat, lng').eq('branch', branch),
+      supabase.from('riders').select('*').eq('is_quick', true).eq('location', branch).order('created_at'),
     ])
     setDeliveries(d ?? [])
     setDevices((devs ?? []) as RiderDevice[])
+    setQuickRiders((qr ?? []) as Rider[])
     const map = new Map<string, string>()
     const coords = new Map<string, { lat: number; lng: number }>()
     for (const cl of (c ?? []) as { id: string; code: string | null; lat: number | null; lng: number | null }[]) {
@@ -221,6 +296,7 @@ export default function DeliveryBoard() {
       .channel('board-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, fetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_devices' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'riders' }, fetchAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_clients' }, debouncedFetchGopoum)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'gopoum_items' }, debouncedFetchGopoum)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_state' }, refreshAppState)
@@ -450,7 +526,7 @@ export default function DeliveryBoard() {
         </div>
       </section>
 
-      {/* 라이더(기기) 구역 — 최소 앱 버전 미달 기기는 아예 표시하지 않음 */}
+      {/* 라이더(기기) 구역 — 최소 앱 버전 미달 기기는 아예 표시하지 않음. 퀵은 가장 오른쪽. */}
       <section className="flex gap-4 overflow-x-auto pb-2 items-start">
         {sortedDevices
           .filter(device => !appState.minAppVersion || isVersionAtLeast(device.app_version, appState.minAppVersion))
@@ -463,7 +539,15 @@ export default function DeliveryBoard() {
             {...cardProps}
           />
         ))}
-        {devices.length === 0 && (
+        {quickRiders.map(q => (
+          <QuickSection
+            key={q.id}
+            quick={q}
+            deliveries={getDeviceDeliveries(q.id)}
+            {...cardProps}
+          />
+        ))}
+        {devices.length === 0 && quickRiders.length === 0 && (
           <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
             접속한 기기가 없습니다. 라이더 앱에서 출근하면 여기에 표시됩니다.
           </div>
