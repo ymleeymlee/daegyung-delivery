@@ -142,7 +142,7 @@ function RiderSection({
           <>
             <div className="flex items-end justify-between gap-2 mb-2">
               <span className="text-xs text-slate-500">현재 배송중 : {activeList.length}</span>
-              <span className="text-xl font-bold text-slate-700 leading-none">총배송 : {deliveries.length}</span>
+              <span className="text-2xl text-slate-500 leading-none">총배송 : {deliveries.length}</span>
             </div>
             <div className="min-h-16 flex flex-col gap-2">
               {activeList.length === 0 && <p className="text-xs text-slate-300 italic text-center py-3">진행 중인 배송 없음</p>}
@@ -240,7 +240,7 @@ function QuickSection({
       <hr className="my-2 border-slate-200" />
       <div className="flex items-end justify-between gap-2 mb-2">
         <span className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</span>
-        <span className="text-xl font-bold text-slate-700 leading-none">총배송 : {deliveries.length}</span>
+        <span className="text-2xl text-slate-500 leading-none">총배송 : {deliveries.length}</span>
       </div>
       <div className="min-h-16 flex flex-col gap-2">
         {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-3">진행 중인 배송 없음</p>}
