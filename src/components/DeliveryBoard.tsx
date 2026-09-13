@@ -64,7 +64,8 @@ function RiderSection({
         device.connected ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 opacity-60'
       } ${isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''}`}
     >
-      {/* 우상단 기기 삭제 배지 (라이더 정보 유지). */}
+      {/* 우상단 기기 삭제 배지. 부모 section 의 overflow-x-auto 가 y축도 clip 하므로
+           카드 밖 음수 오프셋 대신 안쪽(top-2 right-2)에 배치. */}
       <button
         onClick={async (e) => {
           e.stopPropagation()
@@ -72,10 +73,10 @@ function RiderSection({
           const { error } = await supabase.from('rider_devices').delete().eq('device_id', device.device_id)
           if (error) alert(`삭제 실패: ${error.message}`)
         }}
-        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500 flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
+        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500 flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
         title="기기 삭제 (라이더 정보 유지)"
       >×</button>
-      <div className="flex items-baseline gap-2 mb-1">
+      <div className="flex items-baseline gap-2 mb-1 pr-8">
         <span className={`text-lg font-bold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-800'} truncate`}>
           {displayName}
         </span>
@@ -222,7 +223,7 @@ function QuickSection({
         isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''
       }`}
     >
-      {/* 우상단 퀵 삭제 배지 */}
+      {/* 우상단 퀵 삭제 배지 (카드 안쪽 배치 — 위 라이더 카드와 동일 이유). */}
       <button
         onClick={async (e) => {
           e.stopPropagation()
@@ -232,10 +233,10 @@ function QuickSection({
           const { error } = await supabase.from('riders').delete().eq('id', quick.id)
           if (error) alert(`삭제 실패: ${error.message}`)
         }}
-        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500 flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
+        className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500 flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
         title="퀵 삭제"
       >×</button>
-      <div className="flex items-baseline gap-2 mb-1">
+      <div className="flex items-baseline gap-2 mb-1 pr-8">
         <span className={`text-lg font-bold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-800'} truncate`}>
           {quick.name}
         </span>
