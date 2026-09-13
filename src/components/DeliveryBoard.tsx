@@ -36,7 +36,7 @@ function fmtPhone(raw: string | null): string {
 }
 
 function RiderSection({
-  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete,
+  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete, onUnassign,
   getGopoumData, onSetPickup, onSetNote, onAddToRider,
 }: {
   device: RiderDevice
@@ -46,6 +46,7 @@ function RiderSection({
   onRiderClick: (riderId: string, e: React.MouseEvent) => void
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
+  onUnassign: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -59,10 +60,21 @@ function RiderSection({
   return (
     <div
       onClick={(e) => canAssign ? onRiderClick(device.rider_id!, e) : undefined}
-      className={`rounded-2xl shadow-sm border p-4 min-w-56 flex-shrink-0 transition-colors ${
+      className={`relative overflow-visible rounded-2xl shadow-sm border p-4 min-w-56 flex-shrink-0 transition-colors ${
         device.connected ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 opacity-60'
       } ${isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''}`}
     >
+      {/* 우상단 기기 삭제 배지 (라이더 정보 유지). */}
+      <button
+        onClick={async (e) => {
+          e.stopPropagation()
+          if (!confirm(`기기 "${displayName}"을 삭제하시겠습니까?\n(라이더 정보는 유지됩니다)`)) return
+          const { error } = await supabase.from('rider_devices').delete().eq('device_id', device.device_id)
+          if (error) alert(`삭제 실패: ${error.message}`)
+        }}
+        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500 flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
+        title="기기 삭제 (라이더 정보 유지)"
+      >×</button>
       <div className="flex items-baseline gap-2 mb-1">
         <span className={`text-lg font-bold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-800'} truncate`}>
           {displayName}
@@ -75,16 +87,6 @@ function RiderSection({
           />
         )}
         <span className="text-xs text-slate-300 font-mono ml-auto">{device.device_id.slice(0, 8)}</span>
-        <button
-          onClick={async (e) => {
-            e.stopPropagation()
-            if (!confirm(`기기 "${displayName}"을 삭제하시겠습니까?\n(라이더 정보는 유지됩니다)`)) return
-            const { error } = await supabase.from('rider_devices').delete().eq('device_id', device.device_id)
-            if (error) alert(`삭제 실패: ${error.message}`)
-          }}
-          className="text-xs font-bold text-red-300 hover:text-red-500 leading-none px-1 py-0.5 rounded transition-colors"
-          title="기기 삭제 (라이더 정보 유지)"
-        >✕</button>
       </div>
       <p className="text-xs text-slate-500">전화번호: {fmtPhone(device.phone)}</p>
       <div className="flex items-center gap-2 mt-0.5">
@@ -130,6 +132,7 @@ function RiderSection({
               hasSelection={selectedIds.length > 0}
               onSelect={onSelect}
               onDelete={onDelete}
+              onUnassign={onUnassign}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={displayName}
@@ -195,7 +198,7 @@ function RiderSection({
 // 퀵 카드 — 앱 없이 웹에서만 배송카드가 배정되는 외주 퀵 업체 렌더용.
 // RiderSection 을 단순화: 미접속·출근시간·기기삭제 UI 없음. 완료 섹션 없음(앱이 arrived_at 안 채움).
 function QuickSection({
-  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete,
+  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign,
   getGopoumData, onSetPickup, onSetNote, onAddToRider,
 }: {
   quick: Rider
@@ -204,6 +207,7 @@ function QuickSection({
   onRiderClick: (riderId: string, e: React.MouseEvent) => void
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
+  onUnassign: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -214,27 +218,28 @@ function QuickSection({
   return (
     <div
       onClick={(e) => onRiderClick(quick.id, e)}
-      className={`rounded-2xl shadow-sm border p-4 min-w-56 flex-shrink-0 transition-colors bg-white border-slate-200 ${
+      className={`relative overflow-visible rounded-2xl shadow-sm border p-4 min-w-56 flex-shrink-0 transition-colors bg-white border-slate-200 ${
         isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''
       }`}
     >
+      {/* 우상단 퀵 삭제 배지 */}
+      <button
+        onClick={async (e) => {
+          e.stopPropagation()
+          const { count } = await supabase.from('deliveries').select('id', { count: 'exact', head: true }).eq('rider_id', quick.id)
+          if ((count ?? 0) > 0) { alert(`이 퀵에 배정된 배송이 ${count}건 있어 삭제할 수 없습니다. 먼저 배송을 정리하세요.`); return }
+          if (!confirm(`퀵 "${quick.name}"을 삭제하시겠습니까?`)) return
+          const { error } = await supabase.from('riders').delete().eq('id', quick.id)
+          if (error) alert(`삭제 실패: ${error.message}`)
+        }}
+        className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-500 flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
+        title="퀵 삭제"
+      >×</button>
       <div className="flex items-baseline gap-2 mb-1">
         <span className={`text-lg font-bold transition-colors ${isClickable ? 'text-blue-700' : 'text-slate-800'} truncate`}>
           {quick.name}
         </span>
         <span className="text-[10px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full leading-none ml-auto">퀵</span>
-        <button
-          onClick={async (e) => {
-            e.stopPropagation()
-            const { count } = await supabase.from('deliveries').select('id', { count: 'exact', head: true }).eq('rider_id', quick.id)
-            if ((count ?? 0) > 0) { alert(`이 퀵에 배정된 배송이 ${count}건 있어 삭제할 수 없습니다. 먼저 배송을 정리하세요.`); return }
-            if (!confirm(`퀵 "${quick.name}"을 삭제하시겠습니까?`)) return
-            const { error } = await supabase.from('riders').delete().eq('id', quick.id)
-            if (error) alert(`삭제 실패: ${error.message}`)
-          }}
-          className="text-xs font-bold text-red-300 hover:text-red-500 leading-none px-1 py-0.5 rounded transition-colors"
-          title="퀵 삭제"
-        >✕</button>
       </div>
       <p className="text-xs text-slate-500">전화번호: {fmtPhone(quick.phone)}</p>
       <hr className="my-2 border-slate-200" />
@@ -260,6 +265,7 @@ function QuickSection({
               hasSelection={selectedIds.length > 0}
               onSelect={onSelect}
               onDelete={onDelete}
+              onUnassign={onUnassign}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={quick.name}
@@ -422,6 +428,22 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
+  // 배정된 배송카드를 대기열로 되돌린다 (앱 unassignDelivery 와 동일 정책).
+  function handleUnassign(delivery: Delivery) {
+    const nowHm = kstNowHm(appState.offset)
+    if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
+      alert('마감된 상태입니다. 배송을 취소할 수 없습니다.'); return
+    }
+    const nextOrder = Math.max(0, ...deliveries.filter(d => d.status === 'waiting').map(d => d.sort_order)) + 1
+    const patch = {
+      rider_id: null, status: 'waiting' as const,
+      assigned_at: null, departed_at: null, arrived_at: null, returned_at: null,
+      sort_order: nextOrder,
+    }
+    setDeliveries(prev => prev.map(d => d.id === delivery.id ? { ...d, ...patch } : d))
+    supabase.from('deliveries').update(patch).eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
+  }
+
   function handleSetNote(deliveryId: string, note: string) {
     const value = note.trim() ? note : null
     setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, note: value } : d))
@@ -535,6 +557,7 @@ export default function DeliveryBoard() {
     onRiderClick: handleRiderClick,
     onSelect: handleCardClick,
     onDelete: handleDelete,
+    onUnassign: handleUnassign,
     getGopoumData,
     onSetPickup: handleSetPickup,
     onSetNote: handleSetNote,

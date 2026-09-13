@@ -11,6 +11,8 @@ interface Props {
   hasSelection?: boolean
   onSelect: (delivery: Delivery) => void
   onDelete: (delivery: Delivery) => void
+  // 배정된 카드 취소 → 대기열로 복귀. assigned 카드에서만 노출.
+  onUnassign?: (delivery: Delivery) => void
   gopoumItems?: GopoumItem[]
   gopoumClientId?: string
   riderName?: string
@@ -168,7 +170,7 @@ function NoteModal({
 }
 
 export default function DeliveryCard({
-  delivery, isSelected, hasSelection, onSelect, onDelete,
+  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign,
   gopoumItems, gopoumClientId, riderName, onSetPickup, onSetNote,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
@@ -231,13 +233,23 @@ export default function DeliveryCard({
               : isSelected ? 'bg-white border-blue-500 ring-2 ring-blue-500' : 'bg-white border-slate-200 hover:border-slate-300'
         }`}
       >
-        {/* 삭제 버튼: 대기열(waiting) 카드에서만 노출. 라이더에 배정된 카드는 삭제 불가 —
-             라이더가 앱에서 취소(대기열 복귀)하거나 관리자가 다른 라이더로 재배정한다. */}
+        {/* 우상단 액션 배지:
+            - waiting: × (삭제, 완전 제거)
+            - assigned: '취소' (대기열로 되돌리기)
+            - completed: 없음 (이미 완료된 배송) */}
         {delivery.status === 'waiting' && (
           <button
             onClick={(e) => { e.stopPropagation(); if (!window.confirm('배송을 삭제하시겠습니까?')) return; onDelete(delivery) }}
             className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 flex items-center justify-center text-xs transition-colors shadow-sm"
+            title="삭제"
           >×</button>
+        )}
+        {delivery.status === 'assigned' && onUnassign && (
+          <button
+            onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 취소하고 대기열로 되돌리시겠습니까?`)) return; onUnassign(delivery) }}
+            className="absolute -top-2 -right-2 bg-white border border-amber-400 text-amber-700 hover:bg-amber-50 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm transition-colors"
+            title="배정 취소 (대기열로 되돌리기)"
+          >취소</button>
         )}
 
         {/* 배지 라인: 고품 + 메모. 완료 카드는 카드 클릭이 접기 토글이므로 고품 배지가 편집 트리거. */}
