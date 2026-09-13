@@ -120,7 +120,15 @@ function SettingsContent() {
   const [newSortOrder, setNewSortOrder] = useState(0)
   const [adding, setAdding] = useState(false)
 
-  const refresh = useCallback(async () => { setState(await fetchAppState()) }, [])
+  // 마감 시 앱 자동 퇴근 여부 (기본 true). 앱 LocationService 가 이 값을 읽어 로그아웃 여부 결정.
+  const [autoLogoutOnClose, setAutoLogoutOnClose] = useState(true)
+
+  const refresh = useCallback(async () => {
+    setState(await fetchAppState())
+    const { data } = await supabase.from('app_state').select('value').eq('key', 'auto_logout_on_close').maybeSingle()
+    const v = (data as { value?: string } | null)?.value?.trim().toLowerCase()
+    setAutoLogoutOnClose(v !== 'false')
+  }, [])
   const fetchBranches = useCallback(async () => {
     const { data } = await supabase.from('branches').select('*').order('sort_order')
     setBranches((data ?? []) as Branch[])
@@ -184,6 +192,16 @@ function SettingsContent() {
   async function saveDeliveryRadius(value: number) {
     const { error } = await supabase.from('app_state').upsert({ key: 'delivery_radius_m', value: String(value) })
     if (error) alert('저장 실패: ' + error.message)
+  }
+
+  async function saveAutoLogoutOnClose(v: boolean) {
+    const prev = autoLogoutOnClose
+    setAutoLogoutOnClose(v)  // 낙관
+    const { error } = await supabase.from('app_state').upsert({ key: 'auto_logout_on_close', value: String(v) })
+    if (error) {
+      setAutoLogoutOnClose(prev)
+      alert('저장 실패: ' + error.message)
+    }
   }
 
 
@@ -310,6 +328,27 @@ function SettingsContent() {
               </button>
             )}
           </div>
+        </div>
+
+        {/* 마감 시 앱 자동 퇴근 토글 */}
+        <div className="mt-5 pt-4 border-t border-slate-100 flex items-start justify-between gap-4">
+          <div>
+            <div className="text-sm font-medium text-slate-700">마감 시 라이더 앱 자동 퇴근</div>
+            <p className="text-xs text-slate-500 mt-1">
+              운영시간이 마감되면 라이더 앱을 자동으로 로그인 화면으로 되돌립니다.
+              끄면 위치공유·배송카드 생성만 잠기고 로그인 상태는 유지됩니다.
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer mt-0.5 shrink-0">
+            <input
+              type="checkbox"
+              checked={autoLogoutOnClose}
+              onChange={e => saveAutoLogoutOnClose(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-slate-300 peer-checked:bg-blue-600 rounded-full peer transition-colors" />
+            <div className="absolute left-0.5 top-0.5 bg-white w-5 h-5 rounded-full transition-transform peer-checked:translate-x-5 shadow-sm" />
+          </label>
         </div>
       </section>
 
