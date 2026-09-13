@@ -10,6 +10,7 @@ export type AutoActionKey =
   | 'delivery_reset'          // 배송 현황 정리 (진행중 포함 전체 삭제)
   | 'gopoum_reset'            // 고품 현황 정리 (수거된 항목 archive + 잔여수량 갱신)
   | 'location_log_purge'      // 위치 로그 정리 (location_pings + rider_locations)
+  | 'app_auto_logout'         // 라이더 앱 자동 퇴근 (앱이 폴링해서 처리)
 
 export interface AutoActionConfig {
   close: boolean
@@ -25,9 +26,10 @@ export const AUTO_ACTION_ITEMS: { key: AutoActionKey; label: string; hint?: stri
   { key: 'delivery_reset', label: '배송 현황 정리', hint: '진행중·완료 모두 배송 카드 전체 삭제' },
   { key: 'gopoum_reset', label: '고품 현황 정리', hint: '수거 완료된 품목 아카이브, 업체별 잔여수량 갱신' },
   { key: 'location_log_purge', label: '위치 로그 정리', hint: 'location_pings, rider_locations 데이터 삭제' },
+  { key: 'app_auto_logout', label: '라이더 앱 자동 퇴근', hint: '라이더 앱을 자동으로 로그인 화면으로 되돌림 (앱이 30초 주기로 확인)' },
 ]
 
-// 기본값: 모든 항목이 마감 시 자동 실행. 다음날은 모두 꺼짐.
+// 기본값: 대부분 마감 시 자동 실행. app_auto_logout 도 기본은 마감 시.
 export function defaultAutoActions(): AutoActionsMap {
   const out = {} as AutoActionsMap
   for (const it of AUTO_ACTION_ITEMS) out[it.key] = { close: true, midnight: false }
