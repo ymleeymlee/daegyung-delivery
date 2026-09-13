@@ -394,6 +394,21 @@ export default function TrackingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sdkReady])
 
+  // 페이지 진입 시 지도 중심을 본사로 자동 이동 — 기존 '📍 본사' 버튼 클릭과 동일 동작.
+  // 오버레이 재생성은 하지 않음 (지도 생성 useEffect 에서 이미 그림).
+  useEffect(() => {
+    if (!sdkReady || !mapRef.current || !warehouse) return
+    const t = setTimeout(() => {
+      try {
+        const kakao = window.kakao
+        if (!kakao?.maps?.LatLng || !mapRef.current) return
+        mapRef.current.setCenter(new kakao.maps.LatLng(warehouse.lat, warehouse.lng))
+        mapRef.current.setLevel(3)
+      } catch { /* noop */ }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [warehouse, sdkReady])
+
   // 지도 위의 모든 라이더 오버레이(폴리라인·시작·5분 마크) 제거
   const clearRiderOverlays = useCallback(() => {
     for (const pl of pathRef.current) pl.setMap(null); pathRef.current = []
