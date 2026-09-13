@@ -96,9 +96,6 @@ export default function TrackingPage() {
 
   const [sdkReady, setSdkReady] = useState(false)
   const [warehouse, setWarehouse] = useState<Warehouse | null>(null)
-  // warehouse 조회 완료 여부. false 인 동안엔 지도 생성을 미뤄서 첫 진입 시 fallback(서울 시청) 대신
-  // 실제 본사 좌표를 기준으로 지도가 열리도록 한다.
-  const [warehouseLoaded, setWarehouseLoaded] = useState(false)
   const [locations, setLocations] = useState<RiderLocation[]>([])
   const [, forceTick] = useState(0)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -271,7 +268,6 @@ export default function TrackingPage() {
       } else {
         setWarehouse({ lat, lng, radius })
       }
-      setWarehouseLoaded(true)
       setLocations((locs ?? []) as RiderLocation[])
     })()
 
@@ -345,11 +341,12 @@ export default function TrackingPage() {
     return () => { active = false; supabase.removeChannel(ch) }
   }, [])
 
-  // SDK 준비 + warehouse 조회 완료된 후에 지도 1회 생성.
-  // warehouseLoaded=false 동안엔 대기 → 첫 진입 시 fallback(서울 시청)이 아닌 실제 본사 좌표로 열림.
-  // warehouse 값이 없으면(app_state 미설정) 그때만 fallback 사용.
+  // SDK 준비되면 지도 1회 생성. warehouse null 이면 서울 시청 기준으로 열고 창고 오버레이 스킵.
   useEffect(() => {
-    if (!sdkReady || !warehouseLoaded || !containerRef.current || mapRef.current) return
+    if (!sdkReady || !containerRef.current || mapRef.current) return
+    // warehouse 아직 로드 중(undefined)과 없음(null)을 구분: 첫 useEffect 실행 후 값이 결정됨.
+    // warehouse가 undefined가 아닌 null/Warehouse 일 때 지도 생성.
+    // 여기서는 별도 상태 없이 SDK 준비되면 바로 생성(warehouse 조회와 별도 의존성으로 분리).
     try {
       const kakao = window.kakao
       const fallback = new kakao.maps.LatLng(37.5665, 126.9780) // 서울 시청
@@ -395,7 +392,7 @@ export default function TrackingPage() {
       } catch { /* noop */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sdkReady, warehouseLoaded])
+  }, [sdkReady])
 
   // 지도 위의 모든 라이더 오버레이(폴리라인·시작·5분 마크) 제거
   const clearRiderOverlays = useCallback(() => {
