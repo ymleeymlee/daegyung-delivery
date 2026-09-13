@@ -231,8 +231,9 @@ export default function DeliveryCard({
               : isSelected ? 'bg-white border-blue-500 ring-2 ring-blue-500' : 'bg-white border-slate-200 hover:border-slate-300'
         }`}
       >
-        {/* 삭제 버튼 (완료 카드는 실수 삭제 방지 위해 숨김 — 마감 때 시트 기록됨) */}
-        {!isCompleted && (
+        {/* 삭제 버튼: 대기열(waiting) 카드에서만 노출. 라이더에 배정된 카드는 삭제 불가 —
+             라이더가 앱에서 취소(대기열 복귀)하거나 관리자가 다른 라이더로 재배정한다. */}
+        {delivery.status === 'waiting' && (
           <button
             onClick={(e) => { e.stopPropagation(); if (!window.confirm('배송을 삭제하시겠습니까?')) return; onDelete(delivery) }}
             className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-white border border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 flex items-center justify-center text-xs transition-colors shadow-sm"
