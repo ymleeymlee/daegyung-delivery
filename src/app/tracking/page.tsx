@@ -341,34 +341,17 @@ export default function TrackingPage() {
     return () => { active = false; supabase.removeChannel(ch) }
   }, [])
 
-  // SDK 준비되면 지도 1회 생성. warehouse null 이면 서울 시청 기준으로 열고 창고 오버레이 스킵.
+  // SDK 준비되면 지도 1회 생성. warehouse 아직 없으면 임시로 서울 시청 기준으로 열고,
+  // warehouse 가 로드되면 별도 useEffect(warehouse) 에서 중심 이동 + 창고 오버레이를 그린다.
   useEffect(() => {
     if (!sdkReady || !containerRef.current || mapRef.current) return
-    // warehouse 아직 로드 중(undefined)과 없음(null)을 구분: 첫 useEffect 실행 후 값이 결정됨.
-    // warehouse가 undefined가 아닌 null/Warehouse 일 때 지도 생성.
-    // 여기서는 별도 상태 없이 SDK 준비되면 바로 생성(warehouse 조회와 별도 의존성으로 분리).
     try {
       const kakao = window.kakao
-      const fallback = new kakao.maps.LatLng(37.5665, 126.9780) // 서울 시청
+      const fallback = new kakao.maps.LatLng(37.5665, 126.9780) // 서울 시청 (임시)
       const center = warehouse ? new kakao.maps.LatLng(warehouse.lat, warehouse.lng) : fallback
       const map = new kakao.maps.Map(containerRef.current, { center, level: 5 })
       mapRef.current = map
       setTimeout(() => { try { map.relayout(); map.setCenter(center) } catch { /* noop */ } }, 200)
-
-      if (warehouse) {
-        warehouseCircleRef.current = new kakao.maps.Circle({
-          center, radius: warehouse.radius,
-          strokeWeight: 2, strokeColor: '#2563eb', strokeOpacity: 0.7, strokeStyle: 'solid',
-          fillColor: '#3b82f6', fillOpacity: 0.08,
-        })
-        warehouseCircleRef.current.setMap(map)
-
-        warehouseLabelRef.current = new kakao.maps.CustomOverlay({
-          position: center, yAnchor: 1.4,
-          content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">본사</div>',
-        })
-        warehouseLabelRef.current.setMap(map)
-      }
 
       setStatus('ready'); setStatusMsg('')
     } catch (e) {
@@ -393,6 +376,30 @@ export default function TrackingPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sdkReady])
+
+  // warehouse 로드/변경(지점 스위치) 시 지도 중심을 본사로 옮기고 창고 원·라벨 오버레이 재생성.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !warehouse) return
+    const kakao = window.kakao
+    if (!kakao) return
+    const center = new kakao.maps.LatLng(warehouse.lat, warehouse.lng)
+    try { map.setCenter(center) } catch { /* noop */ }
+    // 기존 오버레이 정리 후 새로 그리기
+    warehouseCircleRef.current?.setMap(null); warehouseCircleRef.current = null
+    warehouseLabelRef.current?.setMap(null); warehouseLabelRef.current = null
+    warehouseCircleRef.current = new kakao.maps.Circle({
+      center, radius: warehouse.radius,
+      strokeWeight: 2, strokeColor: '#2563eb', strokeOpacity: 0.7, strokeStyle: 'solid',
+      fillColor: '#3b82f6', fillOpacity: 0.08,
+    })
+    warehouseCircleRef.current.setMap(map)
+    warehouseLabelRef.current = new kakao.maps.CustomOverlay({
+      position: center, yAnchor: 1.4,
+      content: '<div style="background:#2563eb;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:9999px;white-space:nowrap;">본사</div>',
+    })
+    warehouseLabelRef.current.setMap(map)
+  }, [warehouse, sdkReady])
 
   // 지도 위의 모든 라이더 오버레이(폴리라인·시작·5분 마크) 제거
   const clearRiderOverlays = useCallback(() => {
