@@ -61,7 +61,12 @@ export default function Nav() {
       // (오전에 호출 → 아직 이르다고 skip → 저녁에 다시 호출 시 실행되어야 하기 때문)
       fetch('/api/close-check').catch(() => {})
     } catch { /* noop */ }
-    return () => { supabase.removeChannel(channel); clearInterval(timer) }
+    // 웹이 열려있는 동안 매 분 close-check → 마감시간이 지나는 순간 즉시 자동 마감.
+    // 서버 runCloseIfDue 는 idempotent (하루 1회) 라 매분 호출해도 부담 없음.
+    const closeCheckTimer = setInterval(() => {
+      fetch('/api/close-check').catch(() => {})
+    }, 60_000)
+    return () => { supabase.removeChannel(channel); clearInterval(timer); clearInterval(closeCheckTimer) }
   }, [refresh])
 
   useEffect(() => {

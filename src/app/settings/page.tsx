@@ -565,8 +565,20 @@ function AutoActionsSection() {
           <thead>
             <tr className="text-slate-500 text-xs border-b border-slate-200">
               <th className="text-left font-medium py-2">항목</th>
-              <th className="text-center font-medium py-2 w-24">마감<br /><span className="text-slate-400 font-normal">영업 마감 시각</span></th>
-              <th className="text-center font-medium py-2 w-28">다음날<br /><span className="text-slate-400 font-normal">00시 이후</span></th>
+              <th className="text-center font-medium py-2 w-40">
+                마감<br />
+                <span className="text-slate-400 font-normal">영업 마감 시각</span>
+                <div className="text-[10px] text-amber-600 font-normal mt-1 leading-tight px-1">
+                  마감시간에 웹이 열려있어야만<br />마감을 진행 합니다.
+                </div>
+              </th>
+              <th className="text-center font-medium py-2 w-40">
+                다음날<br />
+                <span className="text-slate-400 font-normal">00시 이후</span>
+                <div className="text-[10px] text-emerald-600 font-normal mt-1 leading-tight px-1">
+                  운영과 상관없이<br />항상 진행 합니다.
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>
