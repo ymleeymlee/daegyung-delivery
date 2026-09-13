@@ -144,6 +144,14 @@ function RiderSection({
               <span className="text-xs text-slate-500">현재 배송중 : {activeList.length}</span>
               <span className="text-2xl text-slate-500 leading-none">총배송 : {deliveries.length}</span>
             </div>
+            {canAssign && (
+              <div className="mb-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
+                  className="w-full py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
+                >+ 추가</button>
+              </div>
+            )}
             <div className="min-h-16 flex flex-col gap-2">
               {activeList.length === 0 && <p className="text-xs text-slate-300 italic text-center py-3">진행 중인 배송 없음</p>}
               {activeList.map(renderCard)}
@@ -173,14 +181,6 @@ function RiderSection({
         )
       })()}
 
-      {canAssign && (
-        <div className="mt-2">
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
-            className="w-full py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
-          >+ 추가</button>
-        </div>
-      )}
       {showAdd && canAssign && (
         <RiderAddModal
           riderName={displayName}
@@ -242,6 +242,12 @@ function QuickSection({
         <span className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</span>
         <span className="text-2xl text-slate-500 leading-none">총배송 : {deliveries.length}</span>
       </div>
+      <div className="mb-2">
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
+          className="w-full py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
+        >+ 추가</button>
+      </div>
       <div className="min-h-16 flex flex-col gap-2">
         {deliveries.length === 0 && <p className="text-xs text-slate-300 italic text-center py-3">진행 중인 배송 없음</p>}
         {deliveries.map(d => {
@@ -262,12 +268,6 @@ function QuickSection({
             />
           )
         })}
-      </div>
-      <div className="mt-2">
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowAdd(true) }}
-          className="w-full py-1.5 rounded-xl border border-dashed border-slate-300 text-slate-400 hover:border-blue-300 hover:text-blue-500 text-sm font-medium transition-colors"
-        >+ 추가</button>
       </div>
       {showAdd && (
         <RiderAddModal
