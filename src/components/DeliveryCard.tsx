@@ -15,6 +15,8 @@ interface Props {
   onUnassign?: (delivery: Delivery) => void
   // 배정된 카드 수동 완료 → arrived_at + returned_at = now, status='completed'.
   onComplete?: (delivery: Delivery) => void
+  // 배송 출발(수동) → departed_at = now. 퀵 카드처럼 앱이 없을 때 사용.
+  onDepart?: (delivery: Delivery) => void
   gopoumItems?: GopoumItem[]
   gopoumClientId?: string
   riderName?: string
@@ -137,17 +139,21 @@ function GopoumModal({
 }
 
 export default function DeliveryCard({
-  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign, onComplete,
+  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign, onComplete, onDepart,
   gopoumItems, gopoumClientId, riderName, onSetPickup, onSetNote,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const isCompleted = delivery.status === 'completed'
   const note = delivery.note ?? ''
-  // 완료 버튼 표시 조건: assigned 이거나, completed 인데 아직 본사복귀 안 한 카드.
+  // 배송출발 버튼: assigned 인데 아직 배송출발 안 함 + onDepart 있음(퀵 전용).
+  const canDepart = delivery.status === 'assigned' && !delivery.departed_at && !!onDepart
+  // 완료 버튼: assigned 이거나, completed 인데 아직 본사복귀 안 한 카드. (배송출발 전이면 완료 대신 출발 노출)
   const canFinalize =
-    delivery.status === 'assigned' ||
-    (delivery.status === 'completed' && !delivery.returned_at)
+    !canDepart && (
+      delivery.status === 'assigned' ||
+      (delivery.status === 'completed' && !delivery.returned_at)
+    )
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
   const gItems = gopoumItems ?? []
@@ -294,6 +300,22 @@ export default function DeliveryCard({
               }`}
             />
           </div>
+        )}
+
+        {/* 배송 출발 버튼 (퀵 전용) — 아직 출발 안 한 assigned 카드. 클릭 시 departed_at=now,
+            realtime 반영되면 자연스럽게 아래 '배송 완료' 버튼으로 전환. */}
+        {canDepart && onDepart && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!window.confirm(`'${delivery.client_name}' 배송을 지금 출발 처리하시겠습니까?`)) return
+              onDepart(delivery)
+            }}
+            className="mt-2 w-full py-1.5 rounded-lg border border-blue-300 bg-white text-blue-700 hover:bg-blue-50 text-xs font-semibold transition-colors"
+            title="배송출발 시각을 지금으로 기록"
+          >
+            🚚 배송 출발
+          </button>
         )}
 
         {/* 완료 버튼 — 흰 계열. 상태별 라벨/동작 분기.

@@ -48,6 +48,7 @@ function RiderSection({
   onDelete: (d: Delivery) => void
   onUnassign: (d: Delivery) => void
   onComplete: (d: Delivery) => void
+  onDepart?: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -157,9 +158,9 @@ function RiderSection({
         }
         return (
           <>
-            <div className="flex items-end justify-between gap-2 mb-2">
+            <div className="flex items-baseline justify-between gap-2 mb-2">
+              <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
               <span className="text-xs text-slate-500">현재 배송중 : {activeList.length}</span>
-              <span className="text-2xl text-slate-500 leading-none">총배송 : {deliveries.length}</span>
             </div>
             {canAssign && (
               <div className="mb-2">
@@ -212,7 +213,7 @@ function RiderSection({
 // 퀵 카드 — 앱 없이 웹에서만 배송카드가 배정되는 외주 퀵 업체 렌더용.
 // RiderSection 을 단순화: 미접속·출근시간·기기삭제 UI 없음. 완료 섹션 없음(앱이 arrived_at 안 채움).
 function QuickSection({
-  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign, onComplete,
+  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign, onComplete, onDepart,
   getGopoumData, onSetPickup, onSetNote, onAddToRider,
 }: {
   quick: Rider
@@ -223,6 +224,7 @@ function QuickSection({
   onDelete: (d: Delivery) => void
   onUnassign: (d: Delivery) => void
   onComplete: (d: Delivery) => void
+  onDepart?: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -258,9 +260,9 @@ function QuickSection({
       </div>
       <p className="text-xs text-slate-500">전화번호: {fmtPhone(quick.phone)}</p>
       <hr className="my-2 border-slate-200" />
-      <div className="flex items-end justify-between gap-2 mb-2">
+      <div className="flex items-baseline justify-between gap-2 mb-2">
+        <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
         <span className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</span>
-        <span className="text-2xl text-slate-500 leading-none">총배송 : {deliveries.length}</span>
       </div>
       <div className="mb-2">
         <button
@@ -282,6 +284,7 @@ function QuickSection({
               onDelete={onDelete}
               onUnassign={onUnassign}
               onComplete={onComplete}
+              onDepart={onDepart}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={quick.name}
@@ -444,6 +447,18 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
+  // 배송 출발(수동): departed_at=now. 퀵 카드처럼 앱이 없는 상황에서 사용.
+  function handleDepart(delivery: Delivery) {
+    const nowHm = kstNowHm(appState.offset)
+    if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
+      alert('마감된 상태입니다. 배송 출발 처리할 수 없습니다.'); return
+    }
+    const now = new Date().toISOString()
+    const patch = { departed_at: now }
+    setDeliveries(prev => prev.map(d => d.id === delivery.id ? { ...d, ...patch } : d))
+    supabase.from('deliveries').update(patch).eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
+  }
+
   // 배송카드 수동 완료 / 본사복귀 처리. 상태별 분기:
   //  · assigned                       → status='completed', arrived_at(없으면 now), returned_at=now
   //  · completed & returned_at is null → returned_at 만 now (배송완료는 이미 기록됨)
@@ -592,6 +607,7 @@ export default function DeliveryBoard() {
     onDelete: handleDelete,
     onUnassign: handleUnassign,
     onComplete: handleComplete,
+    onDepart: handleDepart,
     getGopoumData,
     onSetPickup: handleSetPickup,
     onSetNote: handleSetNote,
