@@ -44,9 +44,14 @@ function TimestampCell({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onManual() }}
-          className="px-1.5 py-px rounded border border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors leading-tight text-[12px]"
+          className="px-1.5 py-px rounded border border-slate-300 text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors leading-tight text-[12px]"
+          title="시각을 지금으로 기록"
         >
-          진행중
+          <span className="inline-flex items-center gap-0 font-bold" aria-label="진행중">
+            <span className="animate-[chevron_1.2s_ease-in-out_infinite]">›</span>
+            <span className="animate-[chevron_1.2s_ease-in-out_infinite] [animation-delay:200ms]">›</span>
+            <span className="animate-[chevron_1.2s_ease-in-out_infinite] [animation-delay:400ms]">›</span>
+          </span>
         </button>
       ) : (
         <span className="text-slate-300 leading-tight tabular-nums text-[12px]">--:--</span>
@@ -202,9 +207,8 @@ export default function DeliveryCard({
   const returnedTime = hhmm(delivery.returned_at)
 
   function askSetTimestamp(field: 'departed' | 'arrived' | 'returned') {
+    // 팝업 확인 없이 즉시 기록.
     if (!onSetTimestamp) return
-    const label = field === 'departed' ? '배송 출발' : field === 'arrived' ? '배송 완료' : '본사 복귀'
-    if (!window.confirm(`'${delivery.client_name}' ${label} 시각을 지금으로 기록하시겠습니까?`)) return
     onSetTimestamp(delivery, field)
   }
 
