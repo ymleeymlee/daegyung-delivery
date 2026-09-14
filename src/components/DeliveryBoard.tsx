@@ -110,7 +110,7 @@ function RiderSection({
             className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full leading-none"
             title={minAppVersion ? `앱 업데이트 필요 (최소 v${minAppVersion} · 현재 v${device.app_version ?? '?'})` : '앱 업데이트 필요'}
           >
-            🔴 구버전 v{device.app_version ?? '?'}
+            구버전
           </span>
         )}
       </div>
