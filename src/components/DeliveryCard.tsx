@@ -25,35 +25,31 @@ interface Props {
   onSetNote?: (deliveryId: string, note: string) => void
 }
 
-// 배송카드 안 4줄(카드 생성/배송 출발/배송 완료/본사 복귀) 공통 렌더.
-// 시각(time) 있으면 값 표시, 없고 onManual 있으면 '수동 처리' 버튼, 둘 다 없으면 '-'.
-function TimestampRow({
-  label, time, onManual, accent, accentBold,
+// 배송카드 4단계 진행 표시 (2줄, 4컬럼) — 카드 생성 › 배송 출발 › 배송 완료 › 본사 복귀.
+// 각 컬럼: 위(라벨) / 아래(hh:mm 값 or '진행중' 버튼 or '--:--').
+function TimestampCell({
+  label, time, onManual, accent,
 }: {
   label: string
   time: string | null
   onManual?: () => void
   accent?: string
-  accentBold?: boolean
 }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-slate-400 w-[52px] shrink-0">{label} :</span>
+    <div className="flex flex-col items-center min-w-0 flex-1">
+      <span className="text-slate-400 leading-tight">{label}</span>
       {time ? (
-        <span className={`${accent ?? 'text-slate-600'} ${accentBold ? 'font-semibold' : ''} tabular-nums`}>{time}</span>
+        <span className={`${accent ?? 'text-slate-600'} leading-tight tabular-nums`}>{time}</span>
+      ) : onManual ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onManual() }}
+          className="mt-0.5 px-1 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors leading-none text-[9px]"
+        >
+          진행중
+        </button>
       ) : (
-        <>
-          <span className="text-slate-300 tabular-nums">--:--</span>
-          {onManual && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onManual() }}
-              className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors leading-none"
-            >
-              수동 처리
-            </button>
-          )}
-        </>
+        <span className="text-slate-300 leading-tight tabular-nums">--:--</span>
       )}
     </div>
   )
@@ -303,24 +299,27 @@ export default function DeliveryCard({
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
           </div>
         ) : (!isFullyDone || expanded) && (
-          <div className="mt-1 flex flex-col gap-0.5 text-xs whitespace-nowrap">
-            {/* 4줄. '수동 처리' 는 이전 단계가 완료되고 이 단계가 아직 안 됐을 때만 노출. */}
-            <TimestampRow label="카드 생성" time={createdTime} />
-            <TimestampRow
-              label="배송 출발"
+          <div className="mt-1.5 flex items-stretch text-[10px] whitespace-nowrap">
+            {/* 4단계 (라벨/값 2줄), 컬럼 사이 › 화살표. '진행중' 버튼은 이전 단계가 완료되고
+                 이 단계가 아직 안 됐을 때만 노출. */}
+            <TimestampCell label="카드생성" time={createdTime} />
+            <span className="flex items-center px-0.5 text-slate-300">›</span>
+            <TimestampCell
+              label="배송출발"
               time={departedTime}
               onManual={onSetTimestamp && !departedTime ? () => askSetTimestamp('departed') : undefined}
               accent={departedTime ? (isCompleted ? 'text-slate-500' : 'text-blue-600') : undefined}
             />
-            <TimestampRow
-              label="배송 완료"
+            <span className="flex items-center px-0.5 text-slate-300">›</span>
+            <TimestampCell
+              label="배송완료"
               time={arrivedTime}
               onManual={onSetTimestamp && !!departedTime && !arrivedTime ? () => askSetTimestamp('arrived') : undefined}
-              accent={arrivedTime ? (isCompleted ? 'text-slate-500' : 'text-emerald-600') : undefined}
-              accentBold={!!arrivedTime && !isCompleted}
+              accent={arrivedTime ? (isCompleted ? 'text-slate-500' : 'text-emerald-600 font-semibold') : undefined}
             />
-            <TimestampRow
-              label="본사 복귀"
+            <span className="flex items-center px-0.5 text-slate-300">›</span>
+            <TimestampCell
+              label="본사복귀"
               time={returnedTime}
               onManual={onSetTimestamp && !!arrivedTime && !returnedTime ? () => askSetTimestamp('returned') : undefined}
             />
