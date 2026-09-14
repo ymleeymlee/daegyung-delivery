@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Delivery, GopoumItem } from '@/types'
 import ElapsedTimer from './ElapsedTimer'
@@ -144,16 +144,10 @@ export default function DeliveryCard({
   const [expanded, setExpanded] = useState(false)
   const isCompleted = delivery.status === 'completed'
   const note = delivery.note ?? ''
-  // 메모 인라인 편집용 로컬 드래프트. 외부 변경(realtime) 시 동기화.
-  const [noteDraft, setNoteDraft] = useState(note)
-  useEffect(() => { setNoteDraft(note) }, [note])
-
-  function commitNote() {
-    const next = noteDraft
-    if (next !== note && onSetNote) {
-      onSetNote(delivery.id, next)
-    }
-  }
+  // 완료 버튼 표시 조건: assigned 이거나, completed 인데 아직 본사복귀 안 한 카드.
+  const canFinalize =
+    delivery.status === 'assigned' ||
+    (delivery.status === 'completed' && !delivery.returned_at)
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
   const gItems = gopoumItems ?? []
@@ -242,7 +236,7 @@ export default function DeliveryCard({
               고품 {collectedCount}/{total}
             </button>
           )}
-          {onSetNote && note && isCompleted && !expanded && (
+          {note && (
             <span
               className="bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap"
               title={note}
@@ -277,34 +271,48 @@ export default function DeliveryCard({
           </div>
         )}
 
-        {/* 메모 인라인 편집 (팝업 없이 바로 입력). 완료 카드는 펼쳤을 때만. */}
+        {/* 메모 인라인 편집 (팝업 없이 바로 입력). uncontrolled input — 한글 IME 조합 안전.
+             완료 카드는 펼쳤을 때만 편집 UI 노출. */}
         {onSetNote && (!isCompleted || expanded) && (
-          <div className="mt-2 flex items-center gap-1 text-[11px]" onClick={(e) => e.stopPropagation()}>
+          <div className="mt-2 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
             <span className="text-slate-500 whitespace-nowrap">메모:</span>
             <input
-              value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
-              onBlur={commitNote}
+              key={note}
+              defaultValue={note}
+              onBlur={(e) => {
+                const next = e.target.value
+                if (next !== note) onSetNote(delivery.id, next)
+              }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
-                else if (e.key === 'Escape') { setNoteDraft(note); (e.target as HTMLInputElement).blur() }
+                const el = e.target as HTMLInputElement
+                if (e.key === 'Enter') { e.preventDefault(); el.blur() }
+                else if (e.key === 'Escape') { el.value = note; el.blur() }
               }}
               placeholder="메모 입력"
               className={`flex-1 min-w-0 border-b outline-none bg-transparent text-slate-700 focus:border-yellow-400 ${
-                noteDraft ? 'border-yellow-300' : 'border-slate-200'
+                note ? 'border-yellow-300' : 'border-slate-200'
               }`}
             />
           </div>
         )}
 
-        {/* 수동 배송 완료 버튼 (assigned 카드만) — 도착·복귀 시각을 지금으로 기록하고 completed 처리. */}
-        {delivery.status === 'assigned' && onComplete && (
+        {/* 완료 버튼 — 흰 계열. 상태별 라벨/동작 분기.
+            · assigned: 도착·복귀 시각을 지금으로 기록 → completed.
+            · completed && !returned_at: 복귀 시각만 지금으로 기록. */}
+        {canFinalize && onComplete && (
           <button
-            onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 완료 처리하시겠습니까?`)) return; onComplete(delivery) }}
-            className="mt-2 w-full py-1.5 rounded-lg border border-emerald-400 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold transition-colors"
-            title="배송완료 · 본사복귀 시각을 지금으로 기록"
+            onClick={(e) => {
+              e.stopPropagation()
+              const msg = delivery.status === 'assigned'
+                ? `'${delivery.client_name}' 배송을 완료 처리하시겠습니까?`
+                : `'${delivery.client_name}' 본사 복귀를 지금 시각으로 기록하시겠습니까?`
+              if (!window.confirm(msg)) return
+              onComplete(delivery)
+            }}
+            className="mt-2 w-full py-1.5 rounded-lg border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 text-xs font-semibold transition-colors"
+            title={delivery.status === 'assigned' ? '배송완료 · 본사복귀 시각을 지금으로 기록' : '본사복귀 시각만 지금으로 기록'}
           >
-            ✓ 배송 완료
+            {delivery.status === 'assigned' ? '✓ 배송 완료' : '✓ 본사 복귀'}
           </button>
         )}
       </div>

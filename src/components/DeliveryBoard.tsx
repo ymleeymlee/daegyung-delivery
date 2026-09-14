@@ -444,7 +444,9 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
-  // 배정된 배송카드 수동 완료: arrived_at + returned_at = now, status='completed'.
+  // 배송카드 수동 완료 / 본사복귀 처리. 상태별 분기:
+  //  · assigned                       → status='completed', arrived_at(없으면 now), returned_at=now
+  //  · completed & returned_at is null → returned_at 만 now (배송완료는 이미 기록됨)
   // 웹에서만 사용. 앱은 위치 기반 자동 도착·완료 유지.
   function handleComplete(delivery: Delivery) {
     const nowHm = kstNowHm(appState.offset)
@@ -452,7 +454,9 @@ export default function DeliveryBoard() {
       alert('마감된 상태입니다. 완료 처리할 수 없습니다.'); return
     }
     const now = new Date().toISOString()
-    const patch = { status: 'completed' as const, arrived_at: now, returned_at: now }
+    const patch: Partial<Delivery> = delivery.status === 'assigned'
+      ? { status: 'completed', arrived_at: delivery.arrived_at ?? now, returned_at: now }
+      : { returned_at: now }
     setDeliveries(prev => prev.map(d => d.id === delivery.id ? { ...d, ...patch } : d))
     supabase.from('deliveries').update(patch).eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
