@@ -294,13 +294,28 @@ export default function DeliveryCard({
           <div className="mt-1 text-xs whitespace-nowrap">
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
           </div>
-        ) : (
+        ) : (!isCompleted || expanded) && (
           <div className="mt-1 flex flex-col gap-0.5 text-xs whitespace-nowrap">
-            {/* 4줄 항상 표시. 시각 없으면 '수동 처리' 버튼 → onSetTimestamp 로 지금 시각 기록. */}
+            {/* 4줄. '수동 처리' 는 이전 단계가 완료되고 이 단계가 아직 안 됐을 때만 노출. */}
             <TimestampRow label="카드 생성" time={createdTime} />
-            <TimestampRow label="배송 출발" time={departedTime} onManual={onSetTimestamp ? () => askSetTimestamp('departed') : undefined} accent={departedTime ? (isCompleted ? 'text-slate-500' : 'text-blue-600') : undefined} />
-            <TimestampRow label="배송 완료" time={arrivedTime} onManual={onSetTimestamp ? () => askSetTimestamp('arrived') : undefined} accent={arrivedTime ? (isCompleted ? 'text-slate-500' : 'text-emerald-600') : undefined} accentBold={!!arrivedTime && !isCompleted} />
-            <TimestampRow label="본사 복귀" time={returnedTime} onManual={onSetTimestamp ? () => askSetTimestamp('returned') : undefined} />
+            <TimestampRow
+              label="배송 출발"
+              time={departedTime}
+              onManual={onSetTimestamp && !departedTime ? () => askSetTimestamp('departed') : undefined}
+              accent={departedTime ? (isCompleted ? 'text-slate-500' : 'text-blue-600') : undefined}
+            />
+            <TimestampRow
+              label="배송 완료"
+              time={arrivedTime}
+              onManual={onSetTimestamp && !!departedTime && !arrivedTime ? () => askSetTimestamp('arrived') : undefined}
+              accent={arrivedTime ? (isCompleted ? 'text-slate-500' : 'text-emerald-600') : undefined}
+              accentBold={!!arrivedTime && !isCompleted}
+            />
+            <TimestampRow
+              label="본사 복귀"
+              time={returnedTime}
+              onManual={onSetTimestamp && !!arrivedTime && !returnedTime ? () => askSetTimestamp('returned') : undefined}
+            />
           </div>
         )}
 
