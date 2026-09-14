@@ -145,26 +145,25 @@ export default function TrackingPage() {
   const nameOf = useCallback((deviceId: string) =>
     deviceMap.get(deviceId) ?? `미지정 (${deviceId.slice(0, 8)})`, [deviceMap])
 
-  // 지도의 실시간 마커: 현재 접속중(connected=true) + 지점/버전 게이트 통과한 것만.
+  // 지도의 실시간 마커: 현재 접속중(connected=true) + 지점 일치.
+  // min_app_version 게이트는 뷰에서 제거 — 구버전 폰도 기록은 표시 (배송현황과 동일 정책).
   const visibleLocations = useMemo(() =>
     locations.filter(l =>
       deviceMap.has(l.device_id)
       && deviceBranch.get(l.device_id) === branch
       && connectedSet.has(l.device_id)
-      && allowedDeviceSet.has(l.device_id)
     ),
-    [locations, deviceMap, deviceBranch, branch, connectedSet, allowedDeviceSet])
+    [locations, deviceMap, deviceBranch, branch, connectedSet])
   // 좌측 패널 리스트: 오늘 활동한(rider_locations.updated_at 이 오늘 KST) 라이더 포함.
-  // 마감 후에도 접속중이 아니어도 리스트에 남겨 클릭 → 오늘 동선 조회를 가능하게 함.
+  // 마감 후·미접속·구버전이어도 리스트에 남겨 클릭 → 오늘 동선 조회를 가능하게 함.
   const panelLocations = useMemo(() => {
     const todayStart = new Date(`${todayKst()}T00:00:00+09:00`).getTime()
     return locations.filter(l =>
       deviceMap.has(l.device_id)
       && deviceBranch.get(l.device_id) === branch
-      && allowedDeviceSet.has(l.device_id)
       && (connectedSet.has(l.device_id) || new Date(l.updated_at).getTime() >= todayStart)
     )
-  }, [locations, deviceMap, deviceBranch, branch, connectedSet, allowedDeviceSet])
+  }, [locations, deviceMap, deviceBranch, branch, connectedSet])
   // 최신 resolver 참조 (구독 재등록 없이 이름 해석용)
   const nameOfRef = useRef(nameOf)
   useEffect(() => { nameOfRef.current = nameOf }, [nameOf])
