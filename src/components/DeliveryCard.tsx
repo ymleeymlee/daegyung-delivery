@@ -178,6 +178,9 @@ export default function DeliveryCard({
   const [showModal, setShowModal] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const isCompleted = delivery.status === 'completed'
+  // 완료 섹션으로 내려간 카드(status=completed && returned_at 있음) 만 접힘 대상.
+  // 배송완료됐지만 아직 본사복귀 안 한 카드는 진행중 리스트에 남아 항상 펼쳐 놓는다.
+  const isFullyDone = isCompleted && !!delivery.returned_at
   const note = delivery.note ?? ''
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
@@ -219,7 +222,7 @@ export default function DeliveryCard({
   // - 그 외(대기열 / 선택 진행 중): 기존 선택·배정 로직.
   function handleClick(e: React.MouseEvent) {
     e.stopPropagation()
-    if (isCompleted && !hasSelection) {
+    if (isFullyDone && !hasSelection) {
       setExpanded(v => !v)
       return
     }
@@ -288,7 +291,7 @@ export default function DeliveryCard({
 
         <div className="flex items-center gap-1">
           <p className={`font-semibold text-sm truncate flex-1 ${isCompleted ? 'text-slate-500' : 'text-slate-800'}`}>{delivery.client_name}</p>
-          {isCompleted && (
+          {isFullyDone && (
             <span className="text-slate-400 text-[10px] leading-none flex-shrink-0" aria-hidden="true">
               {expanded ? '▼' : '▶'}
             </span>
@@ -299,7 +302,7 @@ export default function DeliveryCard({
           <div className="mt-1 text-xs whitespace-nowrap">
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
           </div>
-        ) : (!isCompleted || expanded) && (
+        ) : (!isFullyDone || expanded) && (
           <div className="mt-1 flex flex-col gap-0.5 text-xs whitespace-nowrap">
             {/* 4줄. '수동 처리' 는 이전 단계가 완료되고 이 단계가 아직 안 됐을 때만 노출. */}
             <TimestampRow label="카드 생성" time={createdTime} />
@@ -326,7 +329,7 @@ export default function DeliveryCard({
 
         {/* 메모 인라인 편집 (팝업 없이 바로 입력). uncontrolled input — 한글 IME 조합 안전.
              완료 카드는 펼쳤을 때만 편집 UI 노출. */}
-        {onSetNote && (!isCompleted || expanded) && (
+        {onSetNote && (!isFullyDone || expanded) && (
           <div className="mt-2 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
             <span className="text-slate-500 whitespace-nowrap">메모:</span>
             <input
