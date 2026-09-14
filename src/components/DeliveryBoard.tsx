@@ -57,7 +57,9 @@ function RiderSection({
   minAppVersion?: string | null
 }) {
   // 구버전(min_app_version 미달) 폰은 오프라인 취급 — 기록은 보이되 새 배정 차단.
+  // 접속 여부도 UI 상 미접속으로 표시 (DB 값은 그대로 두고 화면 표시만).
   const canAssign = device.rider_id !== null && versionOk
+  const effectivelyConnected = device.connected && versionOk
   const isClickable = selectedIds.length > 0 && canAssign
   const [showAdd, setShowAdd] = useState(false)
   const displayName = deviceDisplayName(device)
@@ -66,7 +68,7 @@ function RiderSection({
     <div
       onClick={(e) => canAssign ? onRiderClick(device.rider_id!, e) : undefined}
       className={`relative overflow-visible rounded-2xl shadow-sm border p-4 min-w-56 flex-shrink-0 transition-colors ${
-        device.connected ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 opacity-60'
+        effectivelyConnected ? 'bg-white border-slate-200' : 'bg-slate-100 border-slate-200 opacity-60'
       } ${isClickable ? 'cursor-pointer hover:border-blue-300 hover:bg-blue-50/30' : ''}`}
     >
       {/* 우상단 기기 삭제 배지. 부모 section 의 overflow-x-auto 가 y축도 clip 하므로
@@ -99,7 +101,7 @@ function RiderSection({
         {device.today_first_connected_at && (
           <span className="text-xs text-slate-500">출근시간 : {fmtKstHm(device.today_first_connected_at)}</span>
         )}
-        {!device.connected && (
+        {!effectivelyConnected && (
           <span className="text-[10px] font-bold bg-slate-300 text-slate-600 px-1.5 py-0.5 rounded-full leading-none">미접속</span>
         )}
         {!canAssign && versionOk && (
