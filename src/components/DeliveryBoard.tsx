@@ -36,7 +36,7 @@ function fmtPhone(raw: string | null): string {
 }
 
 function RiderSection({
-  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete, onUnassign, onComplete,
+  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete, onUnassign, onSetTimestamp,
   getGopoumData, onSetPickup, onSetNote, onAddToRider, versionOk = true, minAppVersion,
 }: {
   device: RiderDevice
@@ -47,8 +47,7 @@ function RiderSection({
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
   onUnassign: (d: Delivery) => void
-  onComplete: (d: Delivery) => void
-  onDepart?: (d: Delivery) => void
+  onSetTimestamp: (d: Delivery, field: 'departed' | 'arrived' | 'returned') => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -149,7 +148,7 @@ function RiderSection({
               onSelect={onSelect}
               onDelete={onDelete}
               onUnassign={onUnassign}
-              onComplete={onComplete}
+              onSetTimestamp={onSetTimestamp}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={displayName}
@@ -215,7 +214,7 @@ function RiderSection({
 // 퀵 카드 — 앱 없이 웹에서만 배송카드가 배정되는 외주 퀵 업체 렌더용.
 // RiderSection 을 단순화: 미접속·출근시간·기기삭제 UI 없음. 완료 섹션 없음(앱이 arrived_at 안 채움).
 function QuickSection({
-  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign, onComplete, onDepart,
+  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign, onSetTimestamp,
   getGopoumData, onSetPickup, onSetNote, onAddToRider,
 }: {
   quick: Rider
@@ -225,8 +224,7 @@ function QuickSection({
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
   onUnassign: (d: Delivery) => void
-  onComplete: (d: Delivery) => void
-  onDepart?: (d: Delivery) => void
+  onSetTimestamp: (d: Delivery, field: 'departed' | 'arrived' | 'returned') => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -285,8 +283,7 @@ function QuickSection({
               onSelect={onSelect}
               onDelete={onDelete}
               onUnassign={onUnassign}
-              onComplete={onComplete}
-              onDepart={onDepart}
+              onSetTimestamp={onSetTimestamp}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={quick.name}
@@ -449,31 +446,24 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
-  // 배송 출발(수동): departed_at=now. 퀵 카드처럼 앱이 없는 상황에서 사용.
-  function handleDepart(delivery: Delivery) {
+  // 배송 시각(departed/arrived/returned) 개별 수동 처리. 웹에서만 사용.
+  //  · departed: departed_at = now
+  //  · arrived : arrived_at = now, status='completed'
+  //  · returned: returned_at = now, status='completed', arrived_at 없으면 함께 now
+  function handleSetTimestamp(delivery: Delivery, field: 'departed' | 'arrived' | 'returned') {
     const nowHm = kstNowHm(appState.offset)
     if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
-      alert('마감된 상태입니다. 배송 출발 처리할 수 없습니다.'); return
+      alert('마감된 상태입니다. 시각을 기록할 수 없습니다.'); return
     }
     const now = new Date().toISOString()
-    const patch = { departed_at: now }
-    setDeliveries(prev => prev.map(d => d.id === delivery.id ? { ...d, ...patch } : d))
-    supabase.from('deliveries').update(patch).eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
-  }
-
-  // 배송카드 수동 완료 / 본사복귀 처리. 상태별 분기:
-  //  · assigned                       → status='completed', arrived_at(없으면 now), returned_at=now
-  //  · completed & returned_at is null → returned_at 만 now (배송완료는 이미 기록됨)
-  // 웹에서만 사용. 앱은 위치 기반 자동 도착·완료 유지.
-  function handleComplete(delivery: Delivery) {
-    const nowHm = kstNowHm(appState.offset)
-    if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
-      alert('마감된 상태입니다. 완료 처리할 수 없습니다.'); return
+    let patch: Partial<Delivery>
+    if (field === 'departed') {
+      patch = { departed_at: now }
+    } else if (field === 'arrived') {
+      patch = { arrived_at: now, status: 'completed' }
+    } else {
+      patch = { returned_at: now, status: 'completed', arrived_at: delivery.arrived_at ?? now }
     }
-    const now = new Date().toISOString()
-    const patch: Partial<Delivery> = delivery.status === 'assigned'
-      ? { status: 'completed', arrived_at: delivery.arrived_at ?? now, returned_at: now }
-      : { returned_at: now }
     setDeliveries(prev => prev.map(d => d.id === delivery.id ? { ...d, ...patch } : d))
     supabase.from('deliveries').update(patch).eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
@@ -608,8 +598,7 @@ export default function DeliveryBoard() {
     onSelect: handleCardClick,
     onDelete: handleDelete,
     onUnassign: handleUnassign,
-    onComplete: handleComplete,
-    onDepart: handleDepart,
+    onSetTimestamp: handleSetTimestamp,
     getGopoumData,
     onSetPickup: handleSetPickup,
     onSetNote: handleSetNote,

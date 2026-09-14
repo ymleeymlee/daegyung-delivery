@@ -13,10 +13,9 @@ interface Props {
   onDelete: (delivery: Delivery) => void
   // 배정된 카드 취소 → 대기열로 복귀. assigned 카드에서만 노출.
   onUnassign?: (delivery: Delivery) => void
-  // 배정된 카드 수동 완료 → arrived_at + returned_at = now, status='completed'.
-  onComplete?: (delivery: Delivery) => void
-  // 배송 출발(수동) → departed_at = now. 퀵 카드처럼 앱이 없을 때 사용.
-  onDepart?: (delivery: Delivery) => void
+  // 배송 시각(departed/arrived/returned) 개별 수동 처리. 카드 안의 각 줄 옆
+  // '수동 처리' 버튼에서 호출. DeliveryBoard 에서 field 별 patch 분기.
+  onSetTimestamp?: (delivery: Delivery, field: 'departed' | 'arrived' | 'returned') => void
   gopoumItems?: GopoumItem[]
   gopoumClientId?: string
   riderName?: string
@@ -24,6 +23,37 @@ interface Props {
   onSetPickup?: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   // 배송 비고 저장 (빈 문자열이면 null로 저장)
   onSetNote?: (deliveryId: string, note: string) => void
+}
+
+// 배송카드 안 4줄(카드 생성/배송 출발/배송 완료/본사 복귀) 공통 렌더.
+// 시각(time) 있으면 값 표시, 없고 onManual 있으면 '수동 처리' 버튼, 둘 다 없으면 '-'.
+function TimestampRow({
+  label, time, onManual, accent, accentBold,
+}: {
+  label: string
+  time: string | null
+  onManual?: () => void
+  accent?: string
+  accentBold?: boolean
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-slate-400 w-[52px] shrink-0">{label} :</span>
+      {time ? (
+        <span className={`${accent ?? 'text-slate-600'} ${accentBold ? 'font-semibold' : ''}`}>{time}</span>
+      ) : onManual ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onManual() }}
+          className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors leading-none"
+        >
+          수동 처리
+        </button>
+      ) : (
+        <span className="text-slate-300">-</span>
+      )}
+    </div>
+  )
 }
 
 const qty = (i: GopoumItem) => i.quantity ?? 1
@@ -139,21 +169,13 @@ function GopoumModal({
 }
 
 export default function DeliveryCard({
-  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign, onComplete, onDepart,
+  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign, onSetTimestamp,
   gopoumItems, gopoumClientId, riderName, onSetPickup, onSetNote,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const isCompleted = delivery.status === 'completed'
   const note = delivery.note ?? ''
-  // 배송출발 버튼: assigned 인데 아직 배송출발 안 함 + onDepart 있음(퀵 전용).
-  const canDepart = delivery.status === 'assigned' && !delivery.departed_at && !!onDepart
-  // 완료 버튼: assigned 이거나, completed 인데 아직 본사복귀 안 한 카드. (배송출발 전이면 완료 대신 출발 노출)
-  const canFinalize =
-    !canDepart && (
-      delivery.status === 'assigned' ||
-      (delivery.status === 'completed' && !delivery.returned_at)
-    )
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
   const gItems = gopoumItems ?? []
@@ -170,10 +192,17 @@ export default function DeliveryCard({
 
   const hhmm = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : null
-  const assignedTime = hhmm(delivery.assigned_at)   // 배정
-  const departedTime = hhmm(delivery.departed_at)   // 배송출발(본사 이탈)
-  const arrivedTime = hhmm(delivery.arrived_at)     // 배송완료(배송지 도착)
-  const returnedTime = hhmm(delivery.returned_at)   // 본사복귀(본사 도착)
+  const createdTime = hhmm(delivery.created_at)
+  const departedTime = hhmm(delivery.departed_at)
+  const arrivedTime = hhmm(delivery.arrived_at)
+  const returnedTime = hhmm(delivery.returned_at)
+
+  function askSetTimestamp(field: 'departed' | 'arrived' | 'returned') {
+    if (!onSetTimestamp) return
+    const label = field === 'departed' ? '배송 출발' : field === 'arrived' ? '배송 완료' : '본사 복귀'
+    if (!window.confirm(`'${delivery.client_name}' ${label} 시각을 지금으로 기록하시겠습니까?`)) return
+    onSetTimestamp(delivery, field)
+  }
 
   function handleSetPickup(itemId: string, quantity: number) {
     if (onSetPickup) onSetPickup(itemId, delivery.id, riderName ?? '배송자', quantity)
@@ -265,15 +294,13 @@ export default function DeliveryCard({
           <div className="mt-1 text-xs whitespace-nowrap">
             <span className="font-medium text-amber-600">대기 <ElapsedTimer startIso={delivery.created_at} /></span>
           </div>
-        ) : (!isCompleted || expanded) && (
+        ) : (
           <div className="mt-1 flex flex-col gap-0.5 text-xs whitespace-nowrap">
-            {/* 4줄: 배정 / 배송출발 / 배송완료 / 본사복귀 */}
-            {assignedTime && <span className="text-slate-400">배정 {assignedTime}</span>}
-            <span className={`font-medium ${isCompleted ? 'text-slate-500' : 'text-blue-600'}`}>배송출발 {departedTime ?? '-'}</span>
-            {arrivedTime && (
-              <span className={`font-semibold ${isCompleted ? 'text-slate-500' : 'text-emerald-600'}`}>배송완료 {arrivedTime}</span>
-            )}
-            {returnedTime && <span className="text-slate-400">본사복귀 {returnedTime}</span>}
+            {/* 4줄 항상 표시. 시각 없으면 '수동 처리' 버튼 → onSetTimestamp 로 지금 시각 기록. */}
+            <TimestampRow label="카드 생성" time={createdTime} />
+            <TimestampRow label="배송 출발" time={departedTime} onManual={onSetTimestamp ? () => askSetTimestamp('departed') : undefined} accent={departedTime ? (isCompleted ? 'text-slate-500' : 'text-blue-600') : undefined} />
+            <TimestampRow label="배송 완료" time={arrivedTime} onManual={onSetTimestamp ? () => askSetTimestamp('arrived') : undefined} accent={arrivedTime ? (isCompleted ? 'text-slate-500' : 'text-emerald-600') : undefined} accentBold={!!arrivedTime && !isCompleted} />
+            <TimestampRow label="본사 복귀" time={returnedTime} onManual={onSetTimestamp ? () => askSetTimestamp('returned') : undefined} />
           </div>
         )}
 
@@ -302,41 +329,6 @@ export default function DeliveryCard({
           </div>
         )}
 
-        {/* 배송 출발 버튼 (퀵 전용) — 아직 출발 안 한 assigned 카드. 클릭 시 departed_at=now,
-            realtime 반영되면 자연스럽게 아래 '배송 완료' 버튼으로 전환. */}
-        {canDepart && onDepart && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              if (!window.confirm(`'${delivery.client_name}' 배송을 지금 출발 처리하시겠습니까?`)) return
-              onDepart(delivery)
-            }}
-            className="mt-2 w-full py-1.5 rounded-lg border border-blue-300 bg-white text-blue-700 hover:bg-blue-50 text-xs font-semibold transition-colors"
-            title="배송출발 시각을 지금으로 기록"
-          >
-            🚚 배송 출발
-          </button>
-        )}
-
-        {/* 완료 버튼 — 흰 계열. 상태별 라벨/동작 분기.
-            · assigned: 도착·복귀 시각을 지금으로 기록 → completed.
-            · completed && !returned_at: 복귀 시각만 지금으로 기록. */}
-        {canFinalize && onComplete && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              const msg = delivery.status === 'assigned'
-                ? `'${delivery.client_name}' 배송을 완료 처리하시겠습니까?`
-                : `'${delivery.client_name}' 본사 복귀를 지금 시각으로 기록하시겠습니까?`
-              if (!window.confirm(msg)) return
-              onComplete(delivery)
-            }}
-            className="mt-2 w-full py-1.5 rounded-lg border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 text-xs font-semibold transition-colors"
-            title={delivery.status === 'assigned' ? '배송완료 · 본사복귀 시각을 지금으로 기록' : '본사복귀 시각만 지금으로 기록'}
-          >
-            {delivery.status === 'assigned' ? '✓ 배송 완료' : '✓ 본사 복귀'}
-          </button>
-        )}
       </div>
 
       {showModal && gopoumItems && (
