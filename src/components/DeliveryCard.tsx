@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Delivery, GopoumItem } from '@/types'
 import ElapsedTimer from './ElapsedTimer'
@@ -136,51 +136,24 @@ function GopoumModal({
   )
 }
 
-function NoteModal({
-  initial, onSave, onClose,
-}: {
-  initial: string
-  onSave: (note: string) => void
-  onClose: () => void
-}) {
-  const [text, setText] = useState(initial)
-  function commit() { if (text !== initial) onSave(text); onClose() }
-  return createPortal(
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4" onClick={commit}>
-      <div className="bg-white rounded-2xl shadow-xl w-80 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-          <span className="font-bold text-slate-800">메모</span>
-          <button onClick={commit} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
-        </div>
-        <div className="p-4">
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            placeholder="비고를 입력하세요 (시트의 '비고' 열에 반영됩니다)"
-            className="w-full h-32 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
-            autoFocus
-          />
-        </div>
-        <div className="px-4 pb-4 flex gap-2">
-          <button onClick={() => { setText(''); onSave(''); onClose() }} className="flex-1 py-2 rounded-xl border border-slate-300 text-slate-500 hover:bg-slate-50 text-sm font-medium transition-colors">지우기</button>
-          <button onClick={commit} className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">저장</button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
-
 export default function DeliveryCard({
   delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign, onComplete,
   gopoumItems, gopoumClientId, riderName, onSetPickup, onSetNote,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
-  const [showNote, setShowNote] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const isCompleted = delivery.status === 'completed'
   const note = delivery.note ?? ''
-  const notePreview = note.split('\n')[0].slice(0, 20)
+  // 메모 인라인 편집용 로컬 드래프트. 외부 변경(realtime) 시 동기화.
+  const [noteDraft, setNoteDraft] = useState(note)
+  useEffect(() => { setNoteDraft(note) }, [note])
+
+  function commitNote() {
+    const next = noteDraft
+    if (next !== note && onSetNote) {
+      onSetNote(delivery.id, next)
+    }
+  }
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
   const gItems = gopoumItems ?? []
@@ -246,23 +219,12 @@ export default function DeliveryCard({
             title="삭제"
           >×</button>
         )}
-        {delivery.status === 'assigned' && (
-          <div className="absolute -top-2 -right-2 flex items-center gap-1">
-            {onComplete && (
-              <button
-                onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 완료 처리하시겠습니까?`)) return; onComplete(delivery) }}
-                className="bg-white border border-emerald-400 text-emerald-700 hover:bg-emerald-50 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm transition-colors"
-                title="수동 배송완료 (도착·복귀 시각 기록)"
-              >✓ 완료</button>
-            )}
-            {onUnassign && (
-              <button
-                onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 취소하고 대기열로 되돌리시겠습니까?`)) return; onUnassign(delivery) }}
-                className="bg-white border border-amber-400 text-amber-700 hover:bg-amber-50 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm transition-colors"
-                title="배정 취소 (대기열로 되돌리기)"
-              >취소</button>
-            )}
-          </div>
+        {delivery.status === 'assigned' && onUnassign && (
+          <button
+            onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 취소하고 대기열로 되돌리시겠습니까?`)) return; onUnassign(delivery) }}
+            className="absolute -top-2 -right-2 bg-white border border-amber-400 text-amber-700 hover:bg-amber-50 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm transition-colors"
+            title="배정 취소 (대기열로 되돌리기)"
+          >취소</button>
         )}
 
         {/* 배지 라인: 고품 + 메모. 완료 카드는 카드 클릭이 접기 토글이므로 고품 배지가 편집 트리거. */}
@@ -280,15 +242,13 @@ export default function DeliveryCard({
               고품 {collectedCount}/{total}
             </button>
           )}
-          {onSetNote && note && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setShowNote(true) }}
-              className="bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap cursor-pointer hover:scale-105 transition-transform"
+          {onSetNote && note && isCompleted && !expanded && (
+            <span
+              className="bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap"
               title={note}
             >
               메모
-            </button>
+            </span>
           )}
         </div>
 
@@ -317,18 +277,34 @@ export default function DeliveryCard({
           </div>
         )}
 
-        {/* 메모 버튼 (맨 아래) — 비고 저장. 시트 '비고' 열에 반영됨. 완료 카드는 펼쳤을 때만 표시. */}
+        {/* 메모 인라인 편집 (팝업 없이 바로 입력). 완료 카드는 펼쳤을 때만. */}
         {onSetNote && (!isCompleted || expanded) && (
+          <div className="mt-2 flex items-center gap-1 text-[11px]" onClick={(e) => e.stopPropagation()}>
+            <span className="text-slate-500 whitespace-nowrap">메모:</span>
+            <input
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              onBlur={commitNote}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() }
+                else if (e.key === 'Escape') { setNoteDraft(note); (e.target as HTMLInputElement).blur() }
+              }}
+              placeholder="메모 입력"
+              className={`flex-1 min-w-0 border-b outline-none bg-transparent text-slate-700 focus:border-yellow-400 ${
+                noteDraft ? 'border-yellow-300' : 'border-slate-200'
+              }`}
+            />
+          </div>
+        )}
+
+        {/* 수동 배송 완료 버튼 (assigned 카드만) — 도착·복귀 시각을 지금으로 기록하고 completed 처리. */}
+        {delivery.status === 'assigned' && onComplete && (
           <button
-            onClick={(e) => { e.stopPropagation(); setShowNote(true) }}
-            className={`mt-2 w-full py-1 rounded-lg border text-[11px] transition-colors truncate ${
-              note
-                ? 'bg-yellow-50 border-yellow-300 text-yellow-800 hover:bg-yellow-100'
-                : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600'
-            }`}
-            title={note || '메모 추가'}
+            onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 완료 처리하시겠습니까?`)) return; onComplete(delivery) }}
+            className="mt-2 w-full py-1.5 rounded-lg border border-emerald-400 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold transition-colors"
+            title="배송완료 · 본사복귀 시각을 지금으로 기록"
           >
-            {note ? notePreview + (note.length > 20 || note.includes('\n') ? '…' : '') : '메모'}
+            ✓ 배송 완료
           </button>
         )}
       </div>
@@ -342,13 +318,6 @@ export default function DeliveryCard({
         />
       )}
 
-      {showNote && onSetNote && (
-        <NoteModal
-          initial={note}
-          onSave={(v) => onSetNote(delivery.id, v)}
-          onClose={() => setShowNote(false)}
-        />
-      )}
     </>
   )
 }
