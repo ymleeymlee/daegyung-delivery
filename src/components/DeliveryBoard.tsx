@@ -36,7 +36,7 @@ function fmtPhone(raw: string | null): string {
 }
 
 function RiderSection({
-  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete, onUnassign, onSetTimestamp,
+  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete, onUnassign, onSetTimestamp, onClearTimestamp,
   getGopoumData, onSetPickup, onSetNote, onAddToRider, versionOk = true, minAppVersion,
 }: {
   device: RiderDevice
@@ -48,6 +48,7 @@ function RiderSection({
   onDelete: (d: Delivery) => void
   onUnassign: (d: Delivery) => void
   onSetTimestamp: (d: Delivery, field: 'departed' | 'arrived' | 'returned') => void
+  onClearTimestamp: (d: Delivery, field: 'departed' | 'arrived' | 'returned') => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -149,6 +150,7 @@ function RiderSection({
               onDelete={onDelete}
               onUnassign={onUnassign}
               onSetTimestamp={onSetTimestamp}
+              onClearTimestamp={onClearTimestamp}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={displayName}
@@ -214,7 +216,7 @@ function RiderSection({
 // 퀵 카드 — 앱 없이 웹에서만 배송카드가 배정되는 외주 퀵 업체 렌더용.
 // RiderSection 을 단순화: 미접속·출근시간·기기삭제 UI 없음. 완료 섹션 없음(앱이 arrived_at 안 채움).
 function QuickSection({
-  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign, onSetTimestamp,
+  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign, onSetTimestamp, onClearTimestamp,
   getGopoumData, onSetPickup, onSetNote, onAddToRider,
 }: {
   quick: Rider
@@ -225,6 +227,7 @@ function QuickSection({
   onDelete: (d: Delivery) => void
   onUnassign: (d: Delivery) => void
   onSetTimestamp: (d: Delivery, field: 'departed' | 'arrived' | 'returned') => void
+  onClearTimestamp: (d: Delivery, field: 'departed' | 'arrived' | 'returned') => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -284,6 +287,7 @@ function QuickSection({
               onDelete={onDelete}
               onUnassign={onUnassign}
               onSetTimestamp={onSetTimestamp}
+              onClearTimestamp={onClearTimestamp}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={quick.name}
@@ -446,6 +450,27 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
+  // 배송 시각 수동 처리 취소 — 해당 필드와 이후 단계도 null 로 되돌린다 (순차성 유지).
+  //  · departed: departed_at + arrived_at + returned_at null, status='assigned'
+  //  · arrived : arrived_at + returned_at null, status='assigned'
+  //  · returned: returned_at 만 null (arrived, status 유지)
+  function handleClearTimestamp(delivery: Delivery, field: 'departed' | 'arrived' | 'returned') {
+    const nowHm = kstNowHm(appState.offset)
+    if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
+      alert('마감된 상태입니다. 시각을 취소할 수 없습니다.'); return
+    }
+    let patch: Partial<Delivery>
+    if (field === 'departed') {
+      patch = { departed_at: null, arrived_at: null, returned_at: null, status: 'assigned' }
+    } else if (field === 'arrived') {
+      patch = { arrived_at: null, returned_at: null, status: 'assigned' }
+    } else {
+      patch = { returned_at: null }
+    }
+    setDeliveries(prev => prev.map(d => d.id === delivery.id ? { ...d, ...patch } : d))
+    supabase.from('deliveries').update(patch).eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
+  }
+
   // 배송 시각(departed/arrived/returned) 개별 수동 처리. 웹에서만 사용.
   //  · departed: departed_at = now
   //  · arrived : arrived_at = now, status='completed'
@@ -599,6 +624,7 @@ export default function DeliveryBoard() {
     onDelete: handleDelete,
     onUnassign: handleUnassign,
     onSetTimestamp: handleSetTimestamp,
+    onClearTimestamp: handleClearTimestamp,
     getGopoumData,
     onSetPickup: handleSetPickup,
     onSetNote: handleSetNote,

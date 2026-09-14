@@ -14,8 +14,10 @@ interface Props {
   // 배정된 카드 취소 → 대기열로 복귀. assigned 카드에서만 노출.
   onUnassign?: (delivery: Delivery) => void
   // 배송 시각(departed/arrived/returned) 개별 수동 처리. 카드 안의 각 줄 옆
-  // '수동 처리' 버튼에서 호출. DeliveryBoard 에서 field 별 patch 분기.
+  // '진행중' 버튼에서 호출. DeliveryBoard 에서 field 별 patch 분기.
   onSetTimestamp?: (delivery: Delivery, field: 'departed' | 'arrived' | 'returned') => void
+  // 수동 처리 취소 — 해당 필드(및 이후 단계) 를 null 로 되돌린다.
+  onClearTimestamp?: (delivery: Delivery, field: 'departed' | 'arrived' | 'returned') => void
   gopoumItems?: GopoumItem[]
   gopoumClientId?: string
   riderName?: string
@@ -28,18 +30,23 @@ interface Props {
 // 배송카드 4단계 진행 표시 (2줄, 4컬럼) — 카드 생성 › 배송 출발 › 배송 완료 › 본사 복귀.
 // 각 컬럼: 위(라벨) / 아래(hh:mm 값 or '진행중' 버튼 or '--:--').
 function TimestampCell({
-  label, time, onManual, accent,
+  label, time, onManual, onClickTime, accent,
 }: {
   label: string
   time: string | null
   onManual?: () => void
+  onClickTime?: () => void
   accent?: string
 }) {
   return (
     <div className="flex flex-col items-center min-w-0 flex-1 gap-1">
       <span className="text-slate-400 leading-tight">{label}</span>
       {time ? (
-        <span className={`${accent ?? 'text-slate-600'} leading-tight tabular-nums text-[12px]`}>{time}</span>
+        <span
+          onClick={onClickTime ? (e) => { e.stopPropagation(); onClickTime() } : undefined}
+          className={`${accent ?? 'text-slate-600'} leading-tight tabular-nums text-[12px] ${onClickTime ? 'cursor-pointer hover:line-through hover:text-red-500' : ''}`}
+          title={onClickTime ? '수동 처리 취소' : undefined}
+        >{time}</span>
       ) : onManual ? (
         <button
           type="button"
@@ -173,7 +180,7 @@ function GopoumModal({
 }
 
 export default function DeliveryCard({
-  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign, onSetTimestamp,
+  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign, onSetTimestamp, onClearTimestamp,
   gopoumItems, gopoumClientId, riderName, onSetPickup, onSetNote,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
@@ -207,10 +214,15 @@ export default function DeliveryCard({
   const returnedTime = hhmm(delivery.returned_at)
 
   function askSetTimestamp(field: 'departed' | 'arrived' | 'returned') {
+    // 진행중 버튼: 확인 없이 즉시 기록.
     if (!onSetTimestamp) return
-    const label = field === 'departed' ? '배송 출발' : field === 'arrived' ? '배송 완료' : '본사 복귀'
-    if (!window.confirm(`'${delivery.client_name}' ${label} 시각을 지금으로 기록하시겠습니까?`)) return
     onSetTimestamp(delivery, field)
+  }
+
+  function askClearTimestamp(field: 'departed' | 'arrived' | 'returned') {
+    if (!onClearTimestamp) return
+    if (!window.confirm('수동 처리를 취소하시겠습니까?')) return
+    onClearTimestamp(delivery, field)
   }
 
   function handleSetPickup(itemId: string, quantity: number) {
@@ -305,28 +317,28 @@ export default function DeliveryCard({
           </div>
         ) : (!isFullyDone || expanded) && (
           <div className="mt-1.5 flex items-stretch text-[10px] whitespace-nowrap">
-            {/* 4단계 (라벨/값 2줄), 컬럼 사이 › 화살표. '진행중' 버튼은 이전 단계가 완료되고
-                 이 단계가 아직 안 됐을 때만 노출. */}
+            {/* 4단계 (라벨/값 2줄). '진행중' 버튼은 이전 단계가 완료되고 이 단계가 아직 안 됐을 때만.
+                 이미 기록된 시각은 클릭 시 취소 확인. */}
             <TimestampCell label="카드생성" time={createdTime} />
-            <span className="flex items-center px-0.5 text-slate-300">›</span>
             <TimestampCell
               label="배송출발"
               time={departedTime}
               onManual={onSetTimestamp && !departedTime ? () => askSetTimestamp('departed') : undefined}
+              onClickTime={onClearTimestamp && departedTime ? () => askClearTimestamp('departed') : undefined}
               accent={departedTime ? (isCompleted ? 'text-slate-500' : 'text-blue-600') : undefined}
             />
-            <span className="flex items-center px-0.5 text-slate-300">›</span>
             <TimestampCell
               label="배송완료"
               time={arrivedTime}
               onManual={onSetTimestamp && !!departedTime && !arrivedTime ? () => askSetTimestamp('arrived') : undefined}
+              onClickTime={onClearTimestamp && arrivedTime ? () => askClearTimestamp('arrived') : undefined}
               accent={arrivedTime ? (isCompleted ? 'text-slate-500' : 'text-emerald-600 font-semibold') : undefined}
             />
-            <span className="flex items-center px-0.5 text-slate-300">›</span>
             <TimestampCell
               label="본사복귀"
               time={returnedTime}
               onManual={onSetTimestamp && !!arrivedTime && !returnedTime ? () => askSetTimestamp('returned') : undefined}
+              onClickTime={onClearTimestamp && returnedTime ? () => askClearTimestamp('returned') : undefined}
             />
           </div>
         )}
@@ -334,7 +346,7 @@ export default function DeliveryCard({
         {/* 메모 인라인 편집 (팝업 없이 바로 입력). uncontrolled input — 한글 IME 조합 안전.
              완료 카드는 펼쳤을 때만 편집 UI 노출. */}
         {onSetNote && (!isFullyDone || expanded) && (
-          <div className="mt-2 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
+          <div className="mt-3 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
             <input
               key={note}
               defaultValue={note}
