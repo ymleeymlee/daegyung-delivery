@@ -36,7 +36,7 @@ function TimestampCell({
   accent?: string
 }) {
   return (
-    <div className="flex flex-col items-center min-w-0 flex-1">
+    <div className="flex flex-col items-center min-w-0 flex-1 gap-1">
       <span className="text-slate-400 leading-tight">{label}</span>
       {time ? (
         <span className={`${accent ?? 'text-slate-600'} leading-tight tabular-nums text-[12px]`}>{time}</span>
