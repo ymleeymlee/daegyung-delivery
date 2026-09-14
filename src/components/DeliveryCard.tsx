@@ -39,17 +39,17 @@ function TimestampCell({
     <div className="flex flex-col items-center min-w-0 flex-1">
       <span className="text-slate-400 leading-tight">{label}</span>
       {time ? (
-        <span className={`${accent ?? 'text-slate-600'} leading-tight tabular-nums`}>{time}</span>
+        <span className={`${accent ?? 'text-slate-600'} leading-tight tabular-nums text-[12px]`}>{time}</span>
       ) : onManual ? (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onManual() }}
-          className="mt-0.5 px-1 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors leading-none text-[9px]"
+          className="px-1.5 py-px rounded border border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors leading-tight text-[12px]"
         >
           진행중
         </button>
       ) : (
-        <span className="text-slate-300 leading-tight tabular-nums">--:--</span>
+        <span className="text-slate-300 leading-tight tabular-nums text-[12px]">--:--</span>
       )}
     </div>
   )
