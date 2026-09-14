@@ -37,20 +37,23 @@ function TimestampRow({
   accentBold?: boolean
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       <span className="text-slate-400 w-[52px] shrink-0">{label} :</span>
       {time ? (
-        <span className={`${accent ?? 'text-slate-600'} ${accentBold ? 'font-semibold' : ''}`}>{time}</span>
-      ) : onManual ? (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onManual() }}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors leading-none"
-        >
-          수동 처리
-        </button>
+        <span className={`${accent ?? 'text-slate-600'} ${accentBold ? 'font-semibold' : ''} tabular-nums`}>{time}</span>
       ) : (
-        <span className="text-slate-300">-</span>
+        <>
+          <span className="text-slate-300 tabular-nums">--:--</span>
+          {onManual && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onManual() }}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors leading-none"
+            >
+              수동 처리
+            </button>
+          )}
+        </>
       )}
     </div>
   )
@@ -191,7 +194,9 @@ export default function DeliveryCard({
   const collectedByMe = myCount > 0                              // 내가 하나라도 수거했으면 초록
 
   const hhmm = (iso?: string | null) =>
-    iso ? new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : null
+    iso ? new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date(iso)) : null
   const createdTime = hhmm(delivery.created_at)
   const departedTime = hhmm(delivery.departed_at)
   const arrivedTime = hhmm(delivery.arrived_at)
