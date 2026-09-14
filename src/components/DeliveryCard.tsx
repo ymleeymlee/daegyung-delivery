@@ -207,8 +207,9 @@ export default function DeliveryCard({
   const returnedTime = hhmm(delivery.returned_at)
 
   function askSetTimestamp(field: 'departed' | 'arrived' | 'returned') {
-    // 팝업 확인 없이 즉시 기록.
     if (!onSetTimestamp) return
+    const label = field === 'departed' ? '배송 출발' : field === 'arrived' ? '배송 완료' : '본사 복귀'
+    if (!window.confirm(`'${delivery.client_name}' ${label} 시각을 지금으로 기록하시겠습니까?`)) return
     onSetTimestamp(delivery, field)
   }
 
@@ -334,7 +335,6 @@ export default function DeliveryCard({
              완료 카드는 펼쳤을 때만 편집 UI 노출. */}
         {onSetNote && (!isFullyDone || expanded) && (
           <div className="mt-2 flex items-center gap-1 text-xs" onClick={(e) => e.stopPropagation()}>
-            <span className="text-slate-500 whitespace-nowrap">메모:</span>
             <input
               key={note}
               defaultValue={note}
