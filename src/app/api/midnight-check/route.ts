@@ -95,6 +95,22 @@ export async function GET() {
       }
     }
 
+    // 진행중 배송 자동 완료 (midnight 트리거) — delivery_reset 전에 실행해서
+    // 완료 상태로 시트에 남기고 싶다면 sheet_update.midnight 도 함께 켜야 한다.
+    if (auto.finalize_pending.midnight) {
+      // midnight-check 에서는 마감시각 대신 자정 직후 시각으로 기록.
+      const nowMidnight = new Date().toISOString()
+      const arriveRes = await supabaseServer.from('deliveries')
+        .update({ arrived_at: nowMidnight })
+        .eq('status', 'assigned').is('arrived_at', null).is('returned_at', null)
+      if (arriveRes.error) console.error('midnight finalize_pending arrived_at 실패:', arriveRes.error)
+      const finalRes = await supabaseServer.from('deliveries')
+        .update({ status: 'completed', returned_at: nowMidnight })
+        .eq('status', 'assigned').is('returned_at', null)
+      if (finalRes.error) console.error('midnight finalize_pending completed 실패:', finalRes.error)
+      performed.push('finalize_pending')
+    }
+
     // DB 정리 (병렬)
     const tasks: PromiseLike<unknown>[] = []
     const nowIso = new Date().toISOString()

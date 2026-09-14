@@ -13,6 +13,8 @@ interface Props {
   onDelete: (delivery: Delivery) => void
   // 배정된 카드 취소 → 대기열로 복귀. assigned 카드에서만 노출.
   onUnassign?: (delivery: Delivery) => void
+  // 배정된 카드 수동 완료 → arrived_at + returned_at = now, status='completed'.
+  onComplete?: (delivery: Delivery) => void
   gopoumItems?: GopoumItem[]
   gopoumClientId?: string
   riderName?: string
@@ -170,7 +172,7 @@ function NoteModal({
 }
 
 export default function DeliveryCard({
-  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign,
+  delivery, isSelected, hasSelection, onSelect, onDelete, onUnassign, onComplete,
   gopoumItems, gopoumClientId, riderName, onSetPickup, onSetNote,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
@@ -244,12 +246,23 @@ export default function DeliveryCard({
             title="삭제"
           >×</button>
         )}
-        {delivery.status === 'assigned' && onUnassign && (
-          <button
-            onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 취소하고 대기열로 되돌리시겠습니까?`)) return; onUnassign(delivery) }}
-            className="absolute -top-2 -right-2 bg-white border border-amber-400 text-amber-700 hover:bg-amber-50 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm transition-colors"
-            title="배정 취소 (대기열로 되돌리기)"
-          >취소</button>
+        {delivery.status === 'assigned' && (
+          <div className="absolute -top-2 -right-2 flex items-center gap-1">
+            {onComplete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 완료 처리하시겠습니까?`)) return; onComplete(delivery) }}
+                className="bg-white border border-emerald-400 text-emerald-700 hover:bg-emerald-50 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm transition-colors"
+                title="수동 배송완료 (도착·복귀 시각 기록)"
+              >✓ 완료</button>
+            )}
+            {onUnassign && (
+              <button
+                onClick={(e) => { e.stopPropagation(); if (!window.confirm(`'${delivery.client_name}' 배송을 취소하고 대기열로 되돌리시겠습니까?`)) return; onUnassign(delivery) }}
+                className="bg-white border border-amber-400 text-amber-700 hover:bg-amber-50 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm transition-colors"
+                title="배정 취소 (대기열로 되돌리기)"
+              >취소</button>
+            )}
+          </div>
         )}
 
         {/* 배지 라인: 고품 + 메모. 완료 카드는 카드 클릭이 접기 토글이므로 고품 배지가 편집 트리거. */}

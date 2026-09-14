@@ -119,6 +119,31 @@ export async function runCloseIfDue(source: 'cron' | 'client'): Promise<CloseRun
   const branches = (branchRows ?? []) as Branch[]
   const performed: string[] = []
 
+  // 0) 진행중 배송 자동 완료 — 시트 저장 전에 실행해서 시트에 '완료'로 기록되게.
+  //    arrived_at 은 이미 있으면 유지, 없으면 마감시각. returned_at 은 마감시각으로 고정.
+  if (auto.finalize_pending.close) {
+    const closedAtIso = new Date(`${kstDate}T${closeTime}:00+09:00`).toISOString()
+    const pending = deliveries.filter(d => d.status === 'assigned' && !d.returned_at)
+    if (pending.length > 0) {
+      // 로컬 배열 반영 (아래 sheet_update 가 이 배열로 저장하도록)
+      for (const d of pending) {
+        if (!d.arrived_at) d.arrived_at = closedAtIso
+        d.returned_at = closedAtIso
+        d.status = 'completed'
+      }
+      // DB 반영: 두 번 update — 도착 안 한 것 arrived_at, 그다음 모두 status+returned_at.
+      const arriveRes = await supabaseServer.from('deliveries')
+        .update({ arrived_at: closedAtIso })
+        .eq('status', 'assigned').is('arrived_at', null).is('returned_at', null)
+      if (arriveRes.error) console.error('finalize_pending arrived_at 실패:', arriveRes.error)
+      const finalRes = await supabaseServer.from('deliveries')
+        .update({ status: 'completed', returned_at: closedAtIso })
+        .eq('status', 'assigned').is('returned_at', null)
+      if (finalRes.error) console.error('finalize_pending completed 실패:', finalRes.error)
+    }
+    performed.push('finalize_pending')
+  }
+
   // 1) 시트 업데이트
   if (auto.sheet_update.close) {
     if (branches.length === 0) {

@@ -36,8 +36,8 @@ function fmtPhone(raw: string | null): string {
 }
 
 function RiderSection({
-  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete, onUnassign,
-  getGopoumData, onSetPickup, onSetNote, onAddToRider,
+  device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete, onUnassign, onComplete,
+  getGopoumData, onSetPickup, onSetNote, onAddToRider, versionOk = true, minAppVersion,
 }: {
   device: RiderDevice
   deliveries: Delivery[]
@@ -47,15 +47,19 @@ function RiderSection({
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
   onUnassign: (d: Delivery) => void
+  onComplete: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
   onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
+  versionOk?: boolean
+  minAppVersion?: string | null
 }) {
-  const isClickable = selectedIds.length > 0 && device.rider_id !== null
+  // 구버전(min_app_version 미달) 폰은 오프라인 취급 — 기록은 보이되 새 배정 차단.
+  const canAssign = device.rider_id !== null && versionOk
+  const isClickable = selectedIds.length > 0 && canAssign
   const [showAdd, setShowAdd] = useState(false)
   const displayName = deviceDisplayName(device)
-  const canAssign = device.rider_id !== null
 
   return (
     <div
@@ -97,8 +101,16 @@ function RiderSection({
         {!device.connected && (
           <span className="text-[10px] font-bold bg-slate-300 text-slate-600 px-1.5 py-0.5 rounded-full leading-none">미접속</span>
         )}
-        {!canAssign && (
+        {!canAssign && versionOk && (
           <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full leading-none">배정불가</span>
+        )}
+        {!versionOk && (
+          <span
+            className="text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full leading-none"
+            title={minAppVersion ? `앱 업데이트 필요 (최소 v${minAppVersion} · 현재 v${device.app_version ?? '?'})` : '앱 업데이트 필요'}
+          >
+            🔴 구버전 v{device.app_version ?? '?'}
+          </span>
         )}
       </div>
       <hr className="my-2 border-slate-200" />
@@ -134,6 +146,7 @@ function RiderSection({
               onSelect={onSelect}
               onDelete={onDelete}
               onUnassign={onUnassign}
+              onComplete={onComplete}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={displayName}
@@ -199,7 +212,7 @@ function RiderSection({
 // 퀵 카드 — 앱 없이 웹에서만 배송카드가 배정되는 외주 퀵 업체 렌더용.
 // RiderSection 을 단순화: 미접속·출근시간·기기삭제 UI 없음. 완료 섹션 없음(앱이 arrived_at 안 채움).
 function QuickSection({
-  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign,
+  quick, deliveries, selectedIds, onRiderClick, onSelect, onDelete, onUnassign, onComplete,
   getGopoumData, onSetPickup, onSetNote, onAddToRider,
 }: {
   quick: Rider
@@ -209,6 +222,7 @@ function QuickSection({
   onSelect: (delivery: Delivery) => void
   onDelete: (d: Delivery) => void
   onUnassign: (d: Delivery) => void
+  onComplete: (d: Delivery) => void
   getGopoumData: (d: Delivery) => { clientId: string; items: GopoumItem[] } | null
   onSetPickup: (itemId: string, deliveryId: string, riderName: string, quantity: number) => void
   onSetNote: (deliveryId: string, note: string) => void
@@ -267,6 +281,7 @@ function QuickSection({
               onSelect={onSelect}
               onDelete={onDelete}
               onUnassign={onUnassign}
+              onComplete={onComplete}
               gopoumItems={gd?.items}
               gopoumClientId={gd?.clientId}
               riderName={quick.name}
@@ -429,6 +444,19 @@ export default function DeliveryBoard() {
     supabase.from('deliveries').delete().eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
   }
 
+  // 배정된 배송카드 수동 완료: arrived_at + returned_at = now, status='completed'.
+  // 웹에서만 사용. 앱은 위치 기반 자동 도착·완료 유지.
+  function handleComplete(delivery: Delivery) {
+    const nowHm = kstNowHm(appState.offset)
+    if (isBusinessClosed(nowHm, appState.businessOpen, appState.businessClose) || isClosedNow(appState)) {
+      alert('마감된 상태입니다. 완료 처리할 수 없습니다.'); return
+    }
+    const now = new Date().toISOString()
+    const patch = { status: 'completed' as const, arrived_at: now, returned_at: now }
+    setDeliveries(prev => prev.map(d => d.id === delivery.id ? { ...d, ...patch } : d))
+    supabase.from('deliveries').update(patch).eq('id', delivery.id).then(({ error }) => { if (error) fetchAll() })
+  }
+
   // 배정된 배송카드를 대기열로 되돌린다 (앱 unassignDelivery 와 동일 정책).
   function handleUnassign(delivery: Delivery) {
     const nowHm = kstNowHm(appState.offset)
@@ -559,6 +587,7 @@ export default function DeliveryBoard() {
     onSelect: handleCardClick,
     onDelete: handleDelete,
     onUnassign: handleUnassign,
+    onComplete: handleComplete,
     getGopoumData,
     onSetPickup: handleSetPickup,
     onSetNote: handleSetNote,
@@ -609,17 +638,20 @@ export default function DeliveryBoard() {
             {...cardProps}
           />
         ))}
-        {sortedDevices
-          .filter(device => !appState.minAppVersion || isVersionAtLeast(device.app_version, appState.minAppVersion))
-          .map(device => (
-          <RiderSection
-            key={device.device_id}
-            device={device}
-            deliveries={device.rider_id ? getDeviceDeliveries(device.rider_id) : []}
-            riderColor={riderColorMap.get(device.device_id)}
-            {...cardProps}
-          />
-        ))}
+        {sortedDevices.map(device => {
+          const versionOk = !appState.minAppVersion || isVersionAtLeast(device.app_version, appState.minAppVersion)
+          return (
+            <RiderSection
+              key={device.device_id}
+              device={device}
+              deliveries={device.rider_id ? getDeviceDeliveries(device.rider_id) : []}
+              riderColor={riderColorMap.get(device.device_id)}
+              versionOk={versionOk}
+              minAppVersion={appState.minAppVersion}
+              {...cardProps}
+            />
+          )
+        })}
         {devices.length === 0 && quickRiders.length === 0 && (
           <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
             접속한 기기가 없습니다. 라이더 앱에서 출근하면 여기에 표시됩니다.

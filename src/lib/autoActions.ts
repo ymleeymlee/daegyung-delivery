@@ -7,6 +7,7 @@ export type AutoActionKey =
   | 'sheet_update'            // 시트 업데이트 (배송·고품·위치 시트 저장)
   | 'location_share_off'      // 위치 공유 차단 (closed_until 설정)
   | 'delivery_create_block'   // 배송 카드 생성 차단 (closed_until 설정 — 위와 동일 매커니즘)
+  | 'finalize_pending'        // 진행중 배송 자동 완료 (arrived_at/returned_at = 마감시각)
   | 'delivery_reset'          // 배송 현황 정리 (진행중 포함 전체 삭제)
   | 'gopoum_reset'            // 고품 현황 정리 (수거된 항목 archive + 잔여수량 갱신)
   | 'location_log_purge'      // 위치 로그 정리 (location_pings + rider_locations)
@@ -23,6 +24,7 @@ export const AUTO_ACTION_ITEMS: { key: AutoActionKey; label: string; hint?: stri
   { key: 'sheet_update', label: '시트 업데이트', hint: '현재 내용을 배송·고품·위치 시트에 저장' },
   { key: 'location_share_off', label: '위치 공유 차단', hint: '앱 위치 공유 종료 (다음날 06시 자동 해제)' },
   { key: 'delivery_create_block', label: '배송 카드 생성 차단', hint: '웹에서 새 배송 카드 만들기 차단' },
+  { key: 'finalize_pending', label: '진행중 배송 완료 처리', hint: '아직 배송중(assigned)인 카드를 도착·복귀 시각을 마감시각으로 자동 기록' },
   { key: 'delivery_reset', label: '배송 현황 정리', hint: '진행중·완료 모두 배송 카드 전체 삭제' },
   { key: 'gopoum_reset', label: '고품 현황 정리', hint: '수거 완료된 품목 아카이브, 업체별 잔여수량 갱신' },
   { key: 'location_log_purge', label: '위치 로그 정리', hint: 'location_pings, rider_locations 데이터 삭제' },
