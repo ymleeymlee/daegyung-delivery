@@ -215,24 +215,24 @@ export function buildGridsByBranch(
 
 // 그리드를 그날 탭(MM-DD)에 저장 (느림 — Google Sheets API). 백그라운드 실행용.
 // 하나 실패해도 나머지는 시도되도록 allSettled 사용 (예: 위치-MM 문서 없을 때).
-export async function writeSnapshot(branchFolder: string, dateStr: string, data: SnapshotData) {
+export async function writeSnapshot(branchCode: string, dateStr: string, data: SnapshotData) {
   const year = dateStr.slice(0, 4), month = dateStr.slice(5, 7), day = dateStr.slice(8, 10)
   const tasks: { name: string; run: () => Promise<void> }[] = [
-    { name: '배송', run: () => writeDeliveryTab(branchFolder, year, month, day, data.deliveryGrid) },
-    { name: '고품', run: () => writeGopoumTab(branchFolder, year, month, day, data.gopoumGrid) },
+    { name: '배송', run: () => writeDeliveryTab(branchCode, year, month, day, data.deliveryGrid) },
+    { name: '고품', run: () => writeGopoumTab(branchCode, year, month, day, data.gopoumGrid) },
   ]
   if (data.locationGrid.length > 0) {
-    tasks.push({ name: '위치', run: () => writeLocationTab(branchFolder, year, month, day, data.locationGrid) })
+    tasks.push({ name: '위치', run: () => writeLocationTab(branchCode, year, month, day, data.locationGrid) })
   }
   const results = await Promise.allSettled(tasks.map(t => t.run()))
   const failed = results
     .map((r, i) => ({ r, name: tasks[i].name }))
     .filter(x => x.r.status === 'rejected') as { r: PromiseRejectedResult; name: string }[]
-  for (const f of failed) console.error(`시트 저장 실패(${branchFolder}/${f.name}):`, f.r.reason)
+  for (const f of failed) console.error(`시트 저장 실패(${branchCode}/${f.name}):`, f.r.reason)
   // 배송·고품은 반드시 기록돼야 하는 핵심 탭 — 실패하면 throw 해서 호출측(마감)이 DB 를 건드리지 않고 중단하게 함.
   // (위치 탭은 실패해도 비치명: 원본 핑은 마감 성공 후 truncate 전까지 DB 에 남아있음)
   const critical = failed.filter(f => f.name === '배송' || f.name === '고품')
   if (critical.length > 0) {
-    throw new Error(`핵심 시트 기록 실패(${branchFolder} — ${critical.map(f => f.name).join(', ')}): ${String(critical[0].r.reason)}`)
+    throw new Error(`핵심 시트 기록 실패(${branchCode} — ${critical.map(f => f.name).join(', ')}): ${String(critical[0].r.reason)}`)
   }
 }

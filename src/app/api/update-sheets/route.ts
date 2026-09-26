@@ -88,12 +88,12 @@ export async function GET() {
 
     // 한 지점이 실패해도 나머지는 기록되게 (실패 지점은 응답에 담아 알림)
     const results = await Promise.allSettled(
-      perBranch.map(b => writeSnapshot(b.label, kstDate, b.data)),
+      perBranch.map(b => writeSnapshot(b.code, kstDate, b.data)),
     )
     const failed = results
       .map((r, i) => ({ r, label: perBranch[i].label }))
       .filter(x => x.r.status === 'rejected') as { r: PromiseRejectedResult; label: string }[]
-    const updated = perBranch.filter((_, i) => results[i].status === 'fulfilled').map(b => b.label)
+    const updated = perBranch.filter((_, i) => results[i].status === 'fulfilled').map(b => b.code)
 
     if (failed.length > 0) {
       return NextResponse.json({

@@ -88,7 +88,9 @@ export async function GET() {
       if (branches.length > 0) {
         const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, knownPings)
         try {
-          for (const b of perBranch) await writeSnapshot(b.label, kstDate, b.data)
+          const res = await Promise.allSettled(perBranch.map(b => writeSnapshot(b.code, kstDate, b.data)))
+          const failed = res.map((r, i) => ({ r, code: perBranch[i].code })).filter(x => x.r.status === 'rejected')
+          if (failed.length > 0) console.error(`midnight sheet_update 일부 실패: ${failed.map(f => f.code).join(', ')}`)
           performed.push('sheet_update')
         } catch (e) {
           console.error('midnight sheet_update 실패:', e)
@@ -116,25 +118,27 @@ export async function GET() {
         supabaseServer.from('branches').select('code,label'),
       ])
       const clientMap = new Map((clientRows ?? []).map((c: { id: string; code: string | null; name: string; address: string | null }) => [c.id, c]))
-      const branchLabel = new Map((branchRows ?? []).map((b: { code: string; label: string }) => [b.code, b.label]))
-      // 지점별 · 업체번호 dedupe
+      const validBranchCodes = new Set((branchRows ?? []).map((b: { code: string }) => b.code))
+      // 지점 code 별 · 업체번호 dedupe
       const byBranch = new Map<string, Map<string, UndergroundEntry>>()
       const yDate = yesterdayIso.slice(0, 10)  // YYYY-MM-DD
       for (const r of (rows ?? []) as { client_id: string; branch: string | null; created_at: string }[]) {
         const cli = clientMap.get(r.client_id)
         if (!cli || !cli.code) continue
-        const label = r.branch ? branchLabel.get(r.branch) : null
-        if (!label) continue
-        if (!byBranch.has(label)) byBranch.set(label, new Map())
-        const m = byBranch.get(label)!
+        if (!r.branch || !validBranchCodes.has(r.branch)) continue
+        if (!byBranch.has(r.branch)) byBranch.set(r.branch, new Map())
+        const m = byBranch.get(r.branch)!
         if (!m.has(cli.code)) {
           m.set(cli.code, { code: cli.code, name: cli.name, address: cli.address ?? '', date: yDate })
         }
       }
-      for (const [label, m] of byBranch) {
-        try { await upsertUndergroundEntries(label, Array.from(m.values())) }
-        catch (e) { console.error(`지하위치 시트 upsert 실패(${label}):`, e) }
-      }
+      // 지점별 병렬 upsert
+      await Promise.allSettled(
+        Array.from(byBranch.entries()).map(async ([code, m]) => {
+          try { await upsertUndergroundEntries(code, Array.from(m.values())) }
+          catch (e) { console.error(`지하위치 시트 upsert 실패(${code}):`, e) }
+        })
+      )
       if (byBranch.size > 0) performed.push('underground_detect')
     } catch (e) {
       console.error('지하위치 감지 실패:', e)

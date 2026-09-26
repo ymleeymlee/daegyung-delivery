@@ -150,11 +150,15 @@ export async function runCloseIfDue(source: 'cron' | 'client'): Promise<CloseRun
       return { ran: false, stage: 'sheet', error: '등록된 지점이 없습니다', date: kstDate }
     }
     const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, knownPings)
-    try {
-      for (const b of perBranch) await writeSnapshot(b.label, kstDate, b.data)
-    } catch (e) {
-      return { ran: false, stage: 'sheet', error: String(e), date: kstDate }
+    // 지점별 병렬 저장. 하나가 실패해도 나머지는 시도 (Vercel 60s timeout 방지).
+    const results = await Promise.allSettled(perBranch.map(b => writeSnapshot(b.code, kstDate, b.data)))
+    const failed = results.map((r, i) => ({ r, code: perBranch[i].code }))
+      .filter(x => x.r.status === 'rejected') as { r: PromiseRejectedResult; code: string }[]
+    if (failed.length === perBranch.length) {
+      // 전 지점 실패 → 마감 흐름 중단, 마커도 세팅 안 함 (다음에 재시도).
+      return { ran: false, stage: 'sheet', error: failed.map(f => `${f.code}: ${String(f.r.reason)}`).join(' / '), date: kstDate }
     }
+    if (failed.length > 0) console.error(`close sheet_update 일부 실패: ${failed.map(f => f.code).join(', ')}`)
     performed.push('sheet_update')
   }
 

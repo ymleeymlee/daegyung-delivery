@@ -32,16 +32,13 @@ export async function GET(req: NextRequest) {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: 'date 파라미터가 필요합니다 (YYYY-MM-DD).' }, { status: 400 })
   }
-  // 시트는 지점 폴더별로 분리 저장되므로 어느 지점을 읽을지 알아야 한다.
+  // 파일명 규칙: {branchCode}_pos_{year}
   const branchCode = req.nextUrl.searchParams.get('branch')
-  const { data: branchRows } = await supabaseServer.from('branches').select('code,label').order('sort_order')
-  const branches = (branchRows ?? []) as { code: string; label: string }[]
-  const branchFolder = branches.find(b => b.code === branchCode)?.label ?? branches[0]?.label
-  if (!branchFolder) {
-    return NextResponse.json({ error: '지점 정보를 찾을 수 없습니다.' }, { status: 400 })
+  if (!branchCode) {
+    return NextResponse.json({ error: 'branch 파라미터가 필요합니다.' }, { status: 400 })
   }
   const [year, month, day] = date.split('-')
-  const grid = await readLocationTab(branchFolder, year, month, day)
+  const grid = await readLocationTab(branchCode, year, month, day)
 
   if (grid === null) {
     return NextResponse.json({ date, found: false, riders: [], totalPoints: 0 } satisfies ArchiveResponse)
