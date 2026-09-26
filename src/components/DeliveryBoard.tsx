@@ -208,9 +208,9 @@ function RiderSection({
             <div className="mb-2">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
-                <span className="text-lg font-bold text-slate-800">총거리 : {fmtMeters(distanceM)}</span>
+                <span className="text-xs text-slate-500">현재 배송중 : {activeList.length}</span>
               </div>
-              <div className="text-xs text-slate-500">현재 배송중 : {activeList.length}</div>
+              <div className="text-lg font-bold text-slate-800">총거리 : {fmtMeters(distanceM)}</div>
             </div>
             {canAssign && (
               <div className="mb-2">
@@ -313,9 +313,9 @@ function QuickSection({
       <div className="mb-2">
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
-          <span className="text-lg font-bold text-slate-300">총거리 : - m</span>
+          <span className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</span>
         </div>
-        <div className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</div>
+        <div className="text-lg font-bold text-slate-300">총거리 : - m</div>
       </div>
       <div className="mb-2">
         <button
