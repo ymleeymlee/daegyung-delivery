@@ -389,7 +389,24 @@ export default function ClientsPage() {
                   <>
                     <td className="px-4 py-3 text-slate-500">{client.code}</td>
                     <td className="px-4 py-3 font-medium text-slate-800">{client.name}</td>
-                    <td className="px-4 py-3 text-slate-500">{client.address}</td>
+                    <td className="px-4 py-3 text-slate-500">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span>{client.address}</span>
+                        {client.lat != null && client.lng != null ? (
+                          <a
+                            href={`https://map.kakao.com/link/map/${encodeURIComponent(client.name)},${client.lat},${client.lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-blue-600 hover:underline font-mono tabular-nums whitespace-nowrap"
+                            title="카카오맵에서 좌표 확인"
+                          >
+                            📍 {client.lat.toFixed(5)}, {client.lng.toFixed(5)}
+                          </a>
+                        ) : (
+                          <span className="text-[11px] text-red-400">좌표 없음</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1 justify-end">
                         <button onClick={() => startEdit(client)} className="text-xs text-slate-500 hover:text-blue-600 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors">수정</button>

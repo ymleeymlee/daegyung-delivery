@@ -15,6 +15,49 @@ function deviceDisplayName(d: RiderDevice): string {
   return d.name ?? `이름 미입력 (기기 ${d.device_id.slice(0, 8)})`
 }
 
+// 지구 반지름 (m). 두 위경도 사이 haversine 거리(m).
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+// 각 device 의 오늘 pings 를 시간순으로 훑어 총 이동거리(m) 계산.
+// 5m 이하 지터는 스킵해 부풀림 억제.
+function sumDistancesByDevice(pings: { device_id: string; lat: number; lng: number; captured_at: string }[]): Map<string, number> {
+  const grouped = new Map<string, typeof pings>()
+  for (const p of pings) {
+    if (!p.device_id || p.lat == null || p.lng == null) continue
+    if (!grouped.has(p.device_id)) grouped.set(p.device_id, [])
+    grouped.get(p.device_id)!.push(p)
+  }
+  const out = new Map<string, number>()
+  for (const [id, list] of grouped) {
+    list.sort((a, b) => a.captured_at.localeCompare(b.captured_at))
+    let total = 0
+    let prevLat: number | null = null
+    let prevLng: number | null = null
+    for (const p of list) {
+      if (prevLat != null && prevLng != null) {
+        const d = haversineM(prevLat, prevLng, p.lat, p.lng)
+        if (d >= 5) { total += d; prevLat = p.lat; prevLng = p.lng }
+      } else {
+        prevLat = p.lat; prevLng = p.lng
+      }
+    }
+    out.set(id, total)
+  }
+  return out
+}
+
+function fmtMeters(m: number | undefined): string {
+  if (m == null || !isFinite(m)) return '- m'
+  return `${Math.round(m).toLocaleString('en-US')} m`
+}
+
 function fmtKstHm(iso: string | null): string | null {
   if (!iso) return null
   try {
@@ -37,7 +80,7 @@ function fmtPhone(raw: string | null): string {
 
 function RiderSection({
   device, deliveries, selectedIds, riderColor, onRiderClick, onSelect, onDelete, onUnassign, onSetTimestamp, onClearTimestamp,
-  getGopoumData, onSetPickup, onSetNote, onAddToRider, versionOk = true, minAppVersion,
+  getGopoumData, onSetPickup, onSetNote, onAddToRider, versionOk = true, minAppVersion, distanceM,
 }: {
   device: RiderDevice
   deliveries: Delivery[]
@@ -55,6 +98,7 @@ function RiderSection({
   onAddToRider: (riderId: string, clientName: string, clientAddress: string, clientId?: string) => void
   versionOk?: boolean
   minAppVersion?: string | null
+  distanceM?: number
 }) {
   // 구버전(min_app_version 미달) 폰은 오프라인 취급 — 기록은 보이되 새 배정 차단.
   // 접속 여부도 UI 상 미접속으로 표시 (DB 값은 그대로 두고 화면 표시만).
@@ -161,9 +205,12 @@ function RiderSection({
         }
         return (
           <>
-            <div className="flex items-baseline justify-between gap-2 mb-2">
-              <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
-              <span className="text-xs text-slate-500">현재 배송중 : {activeList.length}</span>
+            <div className="mb-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
+                <span className="text-lg font-bold text-slate-800">총거리 : {fmtMeters(distanceM)}</span>
+              </div>
+              <div className="text-xs text-slate-500">현재 배송중 : {activeList.length}</div>
             </div>
             {canAssign && (
               <div className="mb-2">
@@ -263,9 +310,12 @@ function QuickSection({
       </div>
       <p className="text-xs text-slate-500">전화번호: {fmtPhone(quick.phone)}</p>
       <hr className="my-2 border-slate-200" />
-      <div className="flex items-baseline justify-between gap-2 mb-2">
-        <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
-        <span className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</span>
+      <div className="mb-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
+          <span className="text-lg font-bold text-slate-300">총거리 : - m</span>
+        </div>
+        <div className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</div>
       </div>
       <div className="mb-2">
         <button
@@ -319,6 +369,8 @@ export default function DeliveryBoard() {
   const [codeById, setCodeById] = useState<Map<string, string>>(new Map())
   const [coordById, setCoordById] = useState<Map<string, { lat: number; lng: number }>>(new Map())
   const [appState, setAppState] = useState<AppState>({ offset: 0, closedUntil: null, minAppVersion: null, businessOpen: DEFAULT_BUSINESS_OPEN, businessClose: DEFAULT_BUSINESS_CLOSE, deliveryRadius: DEFAULT_DELIVERY_RADIUS })
+  // 각 라이더(device_id) 의 오늘 총 이동거리(m). 30초 폴링으로 갱신.
+  const [distanceById, setDistanceById] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
 
   const fetchAll = useCallback(async () => {
@@ -372,6 +424,29 @@ export default function DeliveryBoard() {
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [fetchAll, fetchGopoum, debouncedFetchGopoum, refreshAppState])
+
+  // 라이더별 오늘 총 이동거리 계산 (30초 폴링).
+  // location_pings 는 부담이 커서 realtime 대신 폴링. 현 지점(branch) 라이더 device 만.
+  useEffect(() => {
+    let active = true
+    const branchDeviceIds = devices.filter(d => d.branch === branch).map(d => d.device_id)
+    if (branchDeviceIds.length === 0) { setDistanceById(new Map()); return }
+    const fetchDistances = async () => {
+      const todayIso = new Date(`${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())}T00:00:00+09:00`).toISOString()
+      const { data } = await supabase
+        .from('location_pings')
+        .select('device_id,lat,lng,captured_at')
+        .gte('captured_at', todayIso)
+        .in('device_id', branchDeviceIds)
+        .order('captured_at', { ascending: true })
+      if (!active) return
+      const rows = (data ?? []) as { device_id: string; lat: number; lng: number; captured_at: string }[]
+      setDistanceById(sumDistancesByDevice(rows))
+    }
+    void fetchDistances()
+    const timer = setInterval(fetchDistances, 30_000)
+    return () => { active = false; clearInterval(timer) }
+  }, [devices, branch])
 
   const gopoumMap = useMemo(() => {
     const byCode = new Map<string, GopoumItem[]>()
@@ -685,6 +760,7 @@ export default function DeliveryBoard() {
               riderColor={riderColorMap.get(device.device_id)}
               versionOk={versionOk}
               minAppVersion={appState.minAppVersion}
+              distanceM={distanceById.get(device.device_id)}
               {...cardProps}
             />
           )

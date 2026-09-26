@@ -164,6 +164,102 @@ export async function writeLocationTab(branchFolder: string, year: string, month
   await writeDayTab(branchFolder, '위치', year, month, day, grid)
 }
 
+/**
+ * 지하위치(누적 관리) 시트: 지점/지하위치/전체 스프레드시트의 첫 탭에 upsert.
+ * 컬럼: A 업체번호 | B 업체명 | C 주소 | D 감지 횟수 | E 첫 감지일 | F 마지막 감지일
+ * 같은 업체번호가 있으면 감지 횟수 +1, 마지막 감지일 갱신. 없으면 append.
+ */
+export interface UndergroundEntry {
+  code: string        // 업체번호 (upsert 키)
+  name: string
+  address: string
+  date: string        // 감지일 (YYYY-MM-DD KST)
+}
+
+async function findOrCreateUndergroundDoc(branchFolder: string): Promise<string> {
+  const drive = driveClient()
+  const branchId = await findFolder(branchFolder)
+  if (!branchId) throw new Error(`지점 폴더 '${branchFolder}' 를 찾을 수 없습니다 (지점 폴더는 자동 생성 안 함)`)
+  const categoryId = await findOrCreateFolder('지하위치', branchId)
+  const docName = '전체'
+  const cacheKey = `${branchFolder}/지하위치/${docName}`
+  if (_docCache.has(cacheKey)) return _docCache.get(cacheKey)!
+  const res = await drive.files.list({
+    q: `'${categoryId}' in parents and name='${docName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
+    fields: 'files(id,name)', pageSize: 1,
+  })
+  const existingId = res.data.files?.[0]?.id
+  if (existingId) { _docCache.set(cacheKey, existingId); return existingId }
+  const created = await drive.files.create({
+    requestBody: {
+      name: docName,
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      parents: [categoryId],
+    },
+    fields: 'id',
+  })
+  const newId = created.data.id
+  if (!newId) throw new Error(`지하위치 스프레드시트 생성 실패 (${branchFolder})`)
+  _docCache.set(cacheKey, newId)
+  console.log(`[googleSheets] 신규 시트 생성: ${branchFolder}/지하위치/${docName} (id=${newId})`)
+  return newId
+}
+
+export async function upsertUndergroundEntries(branchFolder: string, entries: UndergroundEntry[]): Promise<void> {
+  if (entries.length === 0) return
+  const docId = await findOrCreateUndergroundDoc(branchFolder)
+  const sheets = sheetsClient()
+  // 첫 탭 이름 확보 (기본 'Sheet1' or 한국어 로케일 '시트1' 가능)
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: docId, fields: 'sheets(properties(title,sheetId))' })
+  const firstSheet = meta.data.sheets?.[0]?.properties
+  const tab = firstSheet?.title ?? 'Sheet1'
+  // 기존 데이터 조회 (헤더 포함)
+  const existing = await sheets.spreadsheets.values.get({ spreadsheetId: docId, range: `${tab}!A:F` })
+  const rows = (existing.data.values as string[][] | undefined) ?? []
+  // 헤더 없으면 삽입
+  if (rows.length === 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: docId, range: `${tab}!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [['업체번호', '업체명', '주소', '감지 횟수', '첫 감지일', '마지막 감지일']] },
+    })
+    rows.push(['업체번호', '업체명', '주소', '감지 횟수', '첫 감지일', '마지막 감지일'])
+  }
+  const codeToRowIndex = new Map<string, number>()
+  for (let i = 1; i < rows.length; i++) {
+    const code = rows[i]?.[0]?.trim()
+    if (code) codeToRowIndex.set(code, i)
+  }
+  const updates: { range: string; values: (string | number)[][] }[] = []
+  const appends: (string | number)[][] = []
+  for (const e of entries) {
+    const idx = codeToRowIndex.get(e.code)
+    if (idx != null) {
+      const row = rows[idx]
+      const prevCount = parseInt(row[3] ?? '0', 10) || 0
+      const first = row[4] || e.date
+      // 감지 횟수 · 마지막 감지일만 갱신 (업체명/주소는 유지 — 관리자가 수정한 경우 존중)
+      const rowNum = idx + 1  // sheet row (1-based)
+      updates.push({ range: `${tab}!D${rowNum}:F${rowNum}`, values: [[prevCount + 1, first, e.date]] })
+    } else {
+      appends.push([e.code, e.name, e.address, 1, e.date, e.date])
+    }
+  }
+  if (updates.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: docId,
+      requestBody: { valueInputOption: 'RAW', data: updates.map(u => ({ range: u.range, values: u.values })) },
+    })
+  }
+  if (appends.length > 0) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: docId, range: `${tab}!A:F`,
+      valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: appends },
+    })
+  }
+}
+
 // 위치/YY-MM 문서의 MM-DD 탭 읽기 (아카이브 조회용). 탭/문서 없으면 null.
 // (조회용이므로 자동 생성 안 함.)
 export async function readLocationTab(branchFolder: string, year: string, month: string, day: string): Promise<string[][] | null> {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
 import { buildGridsByBranch, writeSnapshot } from '@/lib/sheetSnapshot'
+import { upsertUndergroundEntries, type UndergroundEntry } from '@/lib/googleSheets'
 import {
   fetchAutoActions, getLastMidnightResetDate, setLastMidnightResetDate, kstToday,
 } from '@/lib/autoActions'
@@ -93,6 +94,50 @@ export async function GET() {
           console.error('midnight sheet_update 실패:', e)
         }
       }
+    }
+
+    // 지하위치 감지: 어제(전날 KST) arrived_at 없이 완료된 카드 → 지하/신호 끊김 후보.
+    //  → 각 지점 '지하위치/전체' 스프레드시트에 업체번호 기준 upsert (감지 횟수 +1).
+    //  delivery_reset 전에 실행해야 데이터가 남아있음. auto_actions 매트릭스와 무관.
+    try {
+      const yesterday = new Date(`${today}T00:00:00+09:00`)
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+      const yesterdayIso = yesterday.toISOString()  // 어제 KST 00:00
+      const todayIso = new Date(`${today}T00:00:00+09:00`).toISOString()
+      const [{ data: rows }, { data: clientRows }, { data: branchRows }] = await Promise.all([
+        supabaseServer.from('deliveries')
+          .select('client_id,branch,created_at')
+          .eq('status', 'completed')
+          .is('arrived_at', null)
+          .not('client_id', 'is', null)
+          .gte('created_at', yesterdayIso)
+          .lt('created_at', todayIso),
+        supabaseServer.from('clients').select('id,code,name,address'),
+        supabaseServer.from('branches').select('code,label'),
+      ])
+      const clientMap = new Map((clientRows ?? []).map((c: { id: string; code: string | null; name: string; address: string | null }) => [c.id, c]))
+      const branchLabel = new Map((branchRows ?? []).map((b: { code: string; label: string }) => [b.code, b.label]))
+      // 지점별 · 업체번호 dedupe
+      const byBranch = new Map<string, Map<string, UndergroundEntry>>()
+      const yDate = yesterdayIso.slice(0, 10)  // YYYY-MM-DD
+      for (const r of (rows ?? []) as { client_id: string; branch: string | null; created_at: string }[]) {
+        const cli = clientMap.get(r.client_id)
+        if (!cli || !cli.code) continue
+        const label = r.branch ? branchLabel.get(r.branch) : null
+        if (!label) continue
+        if (!byBranch.has(label)) byBranch.set(label, new Map())
+        const m = byBranch.get(label)!
+        if (!m.has(cli.code)) {
+          m.set(cli.code, { code: cli.code, name: cli.name, address: cli.address ?? '', date: yDate })
+        }
+      }
+      for (const [label, m] of byBranch) {
+        try { await upsertUndergroundEntries(label, Array.from(m.values())) }
+        catch (e) { console.error(`지하위치 시트 upsert 실패(${label}):`, e) }
+      }
+      if (byBranch.size > 0) performed.push('underground_detect')
+    } catch (e) {
+      console.error('지하위치 감지 실패:', e)
     }
 
     // 진행중 배송 자동 완료 (midnight 트리거) — delivery_reset 전에 실행해서
