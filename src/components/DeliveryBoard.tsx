@@ -16,8 +16,8 @@ function deviceDisplayName(d: RiderDevice): string {
 }
 
 function fmtMeters(m: number | undefined): string {
-  if (m == null || !isFinite(m)) return '- m'
-  return `${Math.round(m).toLocaleString('en-US')} m`
+  if (m == null || !isFinite(m)) return '- km'
+  return `${(m / 1000).toFixed(1)} km`
 }
 
 function fmtKstHm(iso: string | null): string | null {
@@ -277,7 +277,7 @@ function QuickSection({
           <span className="text-lg font-bold text-slate-800">총배송 : {deliveries.length}</span>
           <span className="text-xs text-slate-500">현재 배송중 : {deliveries.length}</span>
         </div>
-        <div className="text-lg font-bold text-slate-300">총거리 : - m</div>
+        <div className="text-lg font-bold text-slate-300">총거리 : - km</div>
       </div>
       <div className="mb-2">
         <button
