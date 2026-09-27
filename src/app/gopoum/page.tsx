@@ -75,7 +75,7 @@ function GopoumCard({
 
         {/* 업체명 (2줄까지 표시) */}
         <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-start">
-          <span className="text-sm font-medium text-slate-700 leading-tight line-clamp-2 break-keep">{gc.client_name}</span>
+          <span className="text-sm font-medium text-slate-700 leading-tight line-clamp-2 break-all">{gc.client_name}</span>
         </div>
 
         {/* 아이템 목록 */}
