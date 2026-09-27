@@ -74,12 +74,12 @@ function GopoumCard({
         </div>
 
         {/* 업체명 (2줄까지 표시) */}
-        <div className="w-32 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-start">
-          <span className="font-semibold text-slate-800 text-xs leading-tight line-clamp-2 break-keep">{gc.client_name}</span>
+        <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-start">
+          <span className="text-sm font-medium text-slate-700 leading-tight line-clamp-2 break-keep">{gc.client_name}</span>
         </div>
 
         {/* 아이템 목록 */}
-        <div className="flex-1 min-w-0 divide-y divide-slate-100">
+        <div className="flex-1 min-w-0 divide-y divide-slate-400">
           {items.length === 0 ? (
             <div className="px-4 py-3 text-xs text-slate-300 italic flex items-center h-full">품목 없음</div>
           ) : (
@@ -92,26 +92,20 @@ function GopoumCard({
                 <span className="w-16 flex-shrink-0 text-xs text-slate-400">{fmtYMD(item.created_at)}</span>
                 <span className="w-12 flex-shrink-0 text-xs text-slate-400">{fmtTime(item.created_at)}</span>
                 {/* 품목명 */}
-                <span className={`w-28 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
+                <span className={`w-20 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
                   {item.description}
                 </span>
                 {/* 차종 */}
                 <span className={`w-20 flex-shrink-0 text-sm truncate ${item.car_type ? 'text-slate-700 font-medium' : 'text-slate-300 italic'}`}>
                   {item.car_type || '차종모름'}
                 </span>
-                {/* 수량 (−/직접입력/+) */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button type="button" onClick={() => onEditItem(item.id, { quantity: Math.max(1, qty(item) - 1) }, true)}
-                    className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-base leading-none flex items-center justify-center">−</button>
-                  <input
-                    type="number" min={1} value={qty(item)}
-                    onChange={e => onEditItem(item.id, { quantity: Math.max(1, parseInt(e.target.value || '1', 10) || 1) }, false)}
-                    onBlur={e => onEditItem(item.id, { quantity: Math.max(1, parseInt(e.target.value || '1', 10) || 1) }, true)}
-                    className="w-10 text-center text-sm border border-slate-200 rounded-md py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  />
-                  <button type="button" onClick={() => onEditItem(item.id, { quantity: qty(item) + 1 }, true)}
-                    className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 text-base leading-none flex items-center justify-center">+</button>
-                </div>
+                {/* 수량 (직접입력) */}
+                <input
+                  type="number" min={1} value={qty(item)}
+                  onChange={e => onEditItem(item.id, { quantity: Math.max(1, parseInt(e.target.value || '1', 10) || 1) }, false)}
+                  onBlur={e => onEditItem(item.id, { quantity: Math.max(1, parseInt(e.target.value || '1', 10) || 1) }, true)}
+                  className="w-10 flex-shrink-0 text-center text-sm border border-slate-200 rounded-md py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
                 {/* 수거날짜 (수거자별 한 줄씩, 또는 -) — 빈 줄도 공백(nbsp)으로 채워 옆 열과 줄맞춤 */}
                 <span className={`w-16 flex-shrink-0 text-xs ${collectedOf(item) > 0 ? 'text-slate-500' : 'text-slate-300'}`}>
                   {collectorLines(item).length
@@ -479,7 +473,7 @@ export default function GopoumPage() {
           <div className="flex text-xs text-slate-400 font-semibold mb-1.5 px-1">
             <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
             <div className="w-12 flex-shrink-0 pl-2">번호</div>
-            <div className="w-32 flex-shrink-0 pl-2">업체명</div>
+            <div className="w-24 flex-shrink-0 pl-2">업체명</div>
             <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 차종 · 수량 · 수거날짜 · 수거시간 · 수거자 · 수거량 · 비고)</div>
           </div>
         )}
