@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { GopoumClient, GopoumItem, Client } from '@/types'
 import { useBranch } from '@/lib/branch'
@@ -226,7 +227,10 @@ export default function GopoumPage() {
   const [showSugg, setShowSugg] = useState(false)
   const [adding, setAdding] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [importStatus, setImportStatus] = useState('')
   const suggBoxRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchData = useCallback(async () => {
     const [{ data: gClients }, { data: gItems }] = await Promise.all([
@@ -309,6 +313,87 @@ export default function GopoumPage() {
     setAdding(false)
     setInputClient(''); setPickedCode(''); setInputDesc(''); setInputCarType(''); setInputQty('1'); setInputNote('')
     setSuggestions([]); setShowSugg(false)
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImporting(true)
+    setImportStatus('파싱 중...')
+    try {
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf)
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws)
+
+      // 헤더 공백 제거 후 매칭 (예: '거 래 처 명' → '거래처명')
+      const pick = (row: Record<string, unknown>, key: string) => {
+        const found = Object.keys(row).find(k => k.replace(/\s/g, '') === key)
+        return found != null ? String(row[found] ?? '').trim() : ''
+      }
+      const parsed = rows.map(r => ({
+        code: pick(r, '업체번호'),
+        name: pick(r, '거래처명'),
+        desc: pick(r, '품목'),
+        carType: pick(r, '차종'),
+        qtyStr: pick(r, '수량'),
+        note: pick(r, '비고'),
+      })).filter(r => r.name && r.desc)
+
+      if (parsed.length === 0) { setImportStatus('유효 행 없음'); return }
+
+      // 기존 gopoum_clients 매핑 (지점+코드+이름 조합)
+      const clientMap = new Map<string, string>()
+      for (const gc of gopoumClients) {
+        clientMap.set(`${(gc.client_code || '').trim()}|${gc.client_name}`, gc.id)
+      }
+      // 파일에 있으나 아직 없는 업체만 신규 생성
+      const missing = new Map<string, { code: string; name: string }>()
+      for (const r of parsed) {
+        const key = `${r.code}|${r.name}`
+        if (!clientMap.has(key) && !missing.has(key)) missing.set(key, { code: r.code, name: r.name })
+      }
+      if (missing.size > 0) {
+        setImportStatus(`업체 ${missing.size}개 등록 중...`)
+        const toInsert = [...missing.values()].map(c => ({
+          client_id: null, client_code: c.code, client_name: c.name,
+          total_quantity: 0, started_at: null, branch,
+        }))
+        const { data: newClients, error } = await supabase.from('gopoum_clients').insert(toInsert)
+          .select('id, client_code, client_name')
+        if (error) throw error
+        for (const nc of newClients ?? []) {
+          clientMap.set(`${(nc.client_code || '').trim()}|${nc.client_name}`, nc.id)
+        }
+      }
+
+      // 품목 일괄 insert (항상 새 행)
+      const items = parsed.map(r => {
+        const clientId = clientMap.get(`${r.code}|${r.name}`)
+        const qty = Math.max(1, parseInt(r.qtyStr || '1', 10) || 1)
+        return {
+          gopoum_client_id: clientId!,
+          description: r.desc,
+          car_type: r.carType || null,
+          quantity: qty,
+          note: r.note || null,
+        }
+      }).filter(x => x.gopoum_client_id)
+      setImportStatus(`품목 ${items.length}건 등록 중...`)
+      const { error: itemErr } = await supabase.from('gopoum_items').insert(items)
+      if (itemErr) throw itemErr
+
+      setImportStatus(`${items.length}건 가져옴 (신규 업체 ${missing.size}개)`)
+      fetchData()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setImportStatus('가져오기 실패')
+      alert('가져오기 실패: ' + msg)
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      setTimeout(() => setImportStatus(''), 4000)
+    }
   }
 
   async function handleAddItem(clientId: string, description: string, carType: string | null = null, quantity: number = 1, note: string | null = null) {
@@ -419,6 +504,14 @@ export default function GopoumPage() {
             className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-1.5 rounded-xl transition-colors disabled:opacity-40 whitespace-nowrap">
             {adding ? '추가 중...' : '+ 추가'}
           </button>
+          <div className="ml-auto flex items-center gap-2">
+            {importStatus && <span className="text-xs text-slate-500">{importStatus}</span>}
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportFile} />
+            <button onClick={() => fileInputRef.current?.click()} disabled={importing}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-1.5 rounded-xl transition-colors disabled:opacity-40 whitespace-nowrap">
+              {importing ? '가져오는 중...' : '📥 가져오기'}
+            </button>
+          </div>
         </div>
       </div>
 
