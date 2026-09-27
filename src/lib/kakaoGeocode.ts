@@ -68,7 +68,7 @@ export async function regionFromCoord(lat: number, lng: number): Promise<string 
       const dong = (legal?.region_3depth_name ?? '').toString().trim()
       const dep2 = (legal?.region_2depth_name ?? '').toString().trim()
       if (!dong) { resolve(null); return }
-      const cityTok = dep2.split(/\s+/).find(t => t.endsWith('시') || t.endsWith('군'))
+      const cityTok = dep2.split(/\s+/).find((t: string) => t.endsWith('시') || t.endsWith('군'))
       resolve(cityTok ? `${cityTok} ${dong}` : dong)
     })
   })
