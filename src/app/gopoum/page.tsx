@@ -19,12 +19,11 @@ function fmtYMD(iso: string) {
 }
 
 function GopoumCard({
-  gc, items, todayStart, onDelete, onDeleteItem, onEditItem,
+  gc, items, todayStart, onDeleteItem, onEditItem,
 }: {
   gc: GopoumClient
   items: GopoumItem[]
   todayStart: string
-  onDelete: (id: string) => void
   onDeleteItem: (itemId: string) => void
   onEditItem: (itemId: string, updates: Partial<GopoumItem>, commit: boolean) => void
 }) {
@@ -151,13 +150,6 @@ function GopoumCard({
           )}
         </div>
 
-        {/* 삭제 */}
-        <div className="w-8 flex-shrink-0 flex items-center justify-center border-l border-slate-100">
-          <button
-            onClick={() => { if (confirm('고품 기록을 삭제하시겠습니까?')) onDelete(gc.id) }}
-            className="text-slate-300 hover:text-red-400 text-xl leading-none transition-colors"
-          >×</button>
-        </div>
       </div>
 
     </div>
@@ -370,23 +362,29 @@ export default function GopoumPage() {
     setGopoumItems(prev => prev.map(i => i.id === tempId ? json : i))
   }
 
-  async function handleDelete(id: string) {
-    setGopoumClients(prev => prev.filter(gc => gc.id !== id))
-    setGopoumItems(prev => prev.filter(i => i.gopoum_client_id !== id))
-    const { error } = await supabase.from('gopoum_clients').delete().eq('id', id)
-    if (error) fetchData()
-
-  }
-
   async function handleDeleteItem(itemId: string) {
+    const item = gopoumItems.find(i => i.id === itemId)
     setGopoumItems(prev => prev.filter(i => i.id !== itemId))
     const res = await fetch('/api/gopoum-items', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: itemId }),
     })
-    if (!res.ok) fetchData()
+    if (!res.ok) { fetchData(); return }
 
+    // 이 업체의 다른 활성 품목이 하나도 없으면, 아카이브 이력도 없는지 확인 후 업체 삭제.
+    // 아카이브가 있으면 CASCADE 로 기록이 함께 사라지므로 DB 는 그대로 두고 UI 에서만 자연 노출 안 됨.
+    if (!item) return
+    const clientId = item.gopoum_client_id
+    const remainingActive = gopoumItems.filter(i => i.gopoum_client_id === clientId && i.id !== itemId).length
+    if (remainingActive > 0) return
+    const { count } = await supabase.from('gopoum_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('gopoum_client_id', clientId)
+    if ((count ?? 0) === 0) {
+      await supabase.from('gopoum_clients').delete().eq('id', clientId)
+      setGopoumClients(prev => prev.filter(gc => gc.id !== clientId))
+    }
   }
 
   // 수량/비고 편집: 입력 중(commit=false)엔 화면만, 확정(commit=true)엔 DB에도 저장
@@ -484,17 +482,18 @@ export default function GopoumPage() {
           ) : gopoumClients.length === 0 && (
             <div className="text-center text-slate-400 text-sm py-16">등록된 고품 업체가 없습니다.</div>
           )}
-          {gopoumClients.map(gc => (
-            <GopoumCard
-              key={gc.id}
-              gc={gc}
-              items={gopoumItems.filter(i => i.gopoum_client_id === gc.id)}
-              todayStart={todayStart}
-              onDelete={handleDelete}
-              onDeleteItem={handleDeleteItem}
-              onEditItem={handleEditItem}
-            />
-          ))}
+          {gopoumClients
+            .filter(gc => gopoumItems.some(i => i.gopoum_client_id === gc.id))
+            .map(gc => (
+              <GopoumCard
+                key={gc.id}
+                gc={gc}
+                items={gopoumItems.filter(i => i.gopoum_client_id === gc.id)}
+                todayStart={todayStart}
+                onDeleteItem={handleDeleteItem}
+                onEditItem={handleEditItem}
+              />
+            ))}
         </div>
       </div>
     </div>
