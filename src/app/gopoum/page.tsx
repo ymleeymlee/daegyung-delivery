@@ -513,7 +513,7 @@ export default function GopoumPage() {
         {gopoumClients.length > 0 && (
           <div className="sticky top-0 z-10 bg-slate-50 pt-6 pb-2">
             <div className="flex items-end text-xs text-slate-500 font-semibold px-1">
-              <div className="w-20 flex-shrink-0 text-center">그룹</div>
+              <div className="w-28 flex-shrink-0 text-center">그룹</div>
               <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
               <div className="w-12 flex-shrink-0 pl-2">번호</div>
               <div className="w-24 flex-shrink-0 pl-2">업체명</div>
@@ -567,9 +567,9 @@ export default function GopoumPage() {
             <div className="flex flex-col gap-3">
               {groupNames.map(name => (
                 <div key={name} className="flex bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  {/* 좌측 그룹(동) 열 — 세로 가운데 정렬, 카드 여러 개 걸쳐 표시 */}
-                  <div className="w-20 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex items-center justify-center p-2">
-                    <span className="text-sm font-bold text-slate-700 text-center break-keep">{name}</span>
+                  {/* 좌측 그룹(시 + 동) 열 — 세로 가운데 정렬, 카드 여러 개 걸쳐 표시 */}
+                  <div className="w-28 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex items-center justify-center p-2">
+                    <span className="text-sm font-bold text-slate-700 text-center break-keep leading-tight">{name}</span>
                   </div>
                   {/* 우측 — 이 그룹에 속한 카드 스택 */}
                   <div className="flex-1 min-w-0 flex flex-col divide-y divide-slate-200">
