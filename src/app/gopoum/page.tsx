@@ -182,6 +182,7 @@ export default function GopoumPage() {
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [importStatus, setImportStatus] = useState('')
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
   const [qtyEditItem, setQtyEditItem] = useState<GopoumItem | null>(null)
   const [qtyEditValue, setQtyEditValue] = useState('')
   const [clientsRegionMap, setClientsRegionMap] = useState<Map<string, string | null>>(new Map())
@@ -288,12 +289,32 @@ export default function GopoumPage() {
     setSuggestions([]); setShowSugg(false)
   }
 
-  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+  // 파일 선택 → 처리 방식 모달 오픈 (즉시 처리하지 않음)
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
+    if (fileInputRef.current) fileInputRef.current.value = ''
     if (!file) return
+    setPendingImportFile(file)
+  }
+
+  async function runImport(file: File, mode: 'append' | 'replace') {
+    setPendingImportFile(null)
     setImporting(true)
-    setImportStatus('파싱 중...')
+    setImportStatus(mode === 'replace' ? '기존 활성 아이템 삭제 중...' : '파싱 중...')
     try {
+      // 교체 모드: 이 지점의 활성 gopoum_items 를 먼저 전량 삭제 (아카이브는 유지 → 기록 보존).
+      if (mode === 'replace') {
+        const branchClientIds = gopoumClients.map(gc => gc.id)
+        if (branchClientIds.length > 0) {
+          const { error: delErr } = await supabase.from('gopoum_items')
+            .delete()
+            .in('gopoum_client_id', branchClientIds)
+            .is('archived_at', null)
+          if (delErr) throw delErr
+        }
+        setGopoumItems([])
+        setImportStatus('파싱 중...')
+      }
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf)
       const ws = wb.Sheets[wb.SheetNames[0]]
@@ -356,7 +377,8 @@ export default function GopoumPage() {
       const { error: itemErr } = await supabase.from('gopoum_items').insert(items)
       if (itemErr) throw itemErr
 
-      setImportStatus(`${items.length}건 가져옴 (신규 업체 ${missing.size}개)`)
+      const modeLabel = mode === 'replace' ? '교체' : '추가'
+      setImportStatus(`${items.length}건 ${modeLabel} 완료 (신규 업체 ${missing.size}개)`)
       fetchData()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -364,7 +386,6 @@ export default function GopoumPage() {
       alert('가져오기 실패: ' + msg)
     } finally {
       setImporting(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
       setTimeout(() => setImportStatus(''), 4000)
     }
   }
@@ -588,6 +609,45 @@ export default function GopoumPage() {
           )
         })()}
       </div>
+
+      {/* 엑셀 가져오기 방식 선택 모달 */}
+      {pendingImportFile && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={() => setPendingImportFile(null)}
+        >
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-96" onClick={e => e.stopPropagation()}>
+            <h2 className="text-base font-bold text-slate-800 mb-1">엑셀 가져오기</h2>
+            <p className="text-xs text-slate-500 mb-4 truncate" title={pendingImportFile.name}>
+              파일: {pendingImportFile.name}
+            </p>
+            <div className="flex flex-col gap-2 mb-4">
+              <button
+                onClick={() => pendingImportFile && runImport(pendingImportFile, 'append')}
+                className="w-full text-left bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-3 rounded-xl transition-colors"
+              >
+                <div>➕ 기존 유지하고 추가</div>
+                <div className="text-xs text-blue-100 mt-0.5">현재 웹 카드 그대로 두고 엑셀 내용만 새 품목으로 추가</div>
+              </button>
+              <button
+                onClick={() => pendingImportFile && runImport(pendingImportFile, 'replace')}
+                className="w-full text-left bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-3 rounded-xl transition-colors"
+              >
+                <div>♻️ 기존 활성 아이템 삭제 후 교체</div>
+                <div className="text-xs text-red-100 mt-0.5">현재 지점의 활성(미마감) 품목 전량 삭제 후 엑셀로 재구성 (아카이브 이력은 유지)</div>
+              </button>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setPendingImportFile(null)}
+                className="text-sm text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-xl transition-colors"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 수량 변경 모달 */}
       {qtyEditItem && (
