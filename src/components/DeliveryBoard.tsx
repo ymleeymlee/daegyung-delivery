@@ -15,44 +15,6 @@ function deviceDisplayName(d: RiderDevice): string {
   return d.name ?? `이름 미입력 (기기 ${d.device_id.slice(0, 8)})`
 }
 
-// 지구 반지름 (m). 두 위경도 사이 haversine 거리(m).
-function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000
-  const toRad = (d: number) => (d * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLng = toRad(lng2 - lng1)
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
-  return 2 * R * Math.asin(Math.sqrt(a))
-}
-
-// 각 device 의 오늘 pings 를 시간순으로 훑어 총 이동거리(m) 계산.
-// 5m 이하 지터는 스킵해 부풀림 억제.
-function sumDistancesByDevice(pings: { device_id: string; lat: number; lng: number; captured_at: string }[]): Map<string, number> {
-  const grouped = new Map<string, typeof pings>()
-  for (const p of pings) {
-    if (!p.device_id || p.lat == null || p.lng == null) continue
-    if (!grouped.has(p.device_id)) grouped.set(p.device_id, [])
-    grouped.get(p.device_id)!.push(p)
-  }
-  const out = new Map<string, number>()
-  for (const [id, list] of grouped) {
-    list.sort((a, b) => a.captured_at.localeCompare(b.captured_at))
-    let total = 0
-    let prevLat: number | null = null
-    let prevLng: number | null = null
-    for (const p of list) {
-      if (prevLat != null && prevLng != null) {
-        const d = haversineM(prevLat, prevLng, p.lat, p.lng)
-        if (d >= 5) { total += d; prevLat = p.lat; prevLng = p.lng }
-      } else {
-        prevLat = p.lat; prevLng = p.lng
-      }
-    }
-    out.set(id, total)
-  }
-  return out
-}
-
 function fmtMeters(m: number | undefined): string {
   if (m == null || !isFinite(m)) return '- m'
   return `${Math.round(m).toLocaleString('en-US')} m`
@@ -426,27 +388,22 @@ export default function DeliveryBoard() {
   }, [fetchAll, fetchGopoum, debouncedFetchGopoum, refreshAppState])
 
   // 라이더별 오늘 총 이동거리 계산 (30초 폴링).
-  // location_pings 는 부담이 커서 realtime 대신 폴링. 현 지점(branch) 라이더 device 만.
+  // Postgres RPC today_distance_by_device 로 서버에서 집계 → 원본 핑 다운로드 없이 결과만 수신.
   useEffect(() => {
     let active = true
-    const branchDeviceIds = devices.filter(d => d.branch === branch).map(d => d.device_id)
-    if (branchDeviceIds.length === 0) { setDistanceById(new Map()); return }
     const fetchDistances = async () => {
-      const todayIso = new Date(`${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date())}T00:00:00+09:00`).toISOString()
-      const { data } = await supabase
-        .from('location_pings')
-        .select('device_id,lat,lng,captured_at')
-        .gte('captured_at', todayIso)
-        .in('device_id', branchDeviceIds)
-        .order('captured_at', { ascending: true })
+      const { data } = await supabase.rpc('today_distance_by_device', { p_branch: branch })
       if (!active) return
-      const rows = (data ?? []) as { device_id: string; lat: number; lng: number; captured_at: string }[]
-      setDistanceById(sumDistancesByDevice(rows))
+      const map = new Map<string, number>()
+      for (const row of (data ?? []) as { device_id: string; distance_m: number | string }[]) {
+        map.set(row.device_id, Number(row.distance_m))
+      }
+      setDistanceById(map)
     }
     void fetchDistances()
     const timer = setInterval(fetchDistances, 30_000)
     return () => { active = false; clearInterval(timer) }
-  }, [devices, branch])
+  }, [branch])
 
   const gopoumMap = useMemo(() => {
     const byCode = new Map<string, GopoumItem[]>()
