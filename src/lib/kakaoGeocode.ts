@@ -52,3 +52,20 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
     })
   })
 }
+
+/** 좌표 → 행정동 이름(예: '부곡동'). 실패면 null.
+ *  coord2RegionCode 는 행정동('H')과 법정동('B') 두 결과를 반환 — 사람들이 흔히 아는 행정동('H') 우선. */
+export async function regionFromCoord(lat: number, lng: number): Promise<string | null> {
+  if (!isFinite(lat) || !isFinite(lng)) return null
+  await loadKakaoSdk()
+  const kakao = (window as any).kakao
+  return new Promise(resolve => {
+    const geocoder = new kakao.maps.services.Geocoder()
+    geocoder.coord2RegionCode(lng, lat, (result: any, status: any) => {
+      if (status !== kakao.maps.services.Status.OK || !Array.isArray(result)) { resolve(null); return }
+      const admin = result.find((r: any) => r.region_type === 'H') ?? result[0]
+      const dong = admin?.region_3depth_name ?? null
+      resolve(dong && String(dong).trim() ? String(dong).trim() : null)
+    })
+  })
+}

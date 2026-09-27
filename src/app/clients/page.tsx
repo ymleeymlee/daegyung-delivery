@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Client } from '@/types'
-import { geocodeAddress } from '@/lib/kakaoGeocode'
+import { geocodeAddress, regionFromCoord } from '@/lib/kakaoGeocode'
 import { useBranch } from '@/lib/branch'
 import * as XLSX from 'xlsx'
 
@@ -15,6 +15,8 @@ export default function ClientsPage() {
   const [editCode, setEditCode] = useState('')
   const [editName, setEditName] = useState('')
   const [editAddress, setEditAddress] = useState('')
+  const [editLat, setEditLat] = useState('')
+  const [editLng, setEditLng] = useState('')
   const [newCode, setNewCode] = useState('')
   const [newName, setNewName] = useState('')
   const [newAddress, setNewAddress] = useState('')
@@ -61,11 +63,12 @@ export default function ClientsPage() {
     e.preventDefault()
     if (!newName.trim()) return
     const address = newAddress.trim()
-    // 주소를 좌표로 1회 변환해 함께 저장 (앱 자동 도착감지용). 실패해도 등록은 진행.
+    // 주소를 좌표로 1회 변환해 함께 저장. 좌표가 있으면 행정동(region)도 조회. 실패해도 등록은 진행.
     const geo = address ? await geocodeAddress(address).catch(() => null) : null
+    const region = geo ? await regionFromCoord(geo.lat, geo.lng).catch(() => null) : null
     await supabase.from('clients').insert({
       code: newCode.trim(), name: newName.trim(), address,
-      lat: geo?.lat ?? null, lng: geo?.lng ?? null, branch,
+      lat: geo?.lat ?? null, lng: geo?.lng ?? null, region, branch,
     })
     setNewCode('')
     setNewName('')
@@ -76,37 +79,77 @@ export default function ClientsPage() {
 
   async function handleUpdate(id: string) {
     const address = editAddress.trim()
-    // 주소가 바뀌었으면 좌표 재변환 (기존 좌표 유지가 아니라 새 주소 기준으로 갱신)
     const prev = clients.find(c => c.id === id)
     const addressChanged = !prev || prev.address !== address
-    const geo = addressChanged && address ? await geocodeAddress(address).catch(() => null) : null
-    const patch: Record<string, unknown> = { code: editCode.trim(), name: editName.trim(), address }
-    if (addressChanged) { patch.lat = geo?.lat ?? null; patch.lng = geo?.lng ?? null }
-    await supabase.from('clients').update(patch).eq('id', id)
+    // 사용자가 편집한 lat/lng 가 유효하면 우선 사용. 없으면 주소 재지오코딩.
+    const editLatN = editLat.trim() === '' ? null : Number(editLat)
+    const editLngN = editLng.trim() === '' ? null : Number(editLng)
+    const userCoordValid = editLatN != null && editLngN != null && isFinite(editLatN) && isFinite(editLngN)
+    const prevLat = prev?.lat ?? null
+    const prevLng = prev?.lng ?? null
+    const coordChanged = editLatN !== prevLat || editLngN !== prevLng
+    let finalLat: number | null = null
+    let finalLng: number | null = null
+    if (userCoordValid && coordChanged) {
+      finalLat = editLatN
+      finalLng = editLngN
+    } else if (addressChanged && address) {
+      const geo = await geocodeAddress(address).catch(() => null)
+      finalLat = geo?.lat ?? null
+      finalLng = geo?.lng ?? null
+    } else {
+      finalLat = prevLat
+      finalLng = prevLng
+    }
+    // 최종 좌표로 행정동 재조회. 좌표 없으면 region=null.
+    const region = (finalLat != null && finalLng != null)
+      ? await regionFromCoord(finalLat, finalLng).catch(() => null)
+      : null
+    await supabase.from('clients').update({
+      code: editCode.trim(), name: editName.trim(), address,
+      lat: finalLat, lng: finalLng, region,
+    }).eq('id', id)
     setEditingId(null)
     fetchClients()
   }
 
-  // 기존 업체 중 좌표 없는 것 일괄 지오코딩 (브라우저에서 카카오로 변환).
+  // 기존 업체 좌표/그룹 일괄 채우기.
+  // 좌표 없음: 주소 지오코딩 → 좌표 + region 저장.
+  // 좌표 있음 + region 없음: coord2RegionCode 로 region 만 저장.
   async function handleBackfillGeocode() {
-    const targets = clients.filter(c => (c.lat == null || c.lng == null) && c.address?.trim())
-    if (targets.length === 0) { setGeoStatus('좌표 없는 업체가 없습니다.'); setTimeout(() => setGeoStatus(''), 3000); return }
+    const needCoord = clients.filter(c => (c.lat == null || c.lng == null) && c.address?.trim())
+    const needRegion = clients.filter(c => c.lat != null && c.lng != null && !c.region)
+    const total = needCoord.length + needRegion.length
+    if (total === 0) { setGeoStatus('추가 채울 항목이 없습니다.'); setTimeout(() => setGeoStatus(''), 3000); return }
     setGeocoding(true)
-    let ok = 0, fail = 0
-    for (let i = 0; i < targets.length; i++) {
-      const c = targets[i]
-      setGeoStatus(`좌표 생성 중… ${i + 1}/${targets.length} (성공 ${ok} · 실패 ${fail})`)
+    let ok = 0, fail = 0, done = 0
+    for (const c of needCoord) {
+      done++
+      setGeoStatus(`좌표·그룹 생성 중… ${done}/${total} (성공 ${ok} · 실패 ${fail})`)
       const geo = await geocodeAddress(c.address).catch(() => null)
       if (geo) {
-        await supabase.from('clients').update({ lat: geo.lat, lng: geo.lng }).eq('id', c.id)
+        const region = await regionFromCoord(geo.lat, geo.lng).catch(() => null)
+        await supabase.from('clients').update({ lat: geo.lat, lng: geo.lng, region }).eq('id', c.id)
         ok++
       } else {
         fail++
       }
-      await new Promise(r => setTimeout(r, 60)) // 카카오 호출 간 약간의 간격
+      await new Promise(r => setTimeout(r, 60))
+    }
+    for (const c of needRegion) {
+      done++
+      setGeoStatus(`좌표·그룹 생성 중… ${done}/${total} (성공 ${ok} · 실패 ${fail})`)
+      const region = await regionFromCoord(c.lat as number, c.lng as number).catch(() => null)
+      if (region) {
+        await supabase.from('clients').update({ region }).eq('id', c.id)
+        ok++
+      } else {
+        fail++
+      }
+      await new Promise(r => setTimeout(r, 60))
     }
     setGeocoding(false)
-    setGeoStatus(`완료: 성공 ${ok}개${fail > 0 ? ` · 실패 ${fail}개(주소 확인 필요)` : ''}`)
+    setGeoStatus(`완료: 성공 ${ok}개${fail > 0 ? ` · 실패 ${fail}개` : ''}`)
     fetchClients()
     setTimeout(() => setGeoStatus(''), 6000)
   }
@@ -122,6 +165,8 @@ export default function ClientsPage() {
     setEditCode(client.code)
     setEditName(client.name)
     setEditAddress(client.address)
+    setEditLat(client.lat != null ? String(client.lat) : '')
+    setEditLng(client.lng != null ? String(client.lng) : '')
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -267,15 +312,17 @@ export default function ClientsPage() {
           {!geoStatus && !uploadStatus && (
             <span className="text-xs text-slate-400">
               좌표 {clients.filter(c => c.lat != null && c.lng != null).length}/{clients.length}
+              {' · '}
+              그룹 {clients.filter(c => c.region).length}/{clients.length}
             </span>
           )}
           <button
             onClick={handleBackfillGeocode}
             disabled={geocoding}
             className="flex items-center gap-1 border border-emerald-300 text-emerald-700 hover:bg-emerald-50 text-sm px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="좌표 없는 업체를 카카오로 일괄 지오코딩"
+            title="좌표 없는 업체는 주소 지오코딩, 좌표 있고 그룹 없는 업체는 그룹만 채움"
           >
-            {geocoding ? '좌표 생성 중…' : '📍 좌표 일괄 생성'}
+            {geocoding ? '생성 중…' : '📍 좌표·그룹 일괄 생성'}
           </button>
           <button
             onClick={() => setShowUploadChoice(true)}
@@ -309,6 +356,7 @@ export default function ClientsPage() {
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="text-left px-4 py-3 text-slate-600 font-semibold w-28">업체번호</th>
               <th className="text-left px-4 py-3 text-slate-600 font-semibold">상호명</th>
+              <th className="text-left px-4 py-3 text-slate-600 font-semibold w-28">그룹</th>
               <th className="text-left px-4 py-3 text-slate-600 font-semibold">대표주소</th>
               <th className="px-4 py-3 w-28"></th>
             </tr>
@@ -333,6 +381,7 @@ export default function ClientsPage() {
                     className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
                   />
                 </td>
+                <td className="px-4 py-2 text-xs text-slate-400 italic">(자동 산출)</td>
                 <td className="px-4 py-2">
                   <input
                     value={newAddress}
@@ -349,7 +398,7 @@ export default function ClientsPage() {
             )}
             {filtered.length === 0 && !adding && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-400">거래처가 없습니다.</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">거래처가 없습니다.</td>
               </tr>
             )}
             {filtered.map(client => (
@@ -371,12 +420,32 @@ export default function ClientsPage() {
                         className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-2 text-xs text-slate-500">
+                      {client.region ?? <span className="text-slate-300 italic">자동</span>}
+                    </td>
+                    <td className="px-4 py-2 space-y-1">
                       <input
                         value={editAddress}
                         onChange={e => setEditAddress(e.target.value)}
+                        placeholder="대표주소"
                         className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
                       />
+                      <div className="flex gap-1">
+                        <input
+                          value={editLat}
+                          onChange={e => setEditLat(e.target.value)}
+                          placeholder="위도(lat)"
+                          inputMode="decimal"
+                          className="w-1/2 border border-slate-300 rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <input
+                          value={editLng}
+                          onChange={e => setEditLng(e.target.value)}
+                          placeholder="경도(lng)"
+                          inputMode="decimal"
+                          className="w-1/2 border border-slate-300 rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                      </div>
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex gap-1">
@@ -389,6 +458,9 @@ export default function ClientsPage() {
                   <>
                     <td className="px-4 py-3 text-slate-500">{client.code}</td>
                     <td className="px-4 py-3 font-medium text-slate-800">{client.name}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {client.region ?? <span className="text-slate-300 italic">-</span>}
+                    </td>
                     <td className="px-4 py-3 text-slate-500">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span>{client.address}</span>

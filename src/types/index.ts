@@ -16,6 +16,7 @@ export interface Client {
   created_at: string
   lat?: number | null   // 주소 지오코딩 좌표 (등록 시 웹에서 카카오로 1회 변환)
   lng?: number | null
+  region?: string | null // 좌표 기반 행정동 (예: '부곡동'). 업체 그룹 구분 용도
   branch: string     // 지점 코드 (branches.code)
 }
 
