@@ -69,11 +69,12 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
 // 고품 현황 그리드 (업체 정보는 첫 행만, 품목부터 행 추가)
 // collectors(배송자별 수거량) 기반: 부분수거·다중수거·잔여 수량까지 기록.
 // 수거자가 여러 명이면 수거자별로 행을 나눠 기록(수거날짜·수거시각·수거자·수거량).
-// 열: 업체번호 | 업체명 | 수거 | 총수량 | 생성날짜 | 생성시간 | 품목 | 수거날짜 | 수거시각 | 수거자 | 수거량/총 | 비고
+// 열: 업체번호 | 업체명 | 수거 | 총수량 | 생성날짜 | 생성시간 | 품목 | 차종 | 수거날짜 | 수거시각 | 수거자 | 수거량/총 | 비고
 function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[][] {
   const qtyOf = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
-  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성날짜', '생성시간', '품목', '수거날짜', '수거시각', '수거자', '수거량/총', '비고']]
+  const carOf = (i: GopoumItem) => (i.car_type && i.car_type.trim()) ? i.car_type : '차종모름'
+  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성날짜', '생성시간', '품목', '차종', '수거날짜', '수거시각', '수거자', '수거량/총', '비고']]
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
@@ -87,9 +88,9 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[]
       const ratio = `${collectedOf(item)}/${qtyOf(item)}`
       if (cols.length === 0) {
         // 미수거: 한 행
-        clientRows.push(['', '', '', '', kstYMD(item.created_at), kstTime(item.created_at), item.description, '-', '-', '미수거', ratio, item.note ?? ''])
+        clientRows.push(['', '', '', '', kstYMD(item.created_at), kstTime(item.created_at), item.description, carOf(item), '-', '-', '미수거', ratio, item.note ?? ''])
       } else {
-        // 수거자별로 한 행씩. 품목 정보(생성날짜/시간/품목/수거량·총/비고)는 첫 행만
+        // 수거자별로 한 행씩. 품목 정보(생성날짜/시간/품목/차종/수거량·총/비고)는 첫 행만
         cols.forEach((c, ci) => {
           const head = ci === 0
           const label = `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`
@@ -98,6 +99,7 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[]
             head ? kstYMD(item.created_at) : '',
             head ? kstTime(item.created_at) : '',
             head ? item.description : '',
+            head ? carOf(item) : '',
             kstYMD(c.picked_at),
             kstTime(c.picked_at),
             label,
