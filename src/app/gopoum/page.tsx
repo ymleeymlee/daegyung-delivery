@@ -105,6 +105,14 @@ function GopoumCard({
                   onBlur={e => onEditItem(item.id, { quantity: Math.max(1, parseInt(e.target.value || '1', 10) || 1) }, true)}
                   className="w-10 flex-shrink-0 text-center text-sm border border-slate-200 rounded-md py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
+                {/* 비고 (내용 입력) */}
+                <input
+                  value={item.note ?? ''}
+                  onChange={e => onEditItem(item.id, { note: e.target.value }, false)}
+                  onBlur={e => onEditItem(item.id, { note: e.target.value }, true)}
+                  placeholder="비고"
+                  className="flex-1 min-w-0 text-sm bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 focus:outline-none px-1 py-0.5 placeholder:text-slate-300"
+                />
                 {/* 수거날짜 (수거자별 한 줄씩, 또는 -) — 빈 줄도 공백(nbsp)으로 채워 옆 열과 줄맞춤 */}
                 <span className={`w-16 flex-shrink-0 text-xs ${collectedOf(item) > 0 ? 'text-slate-500' : 'text-slate-300'}`}>
                   {collectorLines(item).length
@@ -131,14 +139,6 @@ function GopoumCard({
                     <div key={idx} className={`leading-5 ${l.collected ? 'font-bold text-slate-800' : 'text-amber-500 font-medium'}`}>{l.count}</div>
                   ))}
                 </span>
-                {/* 비고 (우측 정렬, 내용 입력) */}
-                <input
-                  value={item.note ?? ''}
-                  onChange={e => onEditItem(item.id, { note: e.target.value }, false)}
-                  onBlur={e => onEditItem(item.id, { note: e.target.value }, true)}
-                  placeholder="비고"
-                  className="flex-1 min-w-0 ml-auto text-right text-sm bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 focus:outline-none px-1 py-0.5 placeholder:text-slate-300"
-                />
                 <button
                   onClick={() => { if (confirm(`'${item.description}' 품목을 삭제할까요?`)) onDeleteItem(item.id) }}
                   className="flex-shrink-0 text-slate-300 hover:text-red-400 text-lg leading-none px-1 transition-colors"
@@ -472,7 +472,7 @@ export default function GopoumPage() {
             <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
             <div className="w-12 flex-shrink-0 pl-2">번호</div>
             <div className="w-24 flex-shrink-0 pl-2">업체명</div>
-            <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 차종 · 수량 · 수거날짜 · 수거시간 · 수거자 · 수거량 · 비고)</div>
+            <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 차종 · 수량 · 비고 · 수거날짜 · 수거시간 · 수거자 · 수거량)</div>
           </div>
         )}
 
