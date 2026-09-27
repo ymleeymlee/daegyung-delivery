@@ -27,13 +27,14 @@ function fmtYMD(iso: string) {
 }
 
 function GopoumCard({
-  gc, items, todayStart, onDeleteItem, onEditItem,
+  gc, items, todayStart, onDeleteItem, onEditItem, onOpenQtyEdit,
 }: {
   gc: GopoumClient
   items: GopoumItem[]
   todayStart: string
   onDeleteItem: (itemId: string) => void
   onEditItem: (itemId: string, updates: Partial<GopoumItem>, commit: boolean) => void
+  onOpenQtyEdit: (item: GopoumItem) => void
 }) {
   const qty = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
@@ -103,13 +104,15 @@ function GopoumCard({
                 <span className={`w-20 flex-shrink-0 text-sm truncate ${item.car_type ? 'text-slate-700 font-medium' : 'text-slate-300 italic'}`}>
                   {item.car_type || '차종모름'}
                 </span>
-                {/* 수량 (직접입력) */}
-                <input
-                  type="number" min={1} value={qty(item)}
-                  onChange={e => onEditItem(item.id, { quantity: Math.max(1, parseInt(e.target.value || '1', 10) || 1) }, false)}
-                  onBlur={e => onEditItem(item.id, { quantity: Math.max(1, parseInt(e.target.value || '1', 10) || 1) }, true)}
-                  className="w-10 flex-shrink-0 text-center text-sm border border-slate-200 rounded-md py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                />
+                {/* 수량 (클릭 시 팝업으로만 변경) */}
+                <button
+                  type="button"
+                  onClick={() => onOpenQtyEdit(item)}
+                  title="클릭하여 수량 변경"
+                  className="w-10 flex-shrink-0 text-center text-sm border border-slate-200 rounded-md py-0.5 bg-white hover:bg-slate-50 hover:border-blue-400 transition-colors"
+                >
+                  {qty(item)}
+                </button>
                 {/* 비고 (내용 입력) */}
                 <input
                   value={item.note ?? ''}
@@ -182,6 +185,8 @@ export default function GopoumPage() {
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [importStatus, setImportStatus] = useState('')
+  const [qtyEditItem, setQtyEditItem] = useState<GopoumItem | null>(null)
+  const [qtyEditValue, setQtyEditValue] = useState('')
   const [clientsRegionMap, setClientsRegionMap] = useState<Map<string, string | null>>(new Map())
   const [regionByCode, setRegionByCode] = useState<Map<string, string | null>>(new Map())
   const [regionByName, setRegionByName] = useState<Map<string, string | null>>(new Map())
@@ -413,6 +418,18 @@ export default function GopoumPage() {
     }
   }
 
+  function openQtyEdit(item: GopoumItem) {
+    setQtyEditItem(item)
+    setQtyEditValue(String(item.quantity ?? 1))
+  }
+  function cancelQtyEdit() { setQtyEditItem(null); setQtyEditValue('') }
+  function saveQtyEdit() {
+    if (!qtyEditItem) return
+    const n = Math.max(1, parseInt(qtyEditValue || '1', 10) || 1)
+    handleEditItem(qtyEditItem.id, { quantity: n }, true)
+    cancelQtyEdit()
+  }
+
   // 수량/비고 편집: 입력 중(commit=false)엔 화면만, 확정(commit=true)엔 DB에도 저장
   function handleEditItem(itemId: string, updates: Partial<GopoumItem>, commit: boolean) {
     // 수량 변경 시 완전수거 여부(picked_at) 재계산.
@@ -564,6 +581,7 @@ export default function GopoumPage() {
                         todayStart={todayStart}
                         onDeleteItem={handleDeleteItem}
                         onEditItem={handleEditItem}
+                        onOpenQtyEdit={openQtyEdit}
                       />
                     ))}
                   </div>
@@ -573,6 +591,45 @@ export default function GopoumPage() {
           )
         })()}
       </div>
+
+      {/* 수량 변경 모달 */}
+      {qtyEditItem && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={cancelQtyEdit}
+        >
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-80" onClick={e => e.stopPropagation()}>
+            <h2 className="text-base font-bold text-slate-800 mb-1">수량 변경</h2>
+            <p className="text-xs text-slate-500 mb-4 truncate">{qtyEditItem.description}</p>
+            <input
+              autoFocus
+              type="number"
+              min={1}
+              value={qtyEditValue}
+              onChange={e => setQtyEditValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveQtyEdit()
+                if (e.key === 'Escape') cancelQtyEdit()
+              }}
+              className="w-full text-center text-lg border border-slate-300 rounded-lg px-3 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={cancelQtyEdit}
+                className="text-sm text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-xl transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={saveQtyEdit}
+                className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-xl transition-colors"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
