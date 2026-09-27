@@ -19,22 +19,15 @@ function fmtYMD(iso: string) {
 }
 
 function GopoumCard({
-  gc, items, todayStart, onDelete, onAddItem, onDeleteItem, onEditItem,
+  gc, items, todayStart, onDelete, onDeleteItem, onEditItem,
 }: {
   gc: GopoumClient
   items: GopoumItem[]
   todayStart: string
   onDelete: (id: string) => void
-  onAddItem: (clientId: string, description: string, carType: string | null, quantity: number, note: string | null) => void
   onDeleteItem: (itemId: string) => void
   onEditItem: (itemId: string, updates: Partial<GopoumItem>, commit: boolean) => void
 }) {
-  const [showAddItem, setShowAddItem] = useState(false)
-  const [newDesc, setNewDesc] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => { if (showAddItem) inputRef.current?.focus() }, [showAddItem])
-
   const qty = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
   const isDone = (i: GopoumItem) => collectedOf(i) > 0 && collectedOf(i) >= qty(i)
@@ -60,28 +53,21 @@ function GopoumCard({
   const todayCollected = items.reduce((s, i) =>
     s + (i.collectors ?? []).filter(c => c.picked_at >= todayStart).reduce((a, c) => a + c.quantity, 0), 0)
 
-  function submitItem() {
-    if (!newDesc.trim()) return
-    onAddItem(gc.id, newDesc.trim(), null, 1, null)
-    setNewDesc('')
-    setShowAddItem(false)
-  }
-
   return (
     <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden text-sm ${remaining > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
       <div className="flex min-h-14">
-        {/* 업체번호 */}
-        <div className="w-20 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center">
+        {/* 업체번호 (최대 4자) */}
+        <div className="w-12 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center">
           <span className="text-xs text-slate-500">{gc.client_code || '-'}</span>
         </div>
 
-        {/* 업체명 */}
-        <div className="w-40 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center">
-          <span className="font-semibold text-slate-800 truncate">{gc.client_name}</span>
+        {/* 업체명 (2줄까지 표시) */}
+        <div className="w-32 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center">
+          <span className="font-semibold text-slate-800 text-xs leading-tight line-clamp-2 break-keep">{gc.client_name}</span>
         </div>
 
-        {/* 수거 현황 + 고품추가 */}
-        <div className="w-32 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center gap-1">
+        {/* 수거 현황 */}
+        <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center gap-1">
           <div className="flex items-baseline gap-0.5">
             <span className={`text-base font-bold ${remaining > 0 ? 'text-amber-600' : 'text-green-600'}`}>{todayCollected}</span>
             <span className="text-slate-300 text-xs mx-0.5">/</span>
@@ -90,12 +76,6 @@ function GopoumCard({
           <span className={`text-xs ${remaining > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
             {remaining > 0 ? `잔여 ${remaining}개` : total > 0 ? '완료' : '없음'}
           </span>
-          <button
-            onClick={() => setShowAddItem(v => !v)}
-            className="mt-0.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-600 font-medium px-2 py-0.5 rounded-lg transition-colors whitespace-nowrap"
-          >
-            + 고품추가
-          </button>
         </div>
 
         {/* 아이템 목록 */}
@@ -186,27 +166,6 @@ function GopoumCard({
         </div>
       </div>
 
-      {/* 고품 추가 인라인 폼 */}
-      {showAddItem && (
-        <div className="border-t border-blue-100 bg-blue-50 px-4 py-2 flex items-center gap-2">
-          <input
-            ref={inputRef}
-            value={newDesc}
-            onChange={e => setNewDesc(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') submitItem(); if (e.key === 'Escape') { setShowAddItem(false); setNewDesc('') } }}
-            placeholder="품목명 입력 (예: 박스 큰거)"
-            className="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-          <button onClick={submitItem} disabled={!newDesc.trim()}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40">
-            추가
-          </button>
-          <button onClick={() => { setShowAddItem(false); setNewDesc('') }}
-            className="text-slate-400 hover:text-slate-600 text-sm px-2 py-1.5 transition-colors">
-            취소
-          </button>
-        </div>
-      )}
     </div>
   )
 }
@@ -518,9 +477,9 @@ export default function GopoumPage() {
       <div className="flex-1 overflow-y-auto p-6">
         {gopoumClients.length > 0 && (
           <div className="flex text-xs text-slate-400 font-semibold mb-1.5 px-1">
-            <div className="w-20 flex-shrink-0 pl-2">업체번호</div>
-            <div className="w-40 flex-shrink-0 pl-2">업체명</div>
-            <div className="w-32 flex-shrink-0 text-center">찾아온/총수량</div>
+            <div className="w-12 flex-shrink-0 pl-2">번호</div>
+            <div className="w-32 flex-shrink-0 pl-2">업체명</div>
+            <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
             <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 차종 · 수량 · 수거날짜 · 수거시간 · 수거자 · 수거량 · 비고)</div>
           </div>
         )}
@@ -538,7 +497,6 @@ export default function GopoumPage() {
               items={gopoumItems.filter(i => i.gopoum_client_id === gc.id)}
               todayStart={todayStart}
               onDelete={handleDelete}
-              onAddItem={handleAddItem}
               onDeleteItem={handleDeleteItem}
               onEditItem={handleEditItem}
             />
