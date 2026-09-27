@@ -61,7 +61,7 @@ function GopoumCard({
     s + (i.collectors ?? []).filter(c => c.picked_at >= todayStart).reduce((a, c) => a + c.quantity, 0), 0)
 
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden text-sm ${remaining > 0 ? 'border-slate-300' : 'border-slate-200'}`}>
+    <div className={`bg-white overflow-hidden text-sm ${remaining > 0 ? 'border-l-4 border-l-slate-400' : ''}`}>
       <div className="flex min-h-14">
         {/* 수거 현황 */}
         <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center gap-1">
@@ -183,6 +183,8 @@ export default function GopoumPage() {
   const [importing, setImporting] = useState(false)
   const [importStatus, setImportStatus] = useState('')
   const [clientsRegionMap, setClientsRegionMap] = useState<Map<string, string | null>>(new Map())
+  const [regionByCode, setRegionByCode] = useState<Map<string, string | null>>(new Map())
+  const [regionByName, setRegionByName] = useState<Map<string, string | null>>(new Map())
   const suggBoxRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -192,12 +194,19 @@ export default function GopoumPage() {
       supabase.from('gopoum_items').select('*'),
       supabase.from('clients').select('code, name, region').eq('branch', branch),
     ])
-    // 그룹 매칭용 맵: `${정규화코드}|${이름}` → region.
-    const rMap = new Map<string, string | null>()
+    // 그룹 매칭용 맵. 코드+이름 정확일치 실패 시 코드만/이름만으로 폴백하기 위해 3종 유지.
+    const rMap = new Map<string, string | null>()  // 정확일치
+    const rByCode = new Map<string, string | null>()  // 코드만
+    const rByName = new Map<string, string | null>() // 이름만
     for (const c of (cRows ?? []) as { code: string; name: string; region: string | null }[]) {
-      rMap.set(`${normalizeCode(c.code || '')}|${c.name}`, c.region ?? null)
+      const nc = normalizeCode(c.code || '')
+      rMap.set(`${nc}|${c.name}`, c.region ?? null)
+      if (nc && !rByCode.has(nc)) rByCode.set(nc, c.region ?? null)
+      if (c.name && !rByName.has(c.name)) rByName.set(c.name, c.region ?? null)
     }
     setClientsRegionMap(rMap)
+    setRegionByCode(rByCode)
+    setRegionByName(rByName)
     // 업체번호(client_code) 오름차순 정렬. 빈 코드는 뒤로.
     const sortedClients = [...(gClients ?? [])].sort((a, b) => {
       const ca = (a.client_code || '').trim()
@@ -487,6 +496,7 @@ export default function GopoumPage() {
         {gopoumClients.length > 0 && (
           <div className="sticky top-0 z-10 bg-slate-50 pt-6 pb-2">
             <div className="flex items-end text-xs text-slate-500 font-semibold px-1">
+              <div className="w-20 flex-shrink-0 text-center">그룹</div>
               <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
               <div className="w-12 flex-shrink-0 pl-2">번호</div>
               <div className="w-24 flex-shrink-0 pl-2">업체명</div>
@@ -513,10 +523,18 @@ export default function GopoumPage() {
         ) : gopoumClients.length === 0 ? (
           <div className="text-center text-slate-400 text-sm py-16">등록된 고품 업체가 없습니다.</div>
         ) : (() => {
-          // 활성 품목 있는 업체만, 지역(법정동)별로 그룹화. 매칭 실패는 '미분류'.
+          // 활성 품목 있는 업체만, 지역(법정동)별로 그룹화. 매칭은 정확일치 → 코드만 → 이름만 순 폴백. 실패는 '미분류'.
           const visibleClients = gopoumClients.filter(gc => gopoumItems.some(i => i.gopoum_client_id === gc.id))
-          const regionOf = (gc: GopoumClient) =>
-            clientsRegionMap.get(`${normalizeCode(gc.client_code || '')}|${gc.client_name}`) || '미분류'
+          const regionOf = (gc: GopoumClient): string => {
+            const code = normalizeCode(gc.client_code || '')
+            const exact = clientsRegionMap.get(`${code}|${gc.client_name}`)
+            if (exact) return exact
+            const byCode = code ? regionByCode.get(code) : null
+            if (byCode) return byCode
+            const byName = gc.client_name ? regionByName.get(gc.client_name) : null
+            if (byName) return byName
+            return '미분류'
+          }
           const groups = new Map<string, GopoumClient[]>()
           for (const gc of visibleClients) {
             const r = regionOf(gc)
@@ -529,11 +547,15 @@ export default function GopoumPage() {
             return a.localeCompare(b, 'ko')
           })
           return (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
               {groupNames.map(name => (
-                <div key={name}>
-                  <h2 className="text-base font-bold text-slate-700 mb-2 px-1 border-b border-slate-300 pb-1">{name}</h2>
-                  <div className="flex flex-col gap-2">
+                <div key={name} className="flex bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  {/* 좌측 그룹(동) 열 — 세로 가운데 정렬, 카드 여러 개 걸쳐 표시 */}
+                  <div className="w-20 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex items-center justify-center p-2">
+                    <span className="text-sm font-bold text-slate-700 text-center break-keep">{name}</span>
+                  </div>
+                  {/* 우측 — 이 그룹에 속한 카드 스택 */}
+                  <div className="flex-1 min-w-0 flex flex-col divide-y divide-slate-200">
                     {groups.get(name)!.map(gc => (
                       <GopoumCard
                         key={gc.id}
