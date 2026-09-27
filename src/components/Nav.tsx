@@ -120,12 +120,34 @@ export default function Nav() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-        {menuOpen && (
-          <div className="absolute top-full left-0 mt-2 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
-            <Link href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">거래처 관리</Link>
-            <Link href="/quick" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">퀵 관리</Link>
-          </div>
-        )}
+        {menuOpen && (() => {
+          const yearKst = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric' }).format(new Date())
+          return (
+            <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+              <Link href="/clients" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">거래처 관리</Link>
+              <Link href="/quick" onClick={() => setMenuOpen(false)} className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">퀵 관리</Link>
+              <div className="border-t border-slate-100" />
+              <a
+                href={`/api/sheet-link?cat=dlv&branch=${branch}&year=${yearKst}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMenuOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                📄 배송 내역 보러가기
+              </a>
+              <a
+                href={`/api/sheet-link?cat=rec&branch=${branch}&year=${yearKst}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setMenuOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                📄 고품 내역 보러가기
+              </a>
+            </div>
+          )
+        })()}
       </div>
 
       {/* 운영시간 표시 (전역) */}

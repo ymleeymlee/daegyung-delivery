@@ -64,16 +64,13 @@ function GopoumCard({
   return (
     <div className={`bg-white overflow-hidden text-sm ${remaining > 0 ? 'border-l-4 border-l-slate-400' : ''}`}>
       <div className="flex min-h-14">
-        {/* 수거 현황 */}
-        <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center gap-1">
+        {/* 수거 현황 (찾아온/총수량 만) */}
+        <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center">
           <div className="flex items-baseline gap-0.5">
             <span className={`text-base font-bold ${remaining > 0 ? 'text-amber-600' : 'text-green-600'}`}>{todayCollected}</span>
             <span className="text-slate-300 text-xs mx-0.5">/</span>
             <span className="text-sm font-bold text-slate-700">{total}</span>
           </div>
-          <span className={`text-xs ${remaining > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
-            {remaining > 0 ? `잔여 ${remaining}개` : total > 0 ? '완료' : '없음'}
-          </span>
         </div>
 
         {/* 업체번호 (최대 4자) — 첫 품목 행과 세로 정렬 */}

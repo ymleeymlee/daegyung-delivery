@@ -125,6 +125,12 @@ async function writeDayTab(
   }
 }
 
+/** 파일명으로 Drive 에서 스프레드시트 id 조회. 없으면 null. 링크(바로가기) 생성용. */
+export async function findSheetId(branchCode: string, cat: SheetCat, year: string): Promise<string | null> {
+  const fileName = fileNameFor(branchCode, cat, year)
+  return findOrCreateSheet(fileName, { autoCreate: false })
+}
+
 // === 카테고리별 저장 함수 (호출부 편의용 wrapper) ===
 export async function writeDeliveryTab(branchCode: string, year: string, month: string, day: string, grid: (string | number)[][]) {
   await writeDayTab(branchCode, 'dlv', year, month, day, grid)
