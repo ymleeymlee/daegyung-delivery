@@ -69,13 +69,13 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
 // 고품 현황 그리드 (업체 정보는 첫 행만, 품목부터 행 추가)
 // collectors(배송자별 수거량) 기반: 부분수거·다중수거·잔여 수량까지 기록.
 // 수거자가 여러 명이면 수거자별로 행을 나눠 기록. 잔여가 있으면 마지막에 '미수거' 행 추가(웹 카드와 동일).
-// 열: 업체번호 | 업체명 | 수거 | 총수량 | 품목 | 차종 | 수량 | 비고 | 생성날짜 | 생성시간 | 수거날짜 | 수거시각 | 수거자 | 수거량
+// 열: 수거 | 총수량 | 업체번호 | 업체명 | 품목 | 차종 | 수량 | 비고 | 생성날짜 | 생성시간 | 수거날짜 | 수거시각 | 수거자 | 수거량
 // collectedRows: 완전수거된 아이템의 행 인덱스(그리드 절대 인덱스). 시트에 회색 배경 표시용.
 function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): { grid: string[][]; collectedRows: number[] } {
   const qtyOf = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
   const carOf = (i: GopoumItem) => (i.car_type && i.car_type.trim()) ? i.car_type : '차종모름'
-  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '품목', '차종', '수량', '비고', '생성날짜', '생성시간', '수거날짜', '수거시각', '수거자', '수거량']]
+  const grid: string[][] = [['수거', '총수량', '업체번호', '업체명', '품목', '차종', '수량', '비고', '생성날짜', '생성시간', '수거날짜', '수거시각', '수거자', '수거량']]
   const collectedRows: number[] = []
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
@@ -118,11 +118,11 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): { grid: 
       })
       if (fullyDone) doneRangesInClient.push({ start: startInClient, count: lines.length })
     }
-    // 업체 정보(업체번호/업체명/수거/총수량)는 업체 첫 행만
-    clientRows[0][0] = gc.client_code || '-'
-    clientRows[0][1] = gc.client_name
-    clientRows[0][2] = String(collectedQty)
-    clientRows[0][3] = String(totalQty)
+    // 업체 정보(수거/총수량/업체번호/업체명)는 업체 첫 행만
+    clientRows[0][0] = String(collectedQty)
+    clientRows[0][1] = String(totalQty)
+    clientRows[0][2] = gc.client_code || '-'
+    clientRows[0][3] = gc.client_name
     // 완전수거 행을 그리드 절대 인덱스로 변환해서 기록
     const clientAbsStart = grid.length
     for (const rng of doneRangesInClient) {

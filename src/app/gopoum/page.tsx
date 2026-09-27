@@ -53,7 +53,7 @@ function GopoumCard({
     s + (i.collectors ?? []).filter(c => c.picked_at >= todayStart).reduce((a, c) => a + c.quantity, 0), 0)
 
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden text-sm ${remaining > 0 ? 'border-slate-800' : 'border-slate-200'}`}>
+    <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden text-sm ${remaining > 0 ? 'border-slate-500' : 'border-slate-200'}`}>
       <div className="flex min-h-14">
         {/* 수거 현황 */}
         <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center gap-1">
@@ -78,7 +78,7 @@ function GopoumCard({
         </div>
 
         {/* 아이템 목록 */}
-        <div className="flex-1 min-w-0 divide-y divide-slate-400">
+        <div className="flex-1 min-w-0 divide-y divide-slate-300">
           {items.length === 0 ? (
             <div className="px-4 py-3 text-xs text-slate-300 italic flex items-center h-full">품목 없음</div>
           ) : (
