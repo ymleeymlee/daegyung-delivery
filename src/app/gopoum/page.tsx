@@ -87,9 +87,6 @@ function GopoumCard({
               const rowBg = isDone(item) ? 'bg-green-50' : isToday ? 'bg-emerald-50/60' : ''
               return (
               <div key={item.id} className={`flex items-center gap-2 px-4 py-2 group ${rowBg}`}>
-                {/* 생성날짜 + 생성시간 */}
-                <span className="w-16 flex-shrink-0 text-xs text-slate-400">{fmtYMD(item.created_at)}</span>
-                <span className="w-12 flex-shrink-0 text-xs text-slate-400">{fmtTime(item.created_at)}</span>
                 {/* 품목명 */}
                 <span className={`w-20 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
                   {item.description}
@@ -113,6 +110,9 @@ function GopoumCard({
                   placeholder="비고"
                   className="flex-1 min-w-0 text-sm bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 focus:outline-none px-1 py-0.5 placeholder:text-slate-300"
                 />
+                {/* 생성날짜 + 생성시간 */}
+                <span className="w-16 flex-shrink-0 text-xs text-slate-400">{fmtYMD(item.created_at)}</span>
+                <span className="w-12 flex-shrink-0 text-xs text-slate-400">{fmtTime(item.created_at)}</span>
                 {/* 수거날짜 (수거자별 한 줄씩, 또는 -) — 빈 줄도 공백(nbsp)으로 채워 옆 열과 줄맞춤 */}
                 <span className={`w-16 flex-shrink-0 text-xs ${collectedOf(item) > 0 ? 'text-slate-500' : 'text-slate-300'}`}>
                   {collectorLines(item).length
@@ -472,7 +472,7 @@ export default function GopoumPage() {
             <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
             <div className="w-12 flex-shrink-0 pl-2">번호</div>
             <div className="w-24 flex-shrink-0 pl-2">업체명</div>
-            <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 차종 · 수량 · 비고 · 수거날짜 · 수거시간 · 수거자 · 수거량)</div>
+            <div className="flex-1 pl-4">품목 (품목명 · 차종 · 수량 · 비고 · 생성시간 · 수거날짜 · 수거시간 · 수거자 · 수거량)</div>
           </div>
         )}
 

@@ -129,8 +129,47 @@ async function writeDayTab(
 export async function writeDeliveryTab(branchCode: string, year: string, month: string, day: string, grid: (string | number)[][]) {
   await writeDayTab(branchCode, 'dlv', year, month, day, grid)
 }
-export async function writeGopoumTab(branchCode: string, year: string, month: string, day: string, grid: (string | number)[][]) {
+export async function writeGopoumTab(
+  branchCode: string, year: string, month: string, day: string,
+  grid: (string | number)[][], collectedRows: number[] = [],
+) {
   await writeDayTab(branchCode, 'rec', year, month, day, grid)
+  if (grid.length <= 1) return
+  // 헤더 아래 전체 배경 흰색 리셋 후, 완전수거 행만 연회색 적용.
+  const fileName = fileNameFor(branchCode, 'rec', year)
+  const docId = await findOrCreateSheet(fileName, { autoCreate: false })
+  if (!docId) return
+  const sheets = sheetsClient()
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: docId, fields: 'sheets(properties(sheetId,title))' })
+  const tab = `${month}_${day}`
+  const sheetId = meta.data.sheets?.find(s => s.properties?.title === tab)?.properties?.sheetId
+  if (sheetId == null) return
+  const cols = grid[0].length
+  const requests: object[] = [{
+    repeatCell: {
+      range: { sheetId, startRowIndex: 1, endRowIndex: grid.length, startColumnIndex: 0, endColumnIndex: cols },
+      cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 } } },
+      fields: 'userEnteredFormat.backgroundColor',
+    },
+  }]
+  // 연속된 완전수거 행은 range 로 묶어서 요청 수 최소화
+  const sorted = [...new Set(collectedRows)].sort((a, b) => a - b)
+  const ranges: { start: number; end: number }[] = []
+  for (const r of sorted) {
+    const last = ranges[ranges.length - 1]
+    if (last && last.end === r) last.end = r + 1
+    else ranges.push({ start: r, end: r + 1 })
+  }
+  for (const rng of ranges) {
+    requests.push({
+      repeatCell: {
+        range: { sheetId, startRowIndex: rng.start, endRowIndex: rng.end, startColumnIndex: 0, endColumnIndex: cols },
+        cell: { userEnteredFormat: { backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 } } },
+        fields: 'userEnteredFormat.backgroundColor',
+      },
+    })
+  }
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId: docId, requestBody: { requests } })
 }
 export async function writeLocationTab(branchCode: string, year: string, month: string, day: string, grid: (string | number)[][]) {
   await writeDayTab(branchCode, 'pos', year, month, day, grid)

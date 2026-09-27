@@ -68,13 +68,15 @@ function buildDeliveryGrid(riders: Rider[], deliveries: Delivery[]): string[][] 
 
 // 고품 현황 그리드 (업체 정보는 첫 행만, 품목부터 행 추가)
 // collectors(배송자별 수거량) 기반: 부분수거·다중수거·잔여 수량까지 기록.
-// 수거자가 여러 명이면 수거자별로 행을 나눠 기록(수거날짜·수거시각·수거자·수거량).
-// 열: 업체번호 | 업체명 | 수거 | 총수량 | 생성날짜 | 생성시간 | 품목 | 차종 | 수거날짜 | 수거시각 | 수거자 | 수거량/총 | 비고
-function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[][] {
+// 수거자가 여러 명이면 수거자별로 행을 나눠 기록. 잔여가 있으면 마지막에 '미수거' 행 추가(웹 카드와 동일).
+// 열: 업체번호 | 업체명 | 수거 | 총수량 | 품목 | 차종 | 수량 | 비고 | 생성날짜 | 생성시간 | 수거날짜 | 수거시각 | 수거자 | 수거량
+// collectedRows: 완전수거된 아이템의 행 인덱스(그리드 절대 인덱스). 시트에 회색 배경 표시용.
+function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): { grid: string[][]; collectedRows: number[] } {
   const qtyOf = (i: GopoumItem) => i.quantity ?? 1
   const collectedOf = (i: GopoumItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
   const carOf = (i: GopoumItem) => (i.car_type && i.car_type.trim()) ? i.car_type : '차종모름'
-  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '생성날짜', '생성시간', '품목', '차종', '수거날짜', '수거시각', '수거자', '수거량/총', '비고']]
+  const grid: string[][] = [['업체번호', '업체명', '수거', '총수량', '품목', '차종', '수량', '비고', '생성날짜', '생성시간', '수거날짜', '수거시각', '수거자', '수거량']]
+  const collectedRows: number[] = []
   for (const gc of clients) {
     const gcItems = items.filter(i => i.gopoum_client_id === gc.id)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
@@ -83,40 +85,52 @@ function buildGopoumGrid(clients: GopoumClient[], items: GopoumItem[]): string[]
     const collectedQty = gcItems.reduce((s, i) => s + collectedOf(i), 0) // 수거된 수량 합
 
     const clientRows: string[][] = []
+    const doneRangesInClient: { start: number; count: number }[] = []
     for (const item of gcItems) {
       const cols = item.collectors ?? []
-      const ratio = `${collectedOf(item)}/${qtyOf(item)}`
-      if (cols.length === 0) {
-        // 미수거: 한 행
-        clientRows.push(['', '', '', '', kstYMD(item.created_at), kstTime(item.created_at), item.description, carOf(item), '-', '-', '미수거', ratio, item.note ?? ''])
-      } else {
-        // 수거자별로 한 행씩. 품목 정보(생성날짜/시간/품목/차종/수거량·총/비고)는 첫 행만
-        cols.forEach((c, ci) => {
-          const head = ci === 0
-          const label = `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`
-          clientRows.push([
-            '', '', '', '',
-            head ? kstYMD(item.created_at) : '',
-            head ? kstTime(item.created_at) : '',
-            head ? item.description : '',
-            head ? carOf(item) : '',
-            kstYMD(c.picked_at),
-            kstTime(c.picked_at),
-            label,
-            head ? ratio : '',
-            head ? (item.note ?? '') : '',
-          ])
-        })
+      const collected = collectedOf(item)
+      const remaining = qtyOf(item) - collected
+      const fullyDone = collected > 0 && remaining === 0
+      // 수거자 행 + 잔여 있을 때 미수거 행. 수거자 0 이면 미수거 한 행만.
+      type Line = { name: string; count: number; date: string; time: string }
+      const lines: Line[] = cols.map(c => ({
+        name: `${c.rider_name}${c.quantity > 1 ? `(${c.quantity})` : ''}`,
+        count: c.quantity,
+        date: kstYMD(c.picked_at),
+        time: kstTime(c.picked_at),
+      }))
+      if (remaining > 0 || cols.length === 0) {
+        lines.push({ name: '미수거', count: cols.length === 0 ? qtyOf(item) : remaining, date: '-', time: '-' })
       }
+      const startInClient = clientRows.length
+      lines.forEach((l, li) => {
+        const head = li === 0
+        clientRows.push([
+          '', '', '', '',
+          head ? item.description : '',
+          head ? carOf(item) : '',
+          head ? String(qtyOf(item)) : '',
+          head ? (item.note ?? '') : '',
+          head ? kstYMD(item.created_at) : '',
+          head ? kstTime(item.created_at) : '',
+          l.date, l.time, l.name, String(l.count),
+        ])
+      })
+      if (fullyDone) doneRangesInClient.push({ start: startInClient, count: lines.length })
     }
     // 업체 정보(업체번호/업체명/수거/총수량)는 업체 첫 행만
     clientRows[0][0] = gc.client_code || '-'
     clientRows[0][1] = gc.client_name
     clientRows[0][2] = String(collectedQty)
     clientRows[0][3] = String(totalQty)
+    // 완전수거 행을 그리드 절대 인덱스로 변환해서 기록
+    const clientAbsStart = grid.length
+    for (const rng of doneRangesInClient) {
+      for (let i = 0; i < rng.count; i++) collectedRows.push(clientAbsStart + rng.start + i)
+    }
     grid.push(...clientRows)
   }
-  return grid
+  return { grid, collectedRows }
 }
 
 // 이동 기록 그리드. 원본 핑을 라이더별로 정렬 후 라이더당 분당 1개로 다운샘플.
@@ -165,6 +179,7 @@ function buildLocationGrid(pings: LocationPing[]): string[][] {
 export interface SnapshotData {
   deliveryGrid: string[][]
   gopoumGrid: string[][]
+  gopoumCollectedRows: number[]
   locationGrid: string[][]
 }
 
@@ -176,9 +191,11 @@ export function buildGrids(
   activeItems: GopoumItem[],
   pings: LocationPing[] = [],
 ): SnapshotData {
+  const g = buildGopoumGrid(clients, activeItems)
   return {
     deliveryGrid: buildDeliveryGrid(orderRiders(riders), deliveries),
-    gopoumGrid: buildGopoumGrid(clients, activeItems),
+    gopoumGrid: g.grid,
+    gopoumCollectedRows: g.collectedRows,
     locationGrid: buildLocationGrid(pings),
   }
 }
@@ -221,7 +238,7 @@ export async function writeSnapshot(branchCode: string, dateStr: string, data: S
   const year = dateStr.slice(0, 4), month = dateStr.slice(5, 7), day = dateStr.slice(8, 10)
   const tasks: { name: string; run: () => Promise<void> }[] = [
     { name: '배송', run: () => writeDeliveryTab(branchCode, year, month, day, data.deliveryGrid) },
-    { name: '고품', run: () => writeGopoumTab(branchCode, year, month, day, data.gopoumGrid) },
+    { name: '고품', run: () => writeGopoumTab(branchCode, year, month, day, data.gopoumGrid, data.gopoumCollectedRows) },
   ]
   if (data.locationGrid.length > 0) {
     tasks.push({ name: '위치', run: () => writeLocationTab(branchCode, year, month, day, data.locationGrid) })
