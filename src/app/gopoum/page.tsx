@@ -56,16 +56,6 @@ function GopoumCard({
   return (
     <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden text-sm ${remaining > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
       <div className="flex min-h-14">
-        {/* 업체번호 (최대 4자) */}
-        <div className="w-12 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center">
-          <span className="text-xs text-slate-500">{gc.client_code || '-'}</span>
-        </div>
-
-        {/* 업체명 (2줄까지 표시) */}
-        <div className="w-32 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center">
-          <span className="font-semibold text-slate-800 text-xs leading-tight line-clamp-2 break-keep">{gc.client_name}</span>
-        </div>
-
         {/* 수거 현황 */}
         <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center gap-1">
           <div className="flex items-baseline gap-0.5">
@@ -76,6 +66,16 @@ function GopoumCard({
           <span className={`text-xs ${remaining > 0 ? 'text-amber-500' : 'text-slate-400'}`}>
             {remaining > 0 ? `잔여 ${remaining}개` : total > 0 ? '완료' : '없음'}
           </span>
+        </div>
+
+        {/* 업체번호 (최대 4자) */}
+        <div className="w-12 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-start">
+          <span className="text-xs text-slate-500">{gc.client_code || '-'}</span>
+        </div>
+
+        {/* 업체명 (2줄까지 표시) */}
+        <div className="w-32 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-start">
+          <span className="font-semibold text-slate-800 text-xs leading-tight line-clamp-2 break-keep">{gc.client_name}</span>
         </div>
 
         {/* 아이템 목록 */}
@@ -477,9 +477,9 @@ export default function GopoumPage() {
       <div className="flex-1 overflow-y-auto p-6">
         {gopoumClients.length > 0 && (
           <div className="flex text-xs text-slate-400 font-semibold mb-1.5 px-1">
+            <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
             <div className="w-12 flex-shrink-0 pl-2">번호</div>
             <div className="w-32 flex-shrink-0 pl-2">업체명</div>
-            <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
             <div className="flex-1 pl-4">품목 (생성시간 · 품목명 · 차종 · 수량 · 수거날짜 · 수거시간 · 수거자 · 수거량 · 비고)</div>
           </div>
         )}
