@@ -53,8 +53,9 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
   })
 }
 
-/** 좌표 → 행정동 이름(예: '부곡동'). 실패면 null.
- *  coord2RegionCode 는 행정동('H')과 법정동('B') 두 결과를 반환 — 사람들이 흔히 아는 행정동('H') 우선. */
+/** 좌표 → 법정동 이름(예: '원시동', '사동'). 실패면 null.
+ *  coord2RegionCode 는 행정동('H')과 법정동('B') 두 결과를 반환. 우리 시스템은 주소를 법정동
+ *  기준으로 쓰므로 'B'(법정동)를 우선. 예: 좌표가 법정동 '원시동'이면 행정동 '초지동'이 아니라 '원시동' 반환. */
 export async function regionFromCoord(lat: number, lng: number): Promise<string | null> {
   if (!isFinite(lat) || !isFinite(lng)) return null
   await loadKakaoSdk()
@@ -63,8 +64,8 @@ export async function regionFromCoord(lat: number, lng: number): Promise<string 
     const geocoder = new kakao.maps.services.Geocoder()
     geocoder.coord2RegionCode(lng, lat, (result: any, status: any) => {
       if (status !== kakao.maps.services.Status.OK || !Array.isArray(result)) { resolve(null); return }
-      const admin = result.find((r: any) => r.region_type === 'H') ?? result[0]
-      const dong = admin?.region_3depth_name ?? null
+      const legal = result.find((r: any) => r.region_type === 'B') ?? result[0]
+      const dong = legal?.region_3depth_name ?? null
       resolve(dong && String(dong).trim() ? String(dong).trim() : null)
     })
   })

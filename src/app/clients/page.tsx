@@ -115,10 +115,10 @@ export default function ClientsPage() {
 
   // 기존 업체 좌표/그룹 일괄 채우기.
   // 좌표 없음: 주소 지오코딩 → 좌표 + region 저장.
-  // 좌표 있음 + region 없음: coord2RegionCode 로 region 만 저장.
+  // 좌표 있음: coord2RegionCode 로 region 재조회 후 갱신 (법정동/행정동 전환 등 정책 변경 반영).
   async function handleBackfillGeocode() {
     const needCoord = clients.filter(c => (c.lat == null || c.lng == null) && c.address?.trim())
-    const needRegion = clients.filter(c => c.lat != null && c.lng != null && !c.region)
+    const needRegion = clients.filter(c => c.lat != null && c.lng != null)
     const total = needCoord.length + needRegion.length
     if (total === 0) { setGeoStatus('추가 채울 항목이 없습니다.'); setTimeout(() => setGeoStatus(''), 3000); return }
     setGeocoding(true)
