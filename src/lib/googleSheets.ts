@@ -169,6 +169,14 @@ export async function writeGopoumTab(
       },
     })
   }
+  // 헤더+데이터 전체에 기본 필터 적용. 기존 필터는 자동 대체됨.
+  requests.push({
+    setBasicFilter: {
+      filter: {
+        range: { sheetId, startRowIndex: 0, endRowIndex: grid.length, startColumnIndex: 0, endColumnIndex: cols },
+      },
+    },
+  })
   await sheets.spreadsheets.batchUpdate({ spreadsheetId: docId, requestBody: { requests } })
 }
 export async function writeLocationTab(branchCode: string, year: string, month: string, day: string, grid: (string | number)[][]) {
