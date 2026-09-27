@@ -11,6 +11,14 @@ function todayStartIso() {
   return new Date(`${d}T00:00:00+09:00`).toISOString()
 }
 
+// 숫자만 있는 업체번호는 4자리로 zero-pad. 그래야 엑셀 파싱시 유실된 앞 0("0006"→"6")과
+// 수동 입력한 "0006" 이 동일 업체로 매칭되고, DB 에도 일관된 폼으로 저장됨.
+function normalizeCode(code: string): string {
+  const t = (code || '').trim()
+  if (!t) return ''
+  return /^\d+$/.test(t) ? t.padStart(4, '0') : t
+}
+
 function fmtTime(iso: string) {
   return new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
 }
@@ -69,7 +77,7 @@ function GopoumCard({
 
         {/* 업체번호 (최대 4자) */}
         <div className="w-12 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-start">
-          <span className="text-xs text-slate-500">{gc.client_code || '-'}</span>
+          <span className="text-xs text-slate-500">{normalizeCode(gc.client_code || '') || '-'}</span>
         </div>
 
         {/* 업체명 (2줄까지 표시) */}
@@ -237,14 +245,15 @@ export default function GopoumPage() {
     if (!inputClient.trim() || !inputDesc.trim() || adding) return
     setAdding(true)
     const name = inputClient.trim()
-    const code = pickedCode.trim()
+    const code = normalizeCode(pickedCode)
     const desc = inputDesc.trim()
     const carType = inputCarType.trim() || null
     const qty = Math.max(1, parseInt(inputQty || '1', 10) || 1)
     const note = inputNote.trim() || null
     // 동일 지점+업체번호+업체명 조합의 gopoum_client 재사용, 없으면 신규 생성.
+    // 코드 매칭은 양쪽 모두 정규화(숫자면 4자리 zero-pad)해서 "6" 과 "0006" 등 동일 업체 인식.
     let clientId: string | null = gopoumClients.find(gc =>
-      gc.branch === branch && (gc.client_code || '') === code && gc.client_name === name
+      gc.branch === branch && normalizeCode(gc.client_code || '') === code && gc.client_name === name
     )?.id ?? null
     if (!clientId) {
       const { data, error } = await supabase.from('gopoum_clients').insert({
@@ -277,7 +286,7 @@ export default function GopoumPage() {
         return found != null ? String(row[found] ?? '').trim() : ''
       }
       const parsed = rows.map(r => ({
-        code: pick(r, '업체번호'),
+        code: normalizeCode(pick(r, '업체번호')),
         name: pick(r, '거래처명'),
         desc: pick(r, '품목'),
         carType: pick(r, '차종'),
@@ -287,10 +296,10 @@ export default function GopoumPage() {
 
       if (parsed.length === 0) { setImportStatus('유효 행 없음'); return }
 
-      // 기존 gopoum_clients 매핑 (지점+코드+이름 조합)
+      // 기존 gopoum_clients 매핑 (지점+정규화코드+이름 조합)
       const clientMap = new Map<string, string>()
       for (const gc of gopoumClients) {
-        clientMap.set(`${(gc.client_code || '').trim()}|${gc.client_name}`, gc.id)
+        clientMap.set(`${normalizeCode(gc.client_code || '')}|${gc.client_name}`, gc.id)
       }
       // 파일에 있으나 아직 없는 업체만 신규 생성
       const missing = new Map<string, { code: string; name: string }>()
@@ -308,7 +317,7 @@ export default function GopoumPage() {
           .select('id, client_code, client_name')
         if (error) throw error
         for (const nc of newClients ?? []) {
-          clientMap.set(`${(nc.client_code || '').trim()}|${nc.client_name}`, nc.id)
+          clientMap.set(`${normalizeCode(nc.client_code || '')}|${nc.client_name}`, nc.id)
         }
       }
 
