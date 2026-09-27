@@ -75,13 +75,13 @@ function GopoumCard({
           </span>
         </div>
 
-        {/* 업체번호 (최대 4자) */}
-        <div className="w-12 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-start">
+        {/* 업체번호 (최대 4자) — 첫 품목 행과 세로 정렬 */}
+        <div className="w-12 flex-shrink-0 border-r border-slate-100 flex items-center px-2 min-h-10">
           <span className="text-xs text-slate-500">{normalizeCode(gc.client_code || '') || '-'}</span>
         </div>
 
-        {/* 업체명 (2줄까지 표시) */}
-        <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-start">
+        {/* 업체명 (2줄까지 표시) — 첫 품목 행과 세로 정렬 */}
+        <div className="w-24 flex-shrink-0 border-r border-slate-100 flex items-center px-2 min-h-10">
           <span className="text-sm font-medium text-slate-700 leading-tight line-clamp-2 break-all">{gc.client_name}</span>
         </div>
 
