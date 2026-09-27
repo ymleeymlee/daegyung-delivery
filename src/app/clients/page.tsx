@@ -11,6 +11,8 @@ export default function ClientsPage() {
   const { branch } = useBranch()
   const [clients, setClients] = useState<Client[]>([])
   const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<'code' | 'name' | 'region'>('code')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editCode, setEditCode] = useState('')
   const [editName, setEditName] = useState('')
@@ -34,30 +36,38 @@ export default function ClientsPage() {
       .from('clients')
       .select('*')
       .eq('branch', branch)
-    // 업체번호 순 정렬. 업체번호가 있으면 숫자(없으면 문자) 오름차순 우선,
-    // 업체번호가 없는 거래처는 뒤로 보내고 상호명 순으로 정렬
-    const sorted = (data ?? []).slice().sort((a, b) => {
-      const ca = (a.code ?? '').trim()
-      const cb = (b.code ?? '').trim()
-      if (ca && cb) {
-        const na = Number(ca)
-        const nb = Number(cb)
-        if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb
-        if (ca !== cb) return ca.localeCompare(cb, 'ko')
-        return a.name.localeCompare(b.name, 'ko')
-      }
-      if (ca && !cb) return -1
-      if (!ca && cb) return 1
-      return a.name.localeCompare(b.name, 'ko')
-    })
-    setClients(sorted)
+    setClients(data ?? [])
   }, [branch])
 
   useEffect(() => { fetchClients() }, [fetchClients])
 
-  const filtered = clients.filter(c =>
-    c.name.includes(search) || c.address.includes(search) || c.code.includes(search)
-  )
+  // 클릭 정렬. 값 없으면 asc 에서 뒤로, desc 에서 앞으로.
+  function toggleSort(key: 'code' | 'name' | 'region') {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+  }
+  function sortIndicator(key: 'code' | 'name' | 'region') {
+    if (sortKey !== key) return <span className="text-slate-300 ml-1">⇅</span>
+    return <span className="text-blue-600 ml-1">{sortDir === 'asc' ? '▲' : '▼'}</span>
+  }
+  const filtered = clients
+    .filter(c => c.name.includes(search) || c.address.includes(search) || c.code.includes(search))
+    .slice().sort((a, b) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+      const va = (a[sortKey] as string | null | undefined) ?? ''
+      const vb = (b[sortKey] as string | null | undefined) ?? ''
+      // 빈 값은 항상 뒤로
+      if (!va && vb) return 1
+      if (va && !vb) return -1
+      if (!va && !vb) return 0
+      if (sortKey === 'code') {
+        const na = Number(va), nb = Number(vb)
+        if (!isNaN(na) && !isNaN(nb) && na !== nb) return (na - nb) * dir
+      }
+      const cmp = va.localeCompare(vb, 'ko', { numeric: true })
+      if (cmp !== 0) return cmp * dir
+      return a.name.localeCompare(b.name, 'ko') * dir
+    })
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -354,9 +364,21 @@ export default function ClientsPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="text-left px-4 py-3 text-slate-600 font-semibold w-28">업체번호</th>
-              <th className="text-left px-4 py-3 text-slate-600 font-semibold">상호명</th>
-              <th className="text-left px-4 py-3 text-slate-600 font-semibold w-28">그룹</th>
+              <th className="text-left px-4 py-3 text-slate-600 font-semibold w-28">
+                <button onClick={() => toggleSort('code')} className="flex items-center hover:text-blue-600 transition-colors">
+                  업체번호{sortIndicator('code')}
+                </button>
+              </th>
+              <th className="text-left px-4 py-3 text-slate-600 font-semibold">
+                <button onClick={() => toggleSort('name')} className="flex items-center hover:text-blue-600 transition-colors">
+                  상호명{sortIndicator('name')}
+                </button>
+              </th>
+              <th className="text-left px-4 py-3 text-slate-600 font-semibold w-28">
+                <button onClick={() => toggleSort('region')} className="flex items-center hover:text-blue-600 transition-colors">
+                  그룹{sortIndicator('region')}
+                </button>
+              </th>
               <th className="text-left px-4 py-3 text-slate-600 font-semibold">대표주소</th>
               <th className="px-4 py-3 w-28"></th>
             </tr>
