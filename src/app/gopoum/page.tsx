@@ -182,14 +182,22 @@ export default function GopoumPage() {
   const [loading, setLoading] = useState(true)
   const [importing, setImporting] = useState(false)
   const [importStatus, setImportStatus] = useState('')
+  const [clientsRegionMap, setClientsRegionMap] = useState<Map<string, string | null>>(new Map())
   const suggBoxRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchData = useCallback(async () => {
-    const [{ data: gClients }, { data: gItems }] = await Promise.all([
+    const [{ data: gClients }, { data: gItems }, { data: cRows }] = await Promise.all([
       supabase.from('gopoum_clients').select('*').eq('branch', branch),
       supabase.from('gopoum_items').select('*'),
+      supabase.from('clients').select('code, name, region').eq('branch', branch),
     ])
+    // 그룹 매칭용 맵: `${정규화코드}|${이름}` → region.
+    const rMap = new Map<string, string | null>()
+    for (const c of (cRows ?? []) as { code: string; name: string; region: string | null }[]) {
+      rMap.set(`${normalizeCode(c.code || '')}|${c.name}`, c.region ?? null)
+    }
+    setClientsRegionMap(rMap)
     // 업체번호(client_code) 오름차순 정렬. 빈 코드는 뒤로.
     const sortedClients = [...(gClients ?? [])].sort((a, b) => {
       const ca = (a.client_code || '').trim()
@@ -500,25 +508,48 @@ export default function GopoumPage() {
           </div>
         )}
 
-        <div className="flex flex-col gap-2">
-          {loading ? (
-            <div className="text-center text-slate-400 text-sm py-16">불러오는 중...</div>
-          ) : gopoumClients.length === 0 && (
-            <div className="text-center text-slate-400 text-sm py-16">등록된 고품 업체가 없습니다.</div>
-          )}
-          {gopoumClients
-            .filter(gc => gopoumItems.some(i => i.gopoum_client_id === gc.id))
-            .map(gc => (
-              <GopoumCard
-                key={gc.id}
-                gc={gc}
-                items={gopoumItems.filter(i => i.gopoum_client_id === gc.id)}
-                todayStart={todayStart}
-                onDeleteItem={handleDeleteItem}
-                onEditItem={handleEditItem}
-              />
-            ))}
-        </div>
+        {loading ? (
+          <div className="text-center text-slate-400 text-sm py-16">불러오는 중...</div>
+        ) : gopoumClients.length === 0 ? (
+          <div className="text-center text-slate-400 text-sm py-16">등록된 고품 업체가 없습니다.</div>
+        ) : (() => {
+          // 활성 품목 있는 업체만, 지역(법정동)별로 그룹화. 매칭 실패는 '미분류'.
+          const visibleClients = gopoumClients.filter(gc => gopoumItems.some(i => i.gopoum_client_id === gc.id))
+          const regionOf = (gc: GopoumClient) =>
+            clientsRegionMap.get(`${normalizeCode(gc.client_code || '')}|${gc.client_name}`) || '미분류'
+          const groups = new Map<string, GopoumClient[]>()
+          for (const gc of visibleClients) {
+            const r = regionOf(gc)
+            if (!groups.has(r)) groups.set(r, [])
+            groups.get(r)!.push(gc)
+          }
+          const groupNames = [...groups.keys()].sort((a, b) => {
+            if (a === '미분류' && b !== '미분류') return 1
+            if (b === '미분류' && a !== '미분류') return -1
+            return a.localeCompare(b, 'ko')
+          })
+          return (
+            <div className="flex flex-col gap-4">
+              {groupNames.map(name => (
+                <div key={name}>
+                  <h2 className="text-base font-bold text-slate-700 mb-2 px-1 border-b border-slate-300 pb-1">{name}</h2>
+                  <div className="flex flex-col gap-2">
+                    {groups.get(name)!.map(gc => (
+                      <GopoumCard
+                        key={gc.id}
+                        gc={gc}
+                        items={gopoumItems.filter(i => i.gopoum_client_id === gc.id)}
+                        todayStart={todayStart}
+                        onDeleteItem={handleDeleteItem}
+                        onEditItem={handleEditItem}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
