@@ -102,20 +102,20 @@ function GopoumCard({
           {items.length === 0 ? (
             <div className="px-4 py-3 text-xs text-slate-300 italic flex items-center h-full">품목 없음</div>
           ) : (
-            sortedItems.map(item => (
-              <div key={item.id} className={`flex items-center gap-2 px-4 py-2 group ${isDone(item) ? 'bg-green-50' : ''}`}>
+            sortedItems.map(item => {
+              const isToday = item.created_at >= todayStart
+              const rowBg = isDone(item) ? 'bg-green-50' : isToday ? 'bg-emerald-50/60' : ''
+              return (
+              <div key={item.id} className={`flex items-center gap-2 px-4 py-2 group ${rowBg}`}>
                 {/* 생성날짜 + 생성시간 */}
                 <span className="w-16 flex-shrink-0 text-xs text-slate-400">{fmtYMD(item.created_at)}</span>
                 <span className="w-12 flex-shrink-0 text-xs text-slate-400">{fmtTime(item.created_at)}</span>
-                {/* 품목명 + NEW 뱃지 */}
-                <span className={`w-28 flex-shrink-0 text-sm truncate flex items-center gap-1 ${isDone(item) ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
-                  <span className="truncate">{item.description}</span>
-                  {item.created_at >= todayStart && (
-                    <span className="flex-shrink-0 text-[10px] font-bold text-white bg-rose-500 rounded px-1 py-[1px] leading-none">NEW</span>
-                  )}
+                {/* 품목명 */}
+                <span className={`w-28 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
+                  {item.description}
                 </span>
                 {/* 차종 */}
-                <span className={`w-20 flex-shrink-0 text-xs truncate ${item.car_type ? 'text-slate-600' : 'text-slate-300 italic'}`}>
+                <span className={`w-20 flex-shrink-0 text-sm truncate ${item.car_type ? 'text-slate-700 font-medium' : 'text-slate-300 italic'}`}>
                   {item.car_type || '차종모름'}
                 </span>
                 {/* 수량 (−/직접입력/+) */}
@@ -171,7 +171,8 @@ function GopoumCard({
                   title="품목 삭제"
                 >×</button>
               </div>
-            ))
+              )
+            })
           )}
         </div>
 
@@ -215,8 +216,8 @@ export default function GopoumPage() {
   const [gopoumItems, setGopoumItems] = useState<GopoumItem[]>([])
   const [todayStart] = useState(todayStartIso)
 
-  const [inputCode, setInputCode] = useState('')
-  const [inputName, setInputName] = useState('')
+  const [inputClient, setInputClient] = useState('') // 사용자에게 보이는 입력값(업체번호 또는 업체명)
+  const [pickedCode, setPickedCode] = useState('') // 자동완성 선택 시 저장된 업체번호. 사용자가 다시 타이핑하면 초기화
   const [inputDesc, setInputDesc] = useState('')
   const [inputCarType, setInputCarType] = useState('')
   const [inputQty, setInputQty] = useState('1')
@@ -265,7 +266,7 @@ export default function GopoumPage() {
   }, [fetchData, debouncedFetch])
 
   useEffect(() => {
-    const term = (inputCode || inputName).trim()
+    const term = inputClient.trim()
     if (!term) { setSuggestions([]); setShowSugg(false); return }
     const timer = setTimeout(async () => {
       const { data } = await supabase.from('clients').select('*').eq('branch', branch).or(`code.ilike.%${term}%,name.ilike.%${term}%`).limit(6)
@@ -273,7 +274,7 @@ export default function GopoumPage() {
       setShowSugg((data ?? []).length > 0)
     }, 180)
     return () => clearTimeout(timer)
-  }, [inputCode, inputName, branch])
+  }, [inputClient, branch])
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -284,10 +285,10 @@ export default function GopoumPage() {
   }, [])
 
   async function handleAdd() {
-    if (!inputName.trim() || !inputDesc.trim() || adding) return
+    if (!inputClient.trim() || !inputDesc.trim() || adding) return
     setAdding(true)
-    const code = inputCode.trim()
-    const name = inputName.trim()
+    const name = inputClient.trim()
+    const code = pickedCode.trim()
     const desc = inputDesc.trim()
     const carType = inputCarType.trim() || null
     const qty = Math.max(1, parseInt(inputQty || '1', 10) || 1)
@@ -306,7 +307,7 @@ export default function GopoumPage() {
     }
     await handleAddItem(clientId!, desc, carType, qty, note)
     setAdding(false)
-    setInputCode(''); setInputName(''); setInputDesc(''); setInputCarType(''); setInputQty('1'); setInputNote('')
+    setInputClient(''); setPickedCode(''); setInputDesc(''); setInputCarType(''); setInputQty('1'); setInputNote('')
     setSuggestions([]); setShowSugg(false)
   }
 
@@ -378,14 +379,19 @@ export default function GopoumPage() {
       {/* 업체·품목 통합 추가 폼 */}
       <div className="bg-white border-b border-slate-200 px-6 py-3 flex-shrink-0" ref={suggBoxRef}>
         <div className="flex items-center gap-2 flex-wrap relative">
-          <input value={inputCode} onChange={e => { setInputCode(e.target.value); setInputName('') }} placeholder="업체번호" className={`${inputCls} w-24`} />
           <div className="relative">
-            <input value={inputName} onChange={e => { setInputName(e.target.value); setInputCode('') }}
-              placeholder="업체명" className={`${inputCls} w-40`} />
+            <input value={inputClient}
+              onChange={e => { setInputClient(e.target.value); setPickedCode('') }}
+              onKeyDown={e => { if (e.key === 'Enter' && !showSugg) handleAdd() }}
+              placeholder="업체번호 또는 업체명" className={`${inputCls} w-56`} />
+            {pickedCode && (
+              <span className="absolute -top-2 left-2 text-[10px] font-mono text-slate-500 bg-white px-1">코드 {pickedCode}</span>
+            )}
             {showSugg && suggestions.length > 0 && (
               <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden">
                 {suggestions.map(c => (
-                  <button key={c.id} type="button" onClick={() => { setInputCode(c.code); setInputName(c.name); setShowSugg(false) }}
+                  <button key={c.id} type="button"
+                    onClick={() => { setInputClient(c.name); setPickedCode(c.code || ''); setShowSugg(false) }}
                     className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0">
                     <div className="flex items-center gap-2">
                       {c.code && <span className="text-xs text-slate-400 font-mono">{c.code}</span>}
@@ -409,7 +415,7 @@ export default function GopoumPage() {
           <input value={inputNote} onChange={e => setInputNote(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !showSugg) handleAdd() }}
             placeholder="비고" className={`${inputCls} w-36`} />
-          <button onClick={handleAdd} disabled={!inputName.trim() || !inputDesc.trim() || adding}
+          <button onClick={handleAdd} disabled={!inputClient.trim() || !inputDesc.trim() || adding}
             className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-1.5 rounded-xl transition-colors disabled:opacity-40 whitespace-nowrap">
             {adding ? '추가 중...' : '+ 추가'}
           </button>
