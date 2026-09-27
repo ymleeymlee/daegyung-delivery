@@ -141,6 +141,7 @@ export interface GopoumItem {
   id: string
   gopoum_client_id: string
   description: string
+  car_type: string | null       // 차종 (선택 입력, null 이면 UI 에서 '차종모름')
   quantity: number              // 총 수거해야 할 수량 (고품현황에서 입력)
   note: string | null
   collectors: GopoumCollector[] // 배송자별 수거량 기록 (부분·다중 수거)
