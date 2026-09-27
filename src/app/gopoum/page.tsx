@@ -53,7 +53,7 @@ function GopoumCard({
     s + (i.collectors ?? []).filter(c => c.picked_at >= todayStart).reduce((a, c) => a + c.quantity, 0), 0)
 
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden text-sm ${remaining > 0 ? 'border-amber-300' : 'border-slate-200'}`}>
+    <div className={`bg-white rounded-2xl shadow-sm border overflow-hidden text-sm ${remaining > 0 ? 'border-slate-800' : 'border-slate-200'}`}>
       <div className="flex min-h-14">
         {/* 수거 현황 */}
         <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center gap-1">
@@ -466,13 +466,28 @@ export default function GopoumPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto px-6 pb-6">
         {gopoumClients.length > 0 && (
-          <div className="flex text-xs text-slate-400 font-semibold mb-1.5 px-1">
-            <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
-            <div className="w-12 flex-shrink-0 pl-2">번호</div>
-            <div className="w-24 flex-shrink-0 pl-2">업체명</div>
-            <div className="flex-1 pl-4">품목 (품목명 · 차종 · 수량 · 비고 · 생성시간 · 수거날짜 · 수거시간 · 수거자 · 수거량)</div>
+          <div className="sticky top-0 z-10 bg-slate-50 pt-6 pb-2">
+            <div className="flex items-end text-xs text-slate-500 font-semibold px-1">
+              <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
+              <div className="w-12 flex-shrink-0 pl-2">번호</div>
+              <div className="w-24 flex-shrink-0 pl-2">업체명</div>
+              {/* 품목 영역: 카드 아이템 행 레이아웃(gap-2 px-4)과 폭 매칭 */}
+              <div className="flex-1 min-w-0 flex items-end gap-2 px-4">
+                <span className="w-20 flex-shrink-0">품목명</span>
+                <span className="w-20 flex-shrink-0">차종</span>
+                <span className="w-10 flex-shrink-0 text-center">수량</span>
+                <span className="flex-1 min-w-0 px-1">비고</span>
+                <span className="w-16 flex-shrink-0">생성날짜</span>
+                <span className="w-12 flex-shrink-0">생성시간</span>
+                <span className="w-16 flex-shrink-0">수거날짜</span>
+                <span className="w-12 flex-shrink-0">수거시간</span>
+                <span className="w-24 flex-shrink-0">수거자</span>
+                <span className="w-10 flex-shrink-0 text-center">수거량</span>
+                <span className="w-4 flex-shrink-0" aria-hidden />
+              </div>
+            </div>
           </div>
         )}
 
