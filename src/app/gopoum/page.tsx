@@ -63,9 +63,9 @@ function GopoumCard({
 
   return (
     <div className="bg-white overflow-hidden text-sm border-l-4 border-l-slate-400">
-      <div className="flex min-h-14">
+      <div className="flex">
         {/* 수거 현황 (찾아온/총수량 만) */}
-        <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center">
+        <div className="w-24 flex-shrink-0 border-r border-slate-100 py-1 px-2 flex flex-col justify-center items-center">
           <div className="flex items-baseline gap-0.5">
             <span className={`text-base font-bold ${remaining > 0 ? 'text-amber-600' : 'text-green-600'}`}>{todayCollected}</span>
             <span className="text-slate-300 text-xs mx-0.5">/</span>
@@ -74,12 +74,12 @@ function GopoumCard({
         </div>
 
         {/* 업체번호 (최대 4자) — 첫 품목 행과 세로 정렬 */}
-        <div className="w-12 flex-shrink-0 border-r border-slate-100 flex items-center px-2 min-h-8">
+        <div className="w-12 flex-shrink-0 border-r border-slate-100 flex items-center px-2 py-1">
           <span className="text-xs text-slate-500">{normalizeCode(gc.client_code || '') || '-'}</span>
         </div>
 
         {/* 업체명 (한 줄, 12자 여유) — 첫 품목 행과 세로 정렬 */}
-        <div className="w-44 flex-shrink-0 border-r border-slate-100 flex items-center px-2 min-h-8">
+        <div className="w-44 flex-shrink-0 border-r border-slate-100 flex items-center px-2 py-1">
           <span className="text-sm font-medium text-slate-700 leading-tight truncate">{gc.client_name}</span>
         </div>
 
@@ -590,7 +590,7 @@ export default function GopoumPage() {
               <div className="flex flex-col gap-1">
                 {groupNames.map(name => (
                   <div key={name} className="flex bg-white rounded-2xl shadow-sm border border-slate-400 overflow-hidden">
-                    <div className="w-28 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex items-center justify-center p-2">
+                    <div className="w-28 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex items-center justify-center py-1 px-2">
                       <span className="text-sm font-bold text-slate-700 text-center break-keep leading-tight">{name}</span>
                     </div>
                     <div className="flex-1 min-w-0 flex flex-col divide-y divide-slate-200">
