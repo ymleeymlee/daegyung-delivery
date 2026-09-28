@@ -94,7 +94,7 @@ function GopoumCard({
               return (
               <div key={item.id} className={`flex items-center gap-2 px-4 py-2 group ${rowBg}`}>
                 {/* 품목명 */}
-                <span className={`w-20 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-slate-500' : 'text-slate-700 font-medium'}`}>
+                <span className={`w-20 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-slate-400' : 'text-slate-700 font-medium'}`}>
                   {item.description}
                 </span>
                 {/* 차종 */}
@@ -621,8 +621,8 @@ export default function GopoumPage() {
                   {todaySection}
                 </div>
               )}
-              <div>
-                <h2 className="text-sm font-bold text-slate-700 mb-2 px-1">전체 현황</h2>
+              <div className="mt-4 pt-4 border-t border-slate-300">
+                <h2 className="text-lg font-bold text-slate-800 mb-3 px-1">전체 현황</h2>
                 {allSection}
               </div>
             </div>
