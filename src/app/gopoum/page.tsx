@@ -90,11 +90,11 @@ function GopoumCard({
           ) : (
             sortedItems.map(item => {
               const isToday = item.created_at >= todayStart
-              const rowBg = isDone(item) ? 'bg-green-50' : isToday ? 'bg-emerald-50/60' : ''
+              const rowBg = isDone(item) ? 'bg-slate-200' : isToday ? 'bg-emerald-50/60' : ''
               return (
               <div key={item.id} className={`flex items-center gap-2 px-4 py-2 group ${rowBg}`}>
                 {/* 품목명 */}
-                <span className={`w-20 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-green-700' : 'text-slate-700 font-medium'}`}>
+                <span className={`w-20 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-slate-500' : 'text-slate-700 font-medium'}`}>
                   {item.description}
                 </span>
                 {/* 차종 */}
@@ -558,8 +558,7 @@ export default function GopoumPage() {
         ) : gopoumClients.length === 0 ? (
           <div className="text-center text-slate-400 text-sm py-16">등록된 고품 업체가 없습니다.</div>
         ) : (() => {
-          // 활성 품목 있는 업체만, 지역(법정동)별로 그룹화. 매칭은 정확일치 → 코드만 → 이름만 순 폴백. 실패는 '미분류'.
-          const visibleClients = gopoumClients.filter(gc => gopoumItems.some(i => i.gopoum_client_id === gc.id))
+          // 지역(법정동) 판정: 정확일치 → 코드만 → 이름만 순 폴백. 실패는 '미분류'.
           const regionOf = (gc: GopoumClient): string => {
             const code = normalizeCode(gc.client_code || '')
             const exact = clientsRegionMap.get(`${code}|${gc.client_name}`)
@@ -570,41 +569,62 @@ export default function GopoumPage() {
             if (byName) return byName
             return '미분류'
           }
-          const groups = new Map<string, GopoumClient[]>()
-          for (const gc of visibleClients) {
-            const r = regionOf(gc)
-            if (!groups.has(r)) groups.set(r, [])
-            groups.get(r)!.push(gc)
+          // 특정 아이템 필터로 카드 그룹 렌더. 필터된 아이템이 있는 업체만 카드로 표시.
+          const renderGroups = (itemFilter: (i: GopoumItem) => boolean) => {
+            const filtered = gopoumItems.filter(itemFilter)
+            if (filtered.length === 0) return null
+            const clientHasItem = new Set(filtered.map(i => i.gopoum_client_id))
+            const visible = gopoumClients.filter(gc => clientHasItem.has(gc.id))
+            const groups = new Map<string, GopoumClient[]>()
+            for (const gc of visible) {
+              const r = regionOf(gc)
+              if (!groups.has(r)) groups.set(r, [])
+              groups.get(r)!.push(gc)
+            }
+            const groupNames = [...groups.keys()].sort((a, b) => {
+              if (a === '미분류' && b !== '미분류') return 1
+              if (b === '미분류' && a !== '미분류') return -1
+              return a.localeCompare(b, 'ko')
+            })
+            return (
+              <div className="flex flex-col gap-3">
+                {groupNames.map(name => (
+                  <div key={name} className="flex bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="w-28 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex items-center justify-center p-2">
+                      <span className="text-sm font-bold text-slate-700 text-center break-keep leading-tight">{name}</span>
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col divide-y divide-slate-200">
+                      {groups.get(name)!.map(gc => (
+                        <GopoumCard
+                          key={gc.id}
+                          gc={gc}
+                          items={filtered.filter(i => i.gopoum_client_id === gc.id)}
+                          todayStart={todayStart}
+                          onDeleteItem={handleDeleteItem}
+                          onEditItem={handleEditItem}
+                          onOpenQtyEdit={openQtyEdit}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           }
-          const groupNames = [...groups.keys()].sort((a, b) => {
-            if (a === '미분류' && b !== '미분류') return 1
-            if (b === '미분류' && a !== '미분류') return -1
-            return a.localeCompare(b, 'ko')
-          })
+          const todaySection = renderGroups(i => i.created_at >= todayStart)
+          const allSection = renderGroups(() => true)
           return (
-            <div className="flex flex-col gap-3">
-              {groupNames.map(name => (
-                <div key={name} className="flex bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  {/* 좌측 그룹(시 + 동) 열 — 세로 가운데 정렬, 카드 여러 개 걸쳐 표시 */}
-                  <div className="w-28 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex items-center justify-center p-2">
-                    <span className="text-sm font-bold text-slate-700 text-center break-keep leading-tight">{name}</span>
-                  </div>
-                  {/* 우측 — 이 그룹에 속한 카드 스택 */}
-                  <div className="flex-1 min-w-0 flex flex-col divide-y divide-slate-200">
-                    {groups.get(name)!.map(gc => (
-                      <GopoumCard
-                        key={gc.id}
-                        gc={gc}
-                        items={gopoumItems.filter(i => i.gopoum_client_id === gc.id)}
-                        todayStart={todayStart}
-                        onDeleteItem={handleDeleteItem}
-                        onEditItem={handleEditItem}
-                        onOpenQtyEdit={openQtyEdit}
-                      />
-                    ))}
-                  </div>
+            <div className="flex flex-col gap-6">
+              {todaySection && (
+                <div>
+                  <h2 className="text-sm font-bold text-emerald-700 mb-2 px-1">오늘 추가한 품목</h2>
+                  {todaySection}
                 </div>
-              ))}
+              )}
+              <div>
+                <h2 className="text-sm font-bold text-slate-700 mb-2 px-1">전체 현황</h2>
+                {allSection}
+              </div>
             </div>
           )
         })()}
