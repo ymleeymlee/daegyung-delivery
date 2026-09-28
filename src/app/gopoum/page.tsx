@@ -185,6 +185,15 @@ export default function GopoumPage() {
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null)
   const [qtyEditItem, setQtyEditItem] = useState<GopoumItem | null>(null)
   const [qtyEditValue, setQtyEditValue] = useState('')
+  const [pendingAdd, setPendingAdd] = useState<{
+    typedName: string
+    desc: string
+    carType: string | null
+    qty: number
+    note: string | null
+    candidates: { code: string; name: string }[]
+    mode: 'single' | 'multi' | 'none'
+  } | null>(null)
   const [clientsRegionMap, setClientsRegionMap] = useState<Map<string, string | null>>(new Map())
   const [regionByCode, setRegionByCode] = useState<Map<string, string | null>>(new Map())
   const [regionByName, setRegionByName] = useState<Map<string, string | null>>(new Map())
@@ -263,15 +272,34 @@ export default function GopoumPage() {
 
   async function handleAdd() {
     if (!inputClient.trim() || !inputDesc.trim() || adding) return
-    setAdding(true)
     const name = inputClient.trim()
     const code = normalizeCode(pickedCode)
     const desc = inputDesc.trim()
     const carType = inputCarType.trim() || null
     const qty = Math.max(1, parseInt(inputQty || '1', 10) || 1)
     const note = inputNote.trim() || null
+
+    // 자동완성에서 픽업 됐으면 바로 insert.
+    if (code) { await doInsert(code, name, desc, carType, qty, note); return }
+
+    // 픽업 안 됐음 — 오타/빠른클릭 방어: clients 에서 자동 매칭 시도 후 확인 팝업.
+    // 입력이 숫자만이면 code 로, 아니면 name 으로 검색.
+    const isNumeric = /^\d+$/.test(name)
+    const q = supabase.from('clients').select('code, name').eq('branch', branch)
+    const { data } = await (isNumeric
+      ? q.eq('code', normalizeCode(name))
+      : q.eq('name', name)
+    ).limit(6)
+    const candidates = (data ?? []) as { code: string; name: string }[]
+    setPendingAdd({
+      typedName: name, desc, carType, qty, note, candidates,
+      mode: candidates.length === 0 ? 'none' : candidates.length === 1 ? 'single' : 'multi',
+    })
+  }
+
+  async function doInsert(code: string, name: string, desc: string, carType: string | null, qty: number, note: string | null) {
+    setAdding(true)
     // 동일 지점+업체번호+업체명 조합의 gopoum_client 재사용, 없으면 신규 생성.
-    // 코드 매칭은 양쪽 모두 정규화(숫자면 4자리 zero-pad)해서 "6" 과 "0006" 등 동일 업체 인식.
     let clientId: string | null = gopoumClients.find(gc =>
       gc.branch === branch && normalizeCode(gc.client_code || '') === code && gc.client_name === name
     )?.id ?? null
@@ -287,6 +315,7 @@ export default function GopoumPage() {
     setAdding(false)
     setInputClient(''); setPickedCode(''); setInputDesc(''); setInputCarType(''); setInputQty('1'); setInputNote('')
     setSuggestions([]); setShowSugg(false)
+    setPendingAdd(null)
   }
 
   // 파일 선택 → 처리 방식 모달 오픈 (즉시 처리하지 않음)
@@ -629,6 +658,91 @@ export default function GopoumPage() {
           )
         })()}
       </div>
+
+      {/* 업체 매칭 확인 모달 (자동완성 미픽업 상태에서 추가 시) */}
+      {pendingAdd && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={() => setPendingAdd(null)}
+        >
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-96 max-w-[calc(100vw-32px)]" onClick={e => e.stopPropagation()}>
+            {pendingAdd.mode === 'single' && (
+              <>
+                <h2 className="text-base font-bold text-slate-800 mb-2">이 업체가 맞습니까?</h2>
+                <div className="text-xs text-slate-500 mb-1">입력값: <span className="font-mono">{pendingAdd.typedName}</span></div>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4">
+                  <div className="text-xs text-slate-500 font-mono">코드 {pendingAdd.candidates[0].code || '-'}</div>
+                  <div className="text-sm font-semibold text-slate-800">{pendingAdd.candidates[0].name}</div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => setPendingAdd(null)}
+                    className="text-sm text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-xl transition-colors"
+                  >
+                    아니오
+                  </button>
+                  <button
+                    onClick={() => {
+                      const c = pendingAdd.candidates[0]
+                      doInsert(normalizeCode(c.code || ''), c.name, pendingAdd.desc, pendingAdd.carType, pendingAdd.qty, pendingAdd.note)
+                    }}
+                    className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-xl transition-colors"
+                  >
+                    예
+                  </button>
+                </div>
+              </>
+            )}
+            {pendingAdd.mode === 'multi' && (
+              <>
+                <h2 className="text-base font-bold text-slate-800 mb-2">여러 업체가 매칭됩니다</h2>
+                <div className="text-xs text-slate-500 mb-3">입력값 <span className="font-mono">{pendingAdd.typedName}</span> — 아래에서 선택하세요.</div>
+                <div className="flex flex-col gap-2 mb-4 max-h-64 overflow-y-auto">
+                  {pendingAdd.candidates.map(c => (
+                    <button
+                      key={`${c.code}|${c.name}`}
+                      onClick={() => doInsert(normalizeCode(c.code || ''), c.name, pendingAdd.desc, pendingAdd.carType, pendingAdd.qty, pendingAdd.note)}
+                      className="text-left border border-slate-200 rounded-xl px-3 py-2 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                    >
+                      <div className="text-xs text-slate-500 font-mono">코드 {c.code || '-'}</div>
+                      <div className="text-sm font-medium text-slate-800">{c.name}</div>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setPendingAdd(null)}
+                    className="text-sm text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-xl transition-colors"
+                  >
+                    취소
+                  </button>
+                </div>
+              </>
+            )}
+            {pendingAdd.mode === 'none' && (
+              <>
+                <h2 className="text-base font-bold text-slate-800 mb-2">매칭되는 업체가 없습니다</h2>
+                <div className="text-xs text-slate-500 mb-1">입력값 <span className="font-mono">{pendingAdd.typedName}</span></div>
+                <p className="text-sm text-slate-700 mb-4">미분류로 등록하시겠습니까? (업체명으로 저장됩니다)</p>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => setPendingAdd(null)}
+                    className="text-sm text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-xl transition-colors"
+                  >
+                    아니오
+                  </button>
+                  <button
+                    onClick={() => doInsert('', pendingAdd.typedName, pendingAdd.desc, pendingAdd.carType, pendingAdd.qty, pendingAdd.note)}
+                    className="text-sm bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-2 rounded-xl transition-colors"
+                  >
+                    미분류로 등록
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 엑셀 가져오기 방식 선택 모달 */}
       {pendingImportFile && (
