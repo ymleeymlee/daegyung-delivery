@@ -62,7 +62,7 @@ function GopoumCard({
     s + (i.collectors ?? []).filter(c => c.picked_at >= todayStart).reduce((a, c) => a + c.quantity, 0), 0)
 
   return (
-    <div className={`bg-white overflow-hidden text-sm ${remaining > 0 ? 'border-l-4 border-l-slate-400' : ''}`}>
+    <div className="bg-white overflow-hidden text-sm border-l-4 border-l-slate-400">
       <div className="flex min-h-14">
         {/* 수거 현황 (찾아온/총수량 만) */}
         <div className="w-24 flex-shrink-0 border-r border-slate-100 p-2 flex flex-col justify-center items-center">
