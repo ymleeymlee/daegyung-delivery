@@ -74,13 +74,13 @@ function GopoumCard({
         </div>
 
         {/* 업체번호 (최대 4자) — 첫 품목 행과 세로 정렬 */}
-        <div className="w-12 flex-shrink-0 border-r border-slate-100 flex items-center px-2 min-h-10">
+        <div className="w-12 flex-shrink-0 border-r border-slate-100 flex items-center px-2 min-h-8">
           <span className="text-xs text-slate-500">{normalizeCode(gc.client_code || '') || '-'}</span>
         </div>
 
-        {/* 업체명 (2줄까지 표시) — 첫 품목 행과 세로 정렬 */}
-        <div className="w-24 flex-shrink-0 border-r border-slate-100 flex items-center px-2 min-h-10">
-          <span className="text-sm font-medium text-slate-700 leading-tight line-clamp-2 break-all">{gc.client_name}</span>
+        {/* 업체명 (한 줄, 12자 여유) — 첫 품목 행과 세로 정렬 */}
+        <div className="w-44 flex-shrink-0 border-r border-slate-100 flex items-center px-2 min-h-8">
+          <span className="text-sm font-medium text-slate-700 leading-tight truncate">{gc.client_name}</span>
         </div>
 
         {/* 아이템 목록 */}
@@ -92,7 +92,7 @@ function GopoumCard({
               const isToday = item.created_at >= todayStart
               const rowBg = isDone(item) ? 'bg-slate-200' : isToday ? 'bg-emerald-50/60' : ''
               return (
-              <div key={item.id} className={`flex items-center gap-2 px-4 py-2 group ${rowBg}`}>
+              <div key={item.id} className={`flex items-center gap-2 px-4 py-1 group ${rowBg}`}>
                 {/* 품목명 */}
                 <span className={`w-20 flex-shrink-0 text-sm truncate ${isDone(item) ? 'text-slate-400' : 'text-slate-700 font-medium'}`}>
                   {item.description}
@@ -128,7 +128,7 @@ function GopoumCard({
                     : <div className="leading-5">-</div>}
                 </span>
                 {/* 수거시간 (수거자별 한 줄씩, 또는 -) */}
-                <span className={`w-12 flex-shrink-0 text-sm ${collectedOf(item) > 0 ? 'text-slate-600' : 'text-slate-300'}`}>
+                <span className={`w-12 flex-shrink-0 text-xs ${collectedOf(item) > 0 ? 'text-slate-500' : 'text-slate-300'}`}>
                   {collectorLines(item).length
                     ? collectorLines(item).map((l, idx) => <div key={idx} className="leading-5">{l.time || ' '}</div>)
                     : <div className="leading-5">-</div>}
@@ -534,7 +534,7 @@ export default function GopoumPage() {
               <div className="w-28 flex-shrink-0 text-center">그룹</div>
               <div className="w-24 flex-shrink-0 text-center">찾아온/총수량</div>
               <div className="w-12 flex-shrink-0 pl-2">번호</div>
-              <div className="w-24 flex-shrink-0 pl-2">업체명</div>
+              <div className="w-44 flex-shrink-0 pl-2">업체명</div>
               {/* 품목 영역: 카드 아이템 행 레이아웃(gap-2 px-4)과 폭 매칭 */}
               <div className="flex-1 min-w-0 flex items-end gap-2 px-4">
                 <span className="w-20 flex-shrink-0">품목명</span>
@@ -587,9 +587,9 @@ export default function GopoumPage() {
               return a.localeCompare(b, 'ko')
             })
             return (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
                 {groupNames.map(name => (
-                  <div key={name} className="flex bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div key={name} className="flex bg-white rounded-2xl shadow-sm border border-slate-400 overflow-hidden">
                     <div className="w-28 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex items-center justify-center p-2">
                       <span className="text-sm font-bold text-slate-700 text-center break-keep leading-tight">{name}</span>
                     </div>
