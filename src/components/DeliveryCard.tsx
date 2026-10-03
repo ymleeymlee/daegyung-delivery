@@ -143,9 +143,12 @@ function GopoumModal({
                   picked ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-200'
                 }`}>
                 <div className="flex-1 min-w-0">
-                  <div>
+                  <div className="flex items-baseline gap-1.5 flex-wrap">
                     <span className={`text-sm font-medium ${picked ? 'text-green-700' : 'text-amber-800'}`}>{item.description}</span>
-                    <span className="text-xs text-slate-400 ml-2 whitespace-nowrap">잔여 {remain}</span>
+                    <span className={`text-xs ${item.car_type ? 'text-slate-600' : 'text-slate-300 italic'}`}>
+                      {item.car_type || '차종모름'}
+                    </span>
+                    <span className="text-xs text-slate-400 whitespace-nowrap ml-auto">잔여 {remain}</span>
                   </div>
                   {item.note && (
                     <div className="mt-1.5 text-xs text-slate-700 bg-white border border-slate-200 rounded-md px-2 py-1 break-words">
@@ -289,13 +292,7 @@ export default function DeliveryCard({
               } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
               title={isCompleted ? '고품 수정' : undefined}
             >
-              고품 {collectedCount}/{total}{(() => {
-                // 미수거 아이템의 차종 중복 제거해 함께 표시 ("쏘렌토, 모닝"). 모두 수거된 카드는 생략.
-                const cars = Array.from(new Set(
-                  gItems.filter(i => !isFull(i)).map(i => (i.car_type && i.car_type.trim()) || '차종모름')
-                ))
-                return cars.length > 0 ? ` · ${cars.join(', ')}` : ''
-              })()}
+              고품 {collectedCount}/{total}
             </button>
           )}
           {note && (
