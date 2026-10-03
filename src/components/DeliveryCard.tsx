@@ -289,7 +289,13 @@ export default function DeliveryCard({
               } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
               title={isCompleted ? '고품 수정' : undefined}
             >
-              고품 {collectedCount}/{total}
+              고품 {collectedCount}/{total}{(() => {
+                // 미수거 아이템의 차종 중복 제거해 함께 표시 ("쏘렌토, 모닝"). 모두 수거된 카드는 생략.
+                const cars = Array.from(new Set(
+                  gItems.filter(i => !isFull(i)).map(i => (i.car_type && i.car_type.trim()) || '차종모름')
+                ))
+                return cars.length > 0 ? ` · ${cars.join(', ')}` : ''
+              })()}
             </button>
           )}
           {note && (
