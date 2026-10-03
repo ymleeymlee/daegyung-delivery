@@ -59,9 +59,12 @@ export interface Delivery {
   note?: string | null
   // 서버 트리거로 자동 유지되는 '남은 고품 수량' 스냅샷 — 뱃지 표시용
   gopoum_count?: number | null
+  // 총 고품 수량(수거 무관) — 수거 완료 후에도 뱃지 유지용
+  gopoum_total?: number | null
   gopoum_cars?: string | null
   // 같은 region(법정동)의 다른 거래처들의 '남은 고품 수량' 합계
   nearby_gopoum_count?: number | null
+  nearby_gopoum_total?: number | null
 }
 
 /** 주변 고품 품목 — RPC nearby_gopoum_items_for_delivery 가 반환. */

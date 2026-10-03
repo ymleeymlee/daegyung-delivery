@@ -381,7 +381,7 @@ export default function DeliveryCard({
               >
                 고품 {collectedCount}/{total}
               </button>
-              {(delivery.nearby_gopoum_count ?? 0) > 0 && (
+              {(delivery.nearby_gopoum_total ?? 0) > 0 && (
                 <button
                   type="button"
                   onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
@@ -389,13 +389,13 @@ export default function DeliveryCard({
                   className={`absolute -top-1.5 -right-3 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap bg-orange-500 ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
                   title="주변 고품"
                 >
-                  주변 {delivery.nearby_gopoum_count}
+                  주변 {Math.max(0, (delivery.nearby_gopoum_total ?? 0) - (delivery.nearby_gopoum_count ?? 0))}/{delivery.nearby_gopoum_total ?? 0}
                 </button>
               )}
             </div>
           )}
           {/* 자기 고품은 없지만 주변 고품이 있는 경우 */}
-          {!isGopoumCard && (delivery.nearby_gopoum_count ?? 0) > 0 && (
+          {!isGopoumCard && (delivery.nearby_gopoum_total ?? 0) > 0 && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
