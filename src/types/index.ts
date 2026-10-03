@@ -57,6 +57,25 @@ export interface Delivery {
   baseline_arrival_at?: string | null
   // 배송 비고 (웹에서만 편집. 마감 시 시트의 '비고' 열로 반영)
   note?: string | null
+  // 서버 트리거로 자동 유지되는 '남은 고품 수량' 스냅샷 — 뱃지 표시용
+  gopoum_count?: number | null
+  gopoum_cars?: string | null
+  // 같은 region(법정동)의 다른 거래처들의 '남은 고품 수량' 합계
+  nearby_gopoum_count?: number | null
+}
+
+/** 주변 고품 품목 — RPC nearby_gopoum_items_for_delivery 가 반환. */
+export interface NearbyGopoumItem {
+  id: string
+  description: string
+  car_type: string | null
+  note: string | null
+  quantity: number
+  collectors: GopoumCollector[]
+  created_at: string
+  gopoum_client_id: string
+  client_code: string
+  client_name: string
 }
 
 // 기기 ↔ 라이더 매핑 (앱은 device_id 로만 write, 웹에서 라이더 지정)

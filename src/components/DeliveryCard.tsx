@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Delivery, GopoumItem } from '@/types'
+import { Delivery, GopoumItem, NearbyGopoumItem } from '@/types'
+import { supabase } from '@/lib/supabase'
 import ElapsedTimer from './ElapsedTimer'
 
 interface Props {
@@ -87,36 +88,77 @@ function GopoumModal({
   // 생성 순서(고품현황 추가 순)로 고정
   const sorted = [...items].sort((a, b) => a.created_at.localeCompare(b.created_at))
 
-  // 열 때의 내 수거량 — 닫을 때 변경분만 커밋
+  // 주변 품목(같은 region 다른 거래처들의 활성 고품) — 열릴 때 RPC 로 1회 조회.
+  const [nearby, setNearby] = useState<NearbyGopoumItem[]>([])
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      const { data } = await supabase.rpc('nearby_gopoum_items_for_delivery', { p_delivery_id: deliveryId })
+      if (active) setNearby((data ?? []) as NearbyGopoumItem[])
+    })()
+    return () => { active = false }
+  }, [deliveryId])
+
+  // 열 때의 내 수거량 — 닫을 때 변경분만 커밋. 주변 품목은 nearby fetch 후 반영.
   const initialMine = useMemo(() => {
     const m: Record<string, number> = {}
     for (const i of items) m[i.id] = myPickup(i, deliveryId)
     return m
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  useEffect(() => {
+    setMine(prev => {
+      const next = { ...prev }
+      for (const n of nearby) {
+        if (next[n.id] == null) next[n.id] = (n.collectors ?? []).find(c => c.delivery_id === deliveryId)?.quantity ?? 0
+      }
+      return next
+    })
+  }, [nearby, deliveryId])
 
   // 로컬 상태(내 수거량). 증감은 여기만 바뀌고 DB 통신은 닫을 때 → 깜빡임 없음
   const [mine, setMine] = useState<Record<string, number>>(initialMine)
 
-  const othersQty = (i: GopoumItem) => collectedTotal(i) - myPickup(i, deliveryId)  // 다른 배송자가 수거한 양
-  const maxForMe = (i: GopoumItem) => Math.max(0, qty(i) - othersQty(i))             // 내가 넣을 수 있는 최대(총량 초과 불가)
-  const myVal = (i: GopoumItem) => mine[i.id] ?? 0
+  type AnyItem = GopoumItem | NearbyGopoumItem
+  const collectedTotalAny = (i: AnyItem) => (i.collectors ?? []).reduce((s, c) => s + c.quantity, 0)
+  const myPickupAny = (i: AnyItem) => (i.collectors ?? []).find(c => c.delivery_id === deliveryId)?.quantity ?? 0
+  const othersQty = (i: AnyItem) => collectedTotalAny(i) - myPickupAny(i)
+  const maxForMe = (i: AnyItem) => Math.max(0, (i.quantity ?? 1) - othersQty(i))
+  const myVal = (i: AnyItem) => mine[i.id] ?? 0
+  const initialMineOf = (i: AnyItem) => (initialMine[i.id] ?? myPickupAny(i))
 
-  // 헤더 = 현재까지 수거 수량 합 / 총 수량 합
-  const total = sorted.reduce((s, i) => s + qty(i), 0)
+  // 자기 거래처 품목 집계 (헤더 표시용)
+  const total = sorted.reduce((s, i) => s + (i.quantity ?? 1), 0)
   const collectedNow = sorted.reduce((s, i) => s + othersQty(i) + myVal(i), 0)
 
-  function change(i: GopoumItem, delta: number) {
+  function change(i: AnyItem, delta: number) {
     setMine(p => ({ ...p, [i.id]: Math.min(maxForMe(i), Math.max(0, (p[i.id] ?? 0) + delta)) }))
   }
 
-  // 닫을 때 변경분(내 수거량)을 한 번에 커밋
+  // 닫을 때 변경분(내 수거량)을 한 번에 커밋 — 자기 품목 + 주변 품목
   function commitAndClose() {
     for (const i of items) {
       const v = mine[i.id] ?? 0
-      if (v !== initialMine[i.id]) onSetPickup(i.id, v)
+      if (v !== initialMineOf(i)) onSetPickup(i.id, v)
+    }
+    for (const i of nearby) {
+      const v = mine[i.id] ?? 0
+      if (v !== initialMineOf(i)) onSetPickup(i.id, v)
     }
     onClose()
+  }
+
+  // 주변 품목을 거래처별로 그룹화 — 생성시간순 정렬 후 안정적 그룹핑
+  const nearbySorted = [...nearby].sort((a, b) => {
+    const c = a.client_name.localeCompare(b.client_name, 'ko')
+    return c !== 0 ? c : a.created_at.localeCompare(b.created_at)
+  })
+  const nearbyGroups: { key: string; name: string; code: string; items: NearbyGopoumItem[] }[] = []
+  for (const n of nearbySorted) {
+    const key = `${n.client_code}|${n.client_name}`
+    const g = nearbyGroups.find(x => x.key === key)
+    if (g) g.items.push(n)
+    else nearbyGroups.push({ key, name: n.client_name, code: n.client_code, items: [n] })
   }
 
   return createPortal(
@@ -168,7 +210,51 @@ function GopoumModal({
             )
           })}
 
-          {items.length === 0 && <p className="text-sm text-slate-400 text-center py-4">등록된 품목이 없습니다.</p>}
+          {items.length === 0 && nearby.length === 0 && <p className="text-sm text-slate-400 text-center py-4">등록된 품목이 없습니다.</p>}
+
+          {/* 주변 고품: 같은 region 다른 거래처의 활성 품목. 거래처별로 그룹핑, 자기 품목과 동일한 +/- 수거 UI. */}
+          {nearbyGroups.length > 0 && (
+            <>
+              <div className="border-t border-slate-300 my-2" />
+              <div className="text-xs font-bold text-amber-700 px-1">주변 고품</div>
+              {nearbyGroups.map(g => (
+                <div key={g.key} className="flex flex-col gap-1.5">
+                  <div className="text-xs font-semibold text-slate-700 px-1 pt-1">
+                    <span className="text-slate-400 font-mono mr-1">{g.code}</span>{g.name}
+                  </div>
+                  {g.items.map(item => {
+                    const val = myVal(item)
+                    const max = maxForMe(item)
+                    const picked = val > 0
+                    const remain = (item.quantity ?? 1) - collectedTotalAny(item)
+                    return (
+                      <div key={item.id}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-colors ${
+                          picked ? 'bg-green-50 border-green-300' : 'bg-amber-50/60 border-amber-200'
+                        }`}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-1.5 flex-wrap">
+                            <span className={`text-sm font-medium ${picked ? 'text-green-700' : 'text-amber-800'}`}>{item.description}</span>
+                            <span className={`text-xs ${item.car_type ? 'text-slate-600' : 'text-slate-300 italic'}`}>
+                              {item.car_type || '차종모름'}
+                            </span>
+                            <span className="text-xs text-slate-400 whitespace-nowrap ml-auto">잔여 {remain}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => change(item, -1)} disabled={val <= 0}
+                            className="w-7 h-7 rounded-md bg-white border border-slate-200 text-slate-600 text-base leading-none flex items-center justify-center hover:bg-slate-100 disabled:opacity-30">−</button>
+                          <span className={`w-6 text-center text-sm font-bold ${picked ? 'text-green-600' : 'text-slate-400'}`}>{val}</span>
+                          <button onClick={() => change(item, 1)} disabled={val >= max}
+                            className="w-7 h-7 rounded-md bg-white border border-slate-200 text-slate-600 text-base leading-none flex items-center justify-center hover:bg-slate-100 disabled:opacity-30">+</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </>
+          )}
         </div>
 
         <div className="px-4 py-3 border-t border-slate-200">
@@ -280,19 +366,43 @@ export default function DeliveryCard({
           >취소</button>
         )}
 
-        {/* 배지 라인: 고품 + 메모. 완료 카드는 카드 클릭이 접기 토글이므로 고품 배지가 편집 트리거. */}
+        {/* 배지 라인: 고품(빨강) + 주변(주황, 겹침) + 메모. 완료 카드는 배지 클릭이 편집 트리거. */}
         <div className="absolute -top-2 -left-2 flex items-center gap-1">
           {isGopoumCard && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
+                disabled={!isCompleted}
+                className={`text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap transition-transform ${
+                  collectedByMe ? 'bg-red-600' : 'bg-red-500'
+                } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
+                title={isCompleted ? '고품 수정' : undefined}
+              >
+                고품 {collectedCount}/{total}
+              </button>
+              {(delivery.nearby_gopoum_count ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
+                  disabled={!isCompleted}
+                  className={`absolute -top-1.5 -right-3 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap bg-orange-500 ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
+                  title="주변 고품"
+                >
+                  주변 {delivery.nearby_gopoum_count}
+                </button>
+              )}
+            </div>
+          )}
+          {/* 자기 고품은 없지만 주변 고품이 있는 경우 */}
+          {!isGopoumCard && (delivery.nearby_gopoum_count ?? 0) > 0 && (
             <button
               type="button"
-              onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
-              disabled={!isCompleted}
-              className={`text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap transition-transform ${
-                collectedByMe ? 'bg-orange-600' : 'bg-orange-400'
-              } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
-              title={isCompleted ? '고품 수정' : undefined}
+              onClick={(e) => { e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
+              className="text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap bg-orange-500 cursor-pointer hover:scale-105 transition-transform"
+              title="주변 고품"
             >
-              고품 {collectedCount}/{total}
+              주변 {delivery.nearby_gopoum_count}
             </button>
           )}
           {note && (
@@ -372,9 +482,9 @@ export default function DeliveryCard({
 
       </div>
 
-      {showModal && gopoumItems && (
+      {showModal && (
         <GopoumModal
-          items={gopoumItems}
+          items={gopoumItems ?? []}
           deliveryId={delivery.id}
           onSetPickup={handleSetPickup}
           onClose={() => setShowModal(false)}
