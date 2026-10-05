@@ -369,40 +369,27 @@ export default function DeliveryCard({
         {/* 배지 라인: 고품(빨강) + 주변(주황, 겹침) + 메모. 완료 카드는 배지 클릭이 편집 트리거. */}
         <div className="absolute -top-2 -left-2 flex items-center gap-1">
           {isGopoumCard && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
-                disabled={!isCompleted}
-                className={`text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap transition-transform ${
-                  collectedByMe ? 'bg-red-600' : 'bg-red-500'
-                } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
-                title={isCompleted ? '고품 수정' : undefined}
-              >
-                고품 {collectedCount}/{total}
-              </button>
-              {(delivery.nearby_gopoum_total ?? 0) > 0 && (
-                <button
-                  type="button"
-                  onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
-                  disabled={!isCompleted}
-                  className={`absolute -top-1.5 -right-3 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap bg-orange-500 ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
-                  title="주변 고품"
-                >
-                  주변 {Math.max(0, (delivery.nearby_gopoum_total ?? 0) - (delivery.nearby_gopoum_count ?? 0))}/{delivery.nearby_gopoum_total ?? 0}
-                </button>
-              )}
-            </div>
-          )}
-          {/* 자기 고품은 없지만 주변 고품이 있는 경우 */}
-          {!isGopoumCard && (delivery.nearby_gopoum_total ?? 0) > 0 && (
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
-              className="text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap bg-orange-500 cursor-pointer hover:scale-105 transition-transform"
+              onClick={(e) => { if (!isCompleted) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
+              disabled={!isCompleted}
+              className={`text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap transition-transform ${
+                collectedByMe ? 'bg-red-600' : 'bg-red-500'
+              } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
+              title={isCompleted ? '고품 수정' : undefined}
+            >
+              고품 {collectedCount}/{total}
+            </button>
+          )}
+          {(delivery.nearby_gopoum_total ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={(e) => { if (!isCompleted && isGopoumCard) return; e.stopPropagation(); if (!hasSelection) setShowModal(true) }}
+              disabled={isGopoumCard && !isCompleted}
+              className={`text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap bg-orange-500 ${(!isGopoumCard || isCompleted) ? 'cursor-pointer hover:scale-105 transition-transform' : ''}`}
               title="주변 고품"
             >
-              주변 {delivery.nearby_gopoum_count}
+              주변 {Math.max(0, (delivery.nearby_gopoum_total ?? 0) - (delivery.nearby_gopoum_count ?? 0))}/{delivery.nearby_gopoum_total ?? 0}
             </button>
           )}
           {note && (
