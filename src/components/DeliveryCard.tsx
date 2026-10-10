@@ -282,9 +282,11 @@ export default function DeliveryCard({
 
   // 카드 생성 당시 스냅샷 품목 (getGopoumData가 생성 시점 기준으로 넘겨줌). 수량 합산 기준
   const gItems = gopoumItems ?? []
-  const total = gItems.reduce((s, i) => s + qty(i), 0)                            // 총수량 합
-  const collectedCount = gItems.reduce((s, i) => s + collectedTotal(i), 0)        // 수거된 수량 합 (누구든)
-  const myCount = gItems.reduce((s, i) => s + myPickup(i, delivery.id), 0)        // 내가 수거한 수량 합
+  const myCount = gItems.reduce((s, i) => s + myPickup(i, delivery.id), 0)        // 이 배송카드로 수거한 양
+  const remainingCount = gItems.reduce((s, i) => s + Math.max(0, qty(i) - collectedTotal(i)), 0)  // 남은 양
+  // 뱃지: 내가 수거한 양 / (내가 수거 + 남음). 예: 처음엔 0/5, 2개 수거 후 2/5, 다른 카드가 생기면 그 카드는 0/3
+  const badgeX = myCount
+  const badgeY = myCount + remainingCount
   // 카드 생성 당시 "찾을 고품"이 있었는지 = 생성 시점에 미수거였던 품목이 하나라도 있었는지.
   // 없으면(전부 이미 수거됐거나 품목 자체가 없음) 이 카드엔 고품 표시 안 함.
   // 판정은 실제 수거량 기준(isFull) — 완전수거 후 수량을 늘리면 다시 미완료가 되어 이 카드도 고품으로 잡힘.
@@ -378,7 +380,7 @@ export default function DeliveryCard({
               } ${isCompleted ? 'cursor-pointer hover:scale-105' : ''}`}
               title={isCompleted ? '고품 수정' : undefined}
             >
-              고품 {collectedCount}/{total}
+              고품 {badgeX}/{badgeY}
             </button>
           )}
           {(delivery.nearby_gopoum_total ?? 0) > 0 && (
@@ -389,7 +391,7 @@ export default function DeliveryCard({
               className={`text-white text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm leading-none whitespace-nowrap bg-orange-500 ${(!isGopoumCard || isCompleted) ? 'cursor-pointer hover:scale-105 transition-transform' : ''}`}
               title="주변 고품"
             >
-              주변 {Math.max(0, (delivery.nearby_gopoum_total ?? 0) - (delivery.nearby_gopoum_count ?? 0))}/{delivery.nearby_gopoum_total ?? 0}
+              주변 {delivery.nearby_gopoum_mine_count ?? 0}/{(delivery.nearby_gopoum_mine_count ?? 0) + (delivery.nearby_gopoum_count ?? 0)}
             </button>
           )}
           {note && (

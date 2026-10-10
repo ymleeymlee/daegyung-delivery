@@ -62,9 +62,12 @@ export interface Delivery {
   // 총 고품 수량(수거 무관) — 수거 완료 후에도 뱃지 유지용
   gopoum_total?: number | null
   gopoum_cars?: string | null
+  // 이 배송카드가 수거한 양 (뱃지 X 값)
+  gopoum_mine_count?: number | null
   // 같은 region(법정동)의 다른 거래처들의 '남은 고품 수량' 합계
   nearby_gopoum_count?: number | null
   nearby_gopoum_total?: number | null
+  nearby_gopoum_mine_count?: number | null
 }
 
 /** 주변 고품 품목 — RPC nearby_gopoum_items_for_delivery 가 반환. */
