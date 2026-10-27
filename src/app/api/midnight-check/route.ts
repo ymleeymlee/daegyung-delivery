@@ -11,6 +11,31 @@ import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing, Branch } 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+// 핑 전량 페이지네이션 수집 — 서버가 1000행씩만 반환(db-max-rows)하므로 단일 select 로는 잘림.
+// 하루 10만+ 행이라 순차 왕복은 maxDuration(60s) 초과 위험 → 건수 먼저 세고 페이지를 병렬(동시 25개) 조회.
+async function fetchAllPings(): Promise<LocationPing[]> {
+  const PAGE = 1000
+  const CONCURRENCY = 25
+  const { count, error: countErr } = await supabaseServer
+    .from('location_pings').select('id', { count: 'exact', head: true })
+  if (countErr) throw countErr
+  const pages = Math.ceil((count ?? 0) / PAGE)
+  const results: LocationPing[][] = new Array(pages)
+  for (let start = 0; start < pages; start += CONCURRENCY) {
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages - start) }, async (_, k) => {
+      const page = start + k
+      const { data, error } = await supabaseServer
+        .from('location_pings').select('id,device_id,rider_id,rider_name,lat,lng,accuracy,captured_at')
+        .order('captured_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1)
+      if (error) throw error
+      results[page] = (data ?? []) as LocationPing[]
+    }))
+  }
+  return results.flat()
+}
+
 // 다음날 00시 자동 수행 엔드포인트. 크론 없이 클라이언트(Nav 등)에서 매 페이지 로드 시 호출.
 // 하루에 한 번만 실행되도록 서버사이드 idempotent (app_state.last_midnight_reset_date).
 // 인증 없음 — 파괴적 액션은 auto_actions.midnight.* 플래그가 켜진 항목만.
@@ -46,14 +71,14 @@ export async function GET() {
     const sheetOkBranches = new Set<string>()
 
     if (auto.sheet_update.midnight) {
-      const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, { data: deviceRows }, { data: pingRows }, { data: branchRows }] = await Promise.all([
+      const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, { data: deviceRows }, pingRows, { data: branchRows }] = await Promise.all([
         supabaseServer.from('app_state').select('*'),
         supabaseServer.from('riders').select('*').eq('is_active', true),
         supabaseServer.from('deliveries').select('*').not('rider_id', 'is', null).in('status', ['assigned', 'completed']),
         supabaseServer.from('gopoum_clients').select('*').order('created_at'),
         supabaseServer.from('gopoum_items').select('*'),
         supabaseServer.from('rider_devices').select('device_id,rider_id,name,branch,today_first_connected_at'),
-        supabaseServer.from('location_pings').select('*').order('captured_at', { ascending: true }),
+        fetchAllPings(),
         supabaseServer.from('branches').select('*').order('sort_order'),
       ])
       const m: Record<string, string> = {}
@@ -68,7 +93,7 @@ export async function GET() {
       const clients = (clientRows ?? []) as GopoumClient[]
       const allItems = (itemRows ?? []) as GopoumItem[]
       const snapshotItems = allItems.filter(i => !i.archived_at || i.archived_at >= todayStartIso)
-      const pings = ((pingRows ?? []) as LocationPing[]).filter(p => p.captured_at >= todayStartIso)
+      const pings = pingRows.filter(p => p.captured_at >= todayStartIso)
       const riderNameById = new Map(riders.map(r => [r.id, r.name]))
       const deviceList = (deviceRows ?? []) as { device_id: string; rider_id: string | null; name: string | null; branch: string | null; today_first_connected_at: string | null }[]
       const devToRider = new Map<string, { id: string; name: string }>()
