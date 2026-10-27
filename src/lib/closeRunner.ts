@@ -4,6 +4,7 @@
 import { supabaseServer } from '@/lib/supabaseServer'
 import { buildGridsByBranch, writeSnapshot } from '@/lib/sheetSnapshot'
 import { fetchAutoActions } from '@/lib/autoActions'
+import { resetGopoum } from '@/lib/gopoumReset'
 import type { Rider, Delivery, GopoumClient, GopoumItem, LocationPing, Branch } from '@/types'
 
 const LAST_CLOSE_KEY = 'last_close_reset_date'
@@ -95,7 +96,6 @@ export async function runCloseIfDue(source: 'cron' | 'client'): Promise<CloseRun
   const deliveries = (deliveryRows ?? []) as Delivery[]
   const clients = (clientRows ?? []) as GopoumClient[]
   const allItems = (itemRows ?? []) as GopoumItem[]
-  const activeItems = allItems.filter(i => !i.archived_at)
   const snapshotItems = allItems.filter(i => !i.archived_at || i.archived_at >= todayStartIso)
   const pings = pingRows.filter(p => p.captured_at >= todayStartIso)
 
@@ -145,6 +145,8 @@ export async function runCloseIfDue(source: 'cron' | 'client'): Promise<CloseRun
   }
 
   // 1) 시트 업데이트
+  // 시트 저장 성공 지점 — gopoum_reset 이 이 지점의 수거완료 품목만 삭제
+  const sheetOkBranches = new Set<string>()
   if (auto.sheet_update.close) {
     if (branches.length === 0) {
       return { ran: false, stage: 'sheet', error: '등록된 지점이 없습니다', date: kstDate }
@@ -152,6 +154,7 @@ export async function runCloseIfDue(source: 'cron' | 'client'): Promise<CloseRun
     const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, knownPings)
     // 지점별 병렬 저장. 하나가 실패해도 나머지는 시도 (Vercel 60s timeout 방지).
     const results = await Promise.allSettled(perBranch.map(b => writeSnapshot(b.code, kstDate, b.data)))
+    results.forEach((r, i) => { if (r.status === 'fulfilled') sheetOkBranches.add(perBranch[i].code) })
     const failed = results.map((r, i) => ({ r, code: perBranch[i].code }))
       .filter(x => x.r.status === 'rejected') as { r: PromiseRejectedResult; code: string }[]
     if (failed.length === perBranch.length) {
@@ -172,13 +175,7 @@ export async function runCloseIfDue(source: 'cron' | 'client'): Promise<CloseRun
     performed.push('delivery_reset')
   }
   if (auto.gopoum_reset.close) {
-    tasks.push(supabaseServer.from('gopoum_items').update({ archived_at: nowIso }).not('picked_at', 'is', null).is('archived_at', null))
-    for (const gc of clients) {
-      const rem = activeItems.filter(i => i.gopoum_client_id === gc.id && !i.picked_at).length
-      tasks.push(supabaseServer.from('gopoum_clients')
-        .update({ total_quantity: rem, started_at: rem > 0 ? tomorrow8am : null })
-        .eq('id', gc.id))
-    }
+    tasks.push(resetGopoum(sheetOkBranches, nowIso, tomorrow8am))
     performed.push('gopoum_reset')
   }
   if (closedStateFlag) {

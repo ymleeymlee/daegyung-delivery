@@ -358,7 +358,7 @@ export default function DeliveryBoard() {
   const fetchGopoum = useCallback(async () => {
     const [{ data: gClients }, { data: gItems }] = await Promise.all([
       supabase.from('gopoum_clients').select('*').eq('branch', branch),
-      supabase.from('gopoum_items').select('*'),
+      supabase.from('gopoum_items').select('*').is('archived_at', null),
     ])
     setGopoumClients(gClients ?? [])
     const allItems = gItems ?? []

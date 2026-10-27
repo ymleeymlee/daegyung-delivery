@@ -203,7 +203,7 @@ export default function GopoumPage() {
   const fetchData = useCallback(async () => {
     const [{ data: gClients }, { data: gItems }, { data: cRows }] = await Promise.all([
       supabase.from('gopoum_clients').select('*').eq('branch', branch),
-      supabase.from('gopoum_items').select('*'),
+      supabase.from('gopoum_items').select('*').is('archived_at', null),
       supabase.from('clients').select('code, name, region').eq('branch', branch),
     ])
     // 그룹 매칭용 맵. 코드+이름 정확일치 실패 시 코드만/이름만으로 폴백하기 위해 3종 유지.

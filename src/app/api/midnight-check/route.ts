@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
 import { buildGridsByBranch, writeSnapshot } from '@/lib/sheetSnapshot'
 import { upsertUndergroundEntries, type UndergroundEntry } from '@/lib/googleSheets'
+import { resetGopoum } from '@/lib/gopoumReset'
 import {
   fetchAutoActions, getLastMidnightResetDate, setLastMidnightResetDate, kstToday,
 } from '@/lib/autoActions'
@@ -41,6 +42,8 @@ export async function GET() {
       snapshotItems: GopoumItem[]
       knownPings: LocationPing[]
     } | null = null
+    // 시트 저장 성공 지점 — gopoum_reset 이 이 지점의 수거완료 품목만 삭제
+    const sheetOkBranches = new Set<string>()
 
     if (auto.sheet_update.midnight) {
       const [{ data: st }, { data: riderRows }, { data: deliveryRows }, { data: clientRows }, { data: itemRows }, { data: deviceRows }, { data: pingRows }, { data: branchRows }] = await Promise.all([
@@ -89,6 +92,7 @@ export async function GET() {
         const perBranch = buildGridsByBranch(branches, todayRiders, deliveries, clients, snapshotItems, knownPings)
         try {
           const res = await Promise.allSettled(perBranch.map(b => writeSnapshot(b.code, kstDate, b.data)))
+          res.forEach((r, i) => { if (r.status === 'fulfilled') sheetOkBranches.add(perBranch[i].code) })
           const failed = res.map((r, i) => ({ r, code: perBranch[i].code })).filter(x => x.r.status === 'rejected')
           if (failed.length > 0) console.error(`midnight sheet_update 일부 실패: ${failed.map(f => f.code).join(', ')}`)
           performed.push('sheet_update')
@@ -170,21 +174,9 @@ export async function GET() {
       performed.push('delivery_reset')
     }
     if (auto.gopoum_reset.midnight) {
-      // 활성 품목/업체 재조회 (sheetData 재사용 안 될 때 대비)
-      const { data: itemRows } = await supabaseServer.from('gopoum_items').select('*')
-      const { data: clientRows } = await supabaseServer.from('gopoum_clients').select('*')
-      const allItems = (itemRows ?? []) as GopoumItem[]
-      const activeItems = allItems.filter(i => !i.archived_at)
-      const clients = (clientRows ?? []) as GopoumClient[]
       const today = new Date(); const y = today.getUTCFullYear(); const m = today.getUTCMonth(); const d = today.getUTCDate()
       const tomorrow8am = new Date(`${new Date(Date.UTC(y, m, d + 1)).toISOString().slice(0, 10)}T08:00:00+09:00`).toISOString()
-      tasks.push(supabaseServer.from('gopoum_items').update({ archived_at: nowIso }).not('picked_at', 'is', null).is('archived_at', null))
-      for (const gc of clients) {
-        const rem = activeItems.filter(i => i.gopoum_client_id === gc.id && !i.picked_at).length
-        tasks.push(supabaseServer.from('gopoum_clients')
-          .update({ total_quantity: rem, started_at: rem > 0 ? tomorrow8am : null })
-          .eq('id', gc.id))
-      }
+      tasks.push(resetGopoum(sheetOkBranches, nowIso, tomorrow8am))
       performed.push('gopoum_reset')
     }
     if (closedStateFlag) {
